@@ -1,7 +1,13 @@
-// One rule outcome. `fail` is a known violation, `unverified` is missing evidence, `ok` is a covered pass.
+// Verdicts: the outcome of checking one rule, flow or other specification
+// criterion against the snapshot (the resolve/rules end of Markdown -> IR ->
+// resolve/rules). `fail` is a known violation, `unverified` is missing
+// evidence, `ok` is a covered pass. Entry points: the `Verdict` record and
+// `formatVerdict`, its one-line `file:line:col` text form.
 
+/** The three outcomes a criterion can have; `unverified` is never folded into `ok`. */
 export type VerdictKind = "ok" | "fail" | "unverified";
 
+/** One criterion's outcome, tied to the spec position that stated it and to the snapshot and spec it was judged on. */
 export interface Verdict {
   verdict: VerdictKind;
   /** What was checked, for example `deny domain infrastructure`. */
@@ -22,6 +28,7 @@ export interface Verdict {
   hole?: string;
 }
 
+/** One verdict as a `file:line:col: tag message` line; the tag is the diagnostic code when there is one, else the verdict kind. */
 export function formatVerdict(v: Verdict): string {
   const tag = v.code ?? v.verdict;
 

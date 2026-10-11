@@ -8,6 +8,11 @@
 // message where a call crosses into another component or a driver. The
 // result is a `SystemSpec` the diagrams draw and `systemMarkdown` writes as
 // a `# system` a person can adopt.
+//
+// Reads the snapshot (the end of source → FileFacts → graph) and feeds the
+// system views (web, TUI) and `keylang system discover`. Entry points:
+// `discoverSystem`, `systemMarkdown`, `adoptedName`. Terms: component, zone,
+// relation, sequence, driver (a package that talks to a technology).
 
 import { externalPackageId, EXTERNAL } from "./external-ids.ts";
 import { isSegment, type ComponentKind } from "./parser.ts";
@@ -19,10 +24,13 @@ import { moduleGraph, modulesUnder, reach, type ModuleGraph, type RelationVerb, 
 /** The name the discovered system has in the views: no `# system` section can take it (`@` is no segment character). */
 export const DISCOVERED = "@code";
 
+// Entry-point kinds that make a layer an HTTP service, and those that make it a
+// background worker when they are all it has.
 const HTTP: ReadonlySet<string> = new Set(["route", "rest", "graphql", "controller", "webhook"]);
 
 const BACKGROUND: ReadonlySet<string> = new Set(["cron", "consumer", "observer"]);
 
+// Layers keylang makes up itself; they are never components.
 const SYNTHETIC: ReadonlySet<string> = new Set([EXTERNAL, "unassigned", "outside", "events"]);
 
 /** Sequences drawn at most, and messages in one. */
@@ -30,6 +38,7 @@ const MAX_SEQUENCES = 20;
 
 const MAX_MESSAGES = 30;
 
+// How deep a sequence follows calls from its entry fn.
 const MAX_CALL_DEPTH = 6;
 
 /** Tables a schema reader found (system-design/07), by the technology of their database. */
@@ -38,12 +47,15 @@ export interface DiscoveredSchema {
   tables: SystemTable[];
 }
 
+// One discovered system per snapshot object, so views that ask repeatedly share
+// it; collected with the snapshot.
 const cache = new WeakMap<object, { schemas: readonly DiscoveredSchema[]; system: SystemSpec }>();
 
 /** The system of the snapshot's code; the same object for the same snapshot and schemas. */
 export function discoverSystem(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[] = []): SystemSpec {
   const known = cache.get(snapshot);
 
+  // Reuse only for the very same schemas (two empty lists count as the same).
   if (known && (known.schemas === schemas || (known.schemas.length === 0 && schemas.length === 0))) return known.system;
   const system = build(snapshot, schemas);
   cache.set(snapshot, { schemas, system });
@@ -56,12 +68,14 @@ export function adoptedName(snapshot: Pick<AnalysisSnapshot, "system">): string 
   return segmentOf(snapshot.system.name ?? "app", "app");
 }
 
+/** `text` as a lowercase ID segment (other characters become `-`), or `fallback` when nothing valid is left. */
 function segmentOf(text: string, fallback: string): string {
   const cleaned = text.toLowerCase().replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^[^\p{L}_]+/u, "").replace(/-+$/, "");
 
   return isSegment(cleaned) ? cleaned : fallback;
 }
 
+/** The layer of the nearest snapshot node at or above `id`, trimming one segment at a time. */
 function layerOfId(snapshot: AnalysisSnapshot, id: string): string | null {
   for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") {
     const node = snapshot.nodes[at];
@@ -72,10 +86,12 @@ function layerOfId(snapshot: AnalysisSnapshot, id: string): string | null {
   return null;
 }
 
+/** A discovered component: no zone, scale, tables or position yet. */
 function component(name: string, kind: ComponentKind, tech: string | null, code: string[]): SystemComponent {
   return { name, kind, tech, zone: null, code, scale: null, description: "", tables: [], line: 0, col: 0 };
 }
 
+/** Builds the system: components, then stores, then relations, then sequences. */
 function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[]): SystemSpec {
   const system: SystemSpec = { name: DISCOVERED, file: "", line: 0, zones: [], components: [], relations: [], sequences: [], notes: [] };
   const graph = moduleGraph(snapshot);
@@ -92,6 +108,8 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
     byLayer.set(layer, [...(byLayer.get(layer) ?? []), entry]);
   }
 
+  // In config order: a layer is a worker when it has no HTTP entry and only
+  // background ones; its tech is the frameworks of its entries, or `cli`.
   const services: SystemComponent[] = [];
 
   for (const layer of layers) {
@@ -105,6 +123,7 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
     services.push(component(segmentOf(layer, "service"), kind, tech, [layer]));
   }
 
+  // No entry points anywhere: the whole code is one service named after the repository.
   if (services.length === 0 && layers.length > 0) services.push(component(segmentOf(snapshot.system.name ?? "app", "app"), "service", null, layers));
   const names = new Set(services.map((service) => service.name));
 
@@ -114,6 +133,7 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
 
   for (const pkgs of graph.packages.values()) for (const pkg of pkgs) imported.add(pkg);
 
+  // One store per technology; its name gets `-2`, `-3`… when a service already has it.
   const addStore = (tech: Technology): void => {
     if (stores.has(tech.name)) return;
     let name = tech.name;
@@ -123,12 +143,15 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
     stores.set(tech.name, { tech, component: component(name, tech.kind, tech.name, []) });
   };
 
+  // Sorted so store order is stable. A package shared by several technologies
+  // (the AWS SDK) is ambiguous and makes no store on its own.
   for (const pkg of [...imported].sort(compareText)) {
     const techs = technologiesOfPackage(pkg);
 
     if (techs.length === 1) addStore(techs[0]!);
   }
 
+  // A generic SQL client or ORM means some SQL database, unless a driver already named it.
   const hasSqlDriver = [...stores.values()].some(({ tech }) => tech.sql === true);
   const sql = TECHNOLOGIES.find((tech) => tech.name === "sql")!;
 
@@ -145,6 +168,7 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
     for (const table of schema.tables) if (!store.tables.some((known) => known.name === table.name)) store.tables.push({ ...table, component: store.name });
   }
 
+  // HTTP services get a `client` component in front of them, listed first.
   const http = services.filter((service) => (byLayer.get(service.code[0] ?? "") ?? []).some((entry) => HTTP.has(entry.kind)));
 
   if (http.length > 0) {
@@ -164,6 +188,7 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
     const start = modulesUnder(graph, service.code);
     const consumer = (byLayer.get(service.code[0] ?? "") ?? []).some((entry) => entry.kind === "consumer");
 
+    // `calls` another service when an import path leaves this service's modules into that one's.
     for (const other of services) {
       if (other === service) continue;
       const targets = new Set(modulesUnder(graph, other.code));
@@ -171,6 +196,8 @@ function build(snapshot: AnalysisSnapshot, schemas: readonly DiscoveredSchema[])
       if (reach(graph, start, (module) => targets.has(module) && !start.includes(module)) !== null) system.relations.push({ from: service.name, verb: "calls", to: other.name, caption: "import", line: 0, col: 0, span: NO_SPAN });
     }
 
+    // A store relation needs an import path to one of its drivers; the verb
+    // follows the store's kind (a consumer layer consumes a queue, others publish).
     for (const { tech, component: store } of stores.values()) {
       const drivers = evidenceIds(tech);
 
@@ -194,6 +221,7 @@ function fnOf(snapshot: AnalysisSnapshot, id: string): string | null {
 
     if (node?.kind === "fn") return at;
 
+    // A plain module ends the climb; a class is a module node too, but its methods belong to it.
     if (node?.kind === "module" && node.class !== true) return null;
   }
 
@@ -218,6 +246,8 @@ function sequencesOf(
   stores: readonly { tech: Technology; component: SystemComponent }[],
   client: string | null,
 ): SystemSequence[] {
+  // Call edges grouped by the fn they are made in (or by their source when
+  // not in a fn), later sorted in source order.
   const calls = new Map<string, { target: string | null; text: string; line: number; col: number }[]>();
 
   for (const edge of snapshot.edges) {
@@ -226,6 +256,7 @@ function sequencesOf(
     calls.set(from, [...(calls.get(from) ?? []), { target: edge.target, text: edge.text, line: edge.line, col: edge.col }]);
   }
 
+  // The module of the graph that holds `id`, by trimming segments.
   const moduleOf = (id: string): string | null => {
     for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") if (graph.modules.has(at)) return at;
 
@@ -235,6 +266,7 @@ function sequencesOf(
   /** The one store whose driver a module imports, or null for none or several. */
   const storeOfModule = new Map<string, SystemComponent | null>();
 
+  // Memoized per module, since every unresolved call asks.
   const moduleStore = (module: string | null): SystemComponent | null => {
     if (module === null) return null;
 
@@ -252,6 +284,7 @@ function sequencesOf(
   };
 
   for (const list of calls.values()) list.sort((a, b) => a.line - b.line || a.col - b.col);
+  // The service whose code holds `id`, or null outside every service.
   const ownerOf = (id: string): SystemComponent | null => services.find((service) => service.code.some((code) => id === code || id.startsWith(`${code}.`))) ?? null;
 
   const storeOf = (pkg: string): SystemComponent | null => {
@@ -260,6 +293,7 @@ function sequencesOf(
     return null;
   };
 
+  // HTTP entries first, then background, then the rest; by label within a rank.
   const rank = (entry: EntryPoint): number => (HTTP.has(entry.kind) ? 0 : BACKGROUND.has(entry.kind) ? 1 : 2);
   const ordered = [...entries].sort((a, b) => rank(a) - rank(b) || compareText(a.label, b.label));
   const out: SystemSequence[] = [];
@@ -275,6 +309,7 @@ function sequencesOf(
     if (client !== null && HTTP.has(entry.kind)) messages.push({ from: client, to: owner.name, text: entry.label, async: false, line: 0 });
     const seen = new Set<string>();
 
+    // Depth-first over calls in source order; `at` is the component the walk is in.
     const walk = (fn: string, at: SystemComponent, depth: number): void => {
       if (depth > MAX_CALL_DEPTH || seen.has(fn) || messages.length >= MAX_MESSAGES) return;
       seen.add(fn);
@@ -282,6 +317,8 @@ function sequencesOf(
       for (const call of calls.get(fn) ?? []) {
         if (messages.length >= MAX_MESSAGES) return;
 
+        // Unresolved call: guess the store whose driver this module imports;
+        // repeated messages to the same store collapse into one.
         if (call.target === null) {
           const store = moduleStore(moduleOf(fn));
 
@@ -293,6 +330,7 @@ function sequencesOf(
           continue;
         }
 
+        // A call into a package: a message to its store, unless it repeats the last one.
         const pkg = externalPackageId(call.target);
 
         if (pkg !== null) {
@@ -306,6 +344,8 @@ function sequencesOf(
           continue;
         }
 
+        // A project call: a message when it crosses into another service; the
+        // walk goes on in the callee, inside whichever component owns it.
         const next = ownerOf(call.target);
 
         if (next !== null && next !== at) messages.push({ from: at.name, to: next.name, text: call.target.slice(call.target.lastIndexOf(".") + 1), async: false, line: 0 });
@@ -314,9 +354,11 @@ function sequencesOf(
     };
 
     walk(entry.id, owner, 0);
+    // The client's opening message alone shows nothing: such an entry is skipped.
     const crossing = messages.filter((message) => !(message.from === client && message.to === owner.name));
 
     if (crossing.length === 0) continue;
+    // Unique sequence names: `-2`, `-3`… on a repeated label.
     let name = segmentOf(entry.label, "entry");
 
     for (let n = 2; used.has(name); n++) name = `${segmentOf(entry.label, "entry")}-${n}`;
@@ -331,6 +373,7 @@ function sequencesOf(
 export function systemMarkdown(system: SystemSpec, name: string): string {
   const lines: string[] = [`# system ${name}`, "", "<!-- keylang system discover: from the code's entry points, layers and imported packages; adopt it by editing -->", ""];
 
+  // Each component with its code, outgoing relations and tables, then the sequences.
   for (const component of system.components) {
     lines.push(`- ${component.kind} ${component.name}${component.tech ? ` ${component.tech}` : ""}`);
 

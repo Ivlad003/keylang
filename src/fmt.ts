@@ -1,5 +1,9 @@
 // Canonical formatting (`keylang fmt`). Rendered from the IR, so the output is
 // idempotent by construction: `format(parse(format(x))) == format(x)`.
+//
+// Pipeline: Markdown → IR → text again; it never resolves IDs. Entry points:
+// `formatSource` (text in, text or K003 out) and `formatDocument`. Items keep their
+// raw head tokens, so `fmt` only normalises bullets, indentation and spacing.
 
 import type { Diagnostic } from "./diag.ts";
 import type { Document, Node } from "./ir.ts";
@@ -16,6 +20,10 @@ export function formatSource(path: string, src: string): { ok: true; text: strin
   return structural.length === 0 ? { ok: true, text: formatDocument(doc) } : { ok: false, diagnostics: structural };
 }
 
+/**
+ * Render a parsed document in canonical form: the generated marker, then each
+ * section's heading and items, with blocks separated by one blank line.
+ */
 export function formatDocument(doc: Document): string {
   const blocks: string[] = [];
 
@@ -23,6 +31,8 @@ export function formatDocument(doc: Document): string {
 
   for (const section of doc.sections) {
     if (section.heading) blocks.push(["#", section.heading.value, section.comment?.value ?? ""].filter((part) => part !== "").join(" "));
+    // Consecutive nodes form one Markdown list; prose or a code block ends it,
+    // so the list is flushed as its own block before the verbatim lines.
     let list = "";
 
     for (const item of section.items) {
@@ -34,6 +44,7 @@ export function formatDocument(doc: Document): string {
           list = "";
         }
 
+        // Fenced code is re-indented to the margin; prose is kept verbatim.
         const lines = item.type === "code" ? dedentFenceLines(item.lines) : item.lines;
         blocks.push(lines.join("\n"));
       }
@@ -45,6 +56,7 @@ export function formatDocument(doc: Document): string {
   return blocks.length === 0 ? "" : `${blocks.join("\n\n")}\n`;
 }
 
+/** Append one item and its subtree to `out`: two spaces of indent per depth level, descriptions one step deeper. */
 function renderNode(out: string, n: Node, depth: number): string {
   const indent = "  ".repeat(depth);
   out += `${indent}- ${renderTokens(n.tokens)}`;

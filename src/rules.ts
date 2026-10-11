@@ -1,6 +1,13 @@
 // Rules over a fresh analysis snapshot. Without a snapshot (a spec directory
 // that has no code), rule results are unverified rather than a graph rebuilt
 // from Markdown.
+//
+// The rules stage of Markdown → IR → resolve/rules: it takes the compiled
+// SpecIR (`allow`/`deny`, `layers`, `entry`, `no-cycles`, `exports`) and judges
+// it against the snapshot's module-level dependencies, emitting K1xx
+// diagnostics and `ok`/`fail`/`unverified` verdicts. Entry points:
+// `evaluateRules`, `checkRules`, `denyingRule`/`blocksDependency` (also used
+// by generators that must not propose a denied dependency).
 
 import { createHash } from "node:crypto";
 import { OUTSIDE_LAYER, SYNTHETIC_LAYERS, type RuleFormat } from "./config.ts";
@@ -21,6 +28,7 @@ interface SnapshotView {
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
 
+/** One `allow`/`deny` line flattened for matching: source scope `a`, target scopes `b`. */
 interface Rule {
   a: string;
   b: string[];
@@ -39,6 +47,7 @@ interface LayerOrder {
   text: string;
 }
 
+/** A snapshot edge lifted to the modules at its ends: what dependency rules judge. */
 interface UseEdge {
   /** The nearest module of each end, a class included: what `allow` / `deny` scopes match. */
   from: string;
@@ -69,6 +78,7 @@ const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:a
 
 /** A config edge in words for a K102: `the preference `I → C` (app/etc/di.xml:12)`. */
 function configNote(edge: { via?: string; binding?: string; site?: string; scope?: string }): string {
+  // `file:line:col` → `file:line`; the scope only when it is not the default `global`.
   const at = edge.site ? edge.site.replace(/:\d+$/, "") : "?";
   const scope = edge.scope && edge.scope !== "global" ? `, scope ${edge.scope}` : "";
   const what = edge.via === "preference" ? `the preference ${edge.binding ?? ""}` : edge.via === "argument" ? (edge.binding ?? "a constructor argument") : edge.via === "observer" ? `the ${edge.binding ?? "observer"}` : `the ${edge.binding ?? "plugin"} (${edge.via})`;
@@ -83,13 +93,16 @@ function siteAt(site: string | undefined): { file: string; line: number; col: nu
   return m ? { file: m[1]!, line: Number(m[2]), col: Number(m[3]) } : null;
 }
 
+/** Layers keylang makes up (`external`, `unassigned`…): no `layers` order applies to them. */
 export const UNORDERED_LAYERS: ReadonlySet<string> = new Set(SYNTHETIC_LAYERS);
 
+/** The diagnostics and verdicts of the rules. */
 export interface RuleReport {
   diagnostics: Diagnostic[];
   verdicts: Verdict[];
 }
 
+/** Compiles the documents and evaluates their rules; only the diagnostics (compile and rule ones) are returned. */
 export function checkRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null = null): Diagnostic[] {
   const compiled = compileSpec(docs);
 
@@ -133,6 +146,7 @@ export function denyingRule(
   const collected = collectRules(spec, kindOf);
   const hits = ruleHits(collected, from, to, within);
 
+  // Format 1: the most specific rule decides; later formats decide by `decide`.
   if (format === 1) {
     const match = specific(collected, from, to, within);
 
@@ -154,6 +168,7 @@ export function denyingRule(
   return { text: chosen.rule.text, file: chosen.rule.file, line: chosen.rule.span.start.line, aside: incomparableAside(chosen, hits, format) };
 }
 
+/** The rules of `spec` against `snapshot`; without one, a single `unverified` verdict stands for all rule lines. */
 export function evaluateRules(spec: SpecIR, index: Index, snapshot: SnapshotView | null, docs: readonly Document[] = [], format: RuleFormat = 1): RuleReport {
   const kindOf = (id: string): string | undefined => snapshot?.nodes[id]?.kind ?? index.decls.get(id)?.kind ?? (index.planned.has(id) ? `planned ${plannedDecl(spec, id)}` : undefined);
   const rules = collectRules(spec, kindOf);
@@ -186,16 +201,19 @@ export function evaluateRules(spec: SpecIR, index: Index, snapshot: SnapshotView
   return { diagnostics: [...rules.diagnostics, ...warnings, ...report.diagnostics], verdicts: report.verdicts };
 }
 
+/** `source` as SpecIR, compiling documents when needed. */
 function specOf(source: readonly Document[] | SpecIR): SpecIR {
   if ("rules" in source) return source;
 
   return compileSpec(source).spec;
 }
 
+/** The declared kind of a `planned` ID (`fn` when not found). */
 function plannedDecl(spec: SpecIR, id: string): string {
   return spec.planned.find((item) => item.id === id)?.decl ?? "fn";
 }
 
+/** Every rule against the snapshot: dependencies (K102/K107), layer orders (K101), and the other rule kinds below. */
 function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat): RuleReport {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
@@ -204,6 +222,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   // A class is a module node of its file's module; the snapshot marks it (any file of a `module: "dir"` module too).
   const isClass = (id: string): boolean => snapshot.nodes[id]?.kind === "module" && snapshot.nodes[id]?.class === true;
 
+  // The nearest module at or above an ID (a fn's module, a class for a method).
   const scopeOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
       if (isModule(cur)) return cur;
@@ -212,6 +231,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
   };
 
+  // A class climbs to its file's module: dependencies are between files.
   const unitOf = (module: string): string => {
     let cur = module;
 
@@ -224,6 +244,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   const edges: UseEdge[] = [];
   const selfLoops = new Set<string>();
 
+  // Lift every resolved edge to a module-to-module use edge; edges inside one
+  // file module are dropped, but a resolved import of itself is a self-loop.
   for (const edge of snapshot.edges) {
     if (edge.kind !== "import" && edge.kind !== "reexport" && edge.kind !== "call" && edge.kind !== "type") continue;
 
@@ -298,6 +320,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     listAt(byFile, item.file).push(entry);
   });
 
+  // The first hole (in coverage order) of a module: by its ID or by its file.
   const dependencyHoleIn = (moduleId: string, ignore?: ReadonlySet<string>): Hole | null => {
     const file = snapshot.nodes[moduleId]?.file;
     const open = (entry: IndexedHole): boolean => !ignore?.has(entry.item.kind);
@@ -308,6 +331,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     return first?.item ?? null;
   };
 
+  // The first hole among several modules, tried in ID order for a stable report.
   const holeAmong = (ids: Iterable<string>, ignore?: ReadonlySet<string>): Hole | null => {
     for (const id of [...ids].sort()) {
       const hole = dependencyHoleIn(id, ignore);
@@ -323,6 +347,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
   const scopeHole = (scope: string | null): Hole | null => orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!)) ?? null;
 
+  // A failure is reported twice on purpose: as a diagnostic and as a verdict.
   const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion, target?: string): void => {
     diagnostics.push(diagnostic(code, file, pointAt(line, col), message, target));
     verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message, spec));
@@ -351,6 +376,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   /** Pairs of an architecture module and a module `outside` it already reported (K107). */
   const outsidePairs = new Set<string>();
 
+  // Judge every resolved use edge once against all dependency rules, and note
+  // what it means for the layer orders checked afterwards.
   for (const edge of edges) {
     if (edge.resolution !== "resolved") continue;
     const pair = `${edge.fromUnit}\0${edge.toUnit}`;
@@ -367,6 +394,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const deciders = decision.winners;
     const denyWins = decision.denyWins;
 
+    // A matching deny that did not decide was overridden: remember by what, so
+    // its verdict can explain why it is `ok` (or warn about a baseline).
     for (const hit of hits) {
       if (hit.kind !== "deny" || deciders.includes(hit)) continue;
       const notes = overridden.get(hit.rule) ?? [];
@@ -421,6 +450,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       continue;
     }
 
+    // No rule decided: an upward edge breaks the layer order (K101, once per pair).
     if (!upward) continue;
     violated.add(fromLayer);
     violated.add(toLayer);
@@ -430,6 +460,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${docblockNote(edge)} (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
   }
 
+  // Each layer order without a violation is `ok`, or `unverified` when a
+  // dependency hole in its area could hide an upward edge.
   for (const order of rules.orders) {
     if (order.layers.some((layer) => violated.has(layer))) continue;
     // The area is the whole connected order, plus every layer that is in no order (nested, external, unassigned).
@@ -447,6 +479,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const hole = holeAmong(area, UNASSIGNED_FILE) ?? orphan ?? null;
     const names = order.layers.map((layer) => `\`${layer}\``).join(", ");
 
+    // The allows that kept an upward edge inside this order, named in the message.
     const allows = [...allowedUp.entries()]
       .filter(([key]) => {
         const [from, to] = key.split("\0");
@@ -476,6 +509,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (edge.kind === "reexport") listAt(reexportsOf, edge.from).push(edge.to);
   }
 
+  // The modules `scope` imports from, plus whatever they re-export transitively.
   const importedBy = (scope: readonly string[]): string[] => {
     const inScope = new Set(scope);
     const seen = new Set<string>();
@@ -493,6 +527,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     return [...seen];
   };
 
+  // Each deny that found no violation: `ok`, or `unverified` when a hole in
+  // its area (or in what it imports through) could hide an edge.
   for (const deny of rules.denies) {
     if (failedDenies.has(deny)) continue;
     const scope = [...modules].filter((id) => within(id, deny.a));
@@ -531,6 +567,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       return under.length > 0 ? under : [id];
     });
 
+    // Depth-first reachability over resolved module edges from the entries.
     const forward = new Map<string, string[]>();
 
     for (const edge of edges) {
@@ -588,6 +625,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
   }
 
+  // `exports`: the module's export table must equal the listed names, in both directions.
   for (const rule of rules.exportsRules) {
     const criterion = `exports ${rule.module}`;
     const spec = `${criterion}: ${[...rule.names].sort().join(", ")}`;
@@ -609,6 +647,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const unknown = actual.find((row) => row.name === "*");
     let failed = false;
 
+    // Exported but not listed: K104 per extra name.
     for (const row of actual) {
       if (row.name === "*" || rule.names.has(row.name.normalize("NFC"))) continue;
       failed = true;
@@ -641,6 +680,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     else pushOk(rule.file, rule.span, criterion, rule.module, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, spec);
   }
 
+  // `no-cycles`: strongly connected components of the runtime import graph,
+  // reported per rule for the components in its scope.
   if (rules.noCycles.length > 0) {
     const adj = new Map<string, Set<string>>();
 
@@ -699,6 +740,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
 
       const reachedOrphan = orphans.find(orphanHere);
 
+      // A hole matters only when no cycle was found: a found cycle fails anyway.
       const hole =
         relevant.length === 0
           ? under === null
@@ -716,6 +758,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
         continue;
       }
 
+      // One K105 per cycle, showing a concrete loop through a module in scope.
       for (const component of relevant) {
         const focus = component.find(inScope) ?? component[0] ?? "";
         const cycle = cycleThrough(adj, new Set(component), focus);
@@ -728,6 +771,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   return { diagnostics, verdicts };
 }
 
+// Coverage kinds that may hide a module-level dependency. Call holes are not
+// here: a call reaches another module's code only through an import.
 const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file", "unresolved-binding"]);
 
 /** A coverage entry of the snapshot: a hole when its kind is one of `DEPENDENCY_HOLES`. */
@@ -739,6 +784,7 @@ interface IndexedHole {
   order: number;
 }
 
+/** The list under `key`, created empty when missing. */
 function listAt<T>(map: Map<string, T[]>, key: string): T[] {
   const list = map.get(key);
 
@@ -778,6 +824,7 @@ function layerComponent(rules: EvaluatedRules, layer: string): Set<string> {
   const seen = new Set<string>();
   const stack = [layer];
 
+  // Walk the order both ways: up through `above`, down through any layer that has `current` above it.
   while (stack.length > 0) {
     const current = stack.pop();
 
@@ -803,6 +850,7 @@ function componentSpec(rules: EvaluatedRules, layer: string): string {
     .join("\n");
 }
 
+/** A rule that matches an edge, with its specificity score. */
 interface RuleHit {
   kind: "allow" | "deny";
   score: number;
@@ -811,6 +859,7 @@ interface RuleHit {
   target: string;
 }
 
+/** Why a deny did not decide an edge: the rule that won instead, and how. */
 interface OverrideNote {
   text: string;
   file: string;
@@ -826,6 +875,8 @@ interface OverrideNote {
 function ruleHits(rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean): RuleHit[] {
   const hits: RuleHit[] = [];
 
+  // A rule matches when the source is in its area and some target covers the
+  // edge's target; its score is the depth of its source plus that target.
   const consider = (list: Rule[], kind: "allow" | "deny"): void => {
     for (const rule of list) {
       if (!within(from, rule.a)) continue;
@@ -852,6 +903,7 @@ function ruleHits(rules: EvaluatedRules, from: string, to: string, within: (id: 
   return hits;
 }
 
+/** Source order of two rule hits: by file, then line. */
 function byHit(a: RuleHit, b: RuleHit): number {
   if (a.rule.file !== b.rule.file) return a.rule.file < b.rule.file ? -1 : 1;
 
@@ -876,6 +928,7 @@ function crossRules(a: RuleHit, b: RuleHit): boolean {
   return (sourceA && targetB) || (sourceB && targetA);
 }
 
+/** Both hits cover the same source area and the same target area. */
 function sameAreas(a: RuleHit, b: RuleHit): boolean {
   return a.rule.a === b.rule.a && a.target === b.target;
 }
@@ -885,6 +938,7 @@ function overManualRules(hits: readonly RuleHit[]): RuleHit[] {
   return hits.filter((hit) => !(hit.rule.generated && hits.some((other) => !other.rule.generated && sameAreas(other, hit))));
 }
 
+/** `id` is `scope` or an ID under it. */
 function areaWithin(id: string, scope: string): boolean {
   return id === scope || id.startsWith(`${scope}.`);
 }
@@ -915,6 +969,7 @@ function decide(all: readonly RuleHit[], format: RuleFormat): Decision {
   return { winners: undominated, denyWins: false };
 }
 
+/** The `; …` note a K102 adds for each incomparable allow the deny beat; empty when none. */
 function incomparableAside(deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat): string {
   const seen = new Set<Rule>();
   const parts: string[] = [];
@@ -936,7 +991,10 @@ function incomparableAside(deny: RuleHit, hits: readonly RuleHit[], format: Rule
   return parts.join("");
 }
 
+/** The `ok` message of a deny whose every edge another rule decided: which rules, and why they won. */
 function overrideEvidence(deny: Rule, targets: string, notes: readonly OverrideNote[]): string {
+  // Three groups, each deduplicated and sorted: manual rules over a baseline deny,
+  // strictly more specific rules, and incomparable rules that won on depth.
   const manual = [...new Set(notes.flatMap((note) => (note.baseline ? [note.text] : [])))].sort();
   const specific = [...new Set(notes.flatMap((note) => (!note.incomparable && !note.baseline ? [note.text] : [])))].sort();
 
@@ -961,6 +1019,8 @@ function incomparableWarnings(rules: EvaluatedRules, format: RuleFormat): Diagno
   const out: Diagnostic[] = [];
   const ruleset = [...rules.allows, ...rules.denies];
 
+  // Every allow/deny pair; among their target pairs keep the cross with the
+  // largest depth gap (ties by name) where the allow would win on depth.
   for (const allow of rules.allows) {
     for (const deny of rules.denies) {
       let best: { src: string; tgt: string; allowScore: number; denyScore: number } | null = null;
@@ -991,6 +1051,7 @@ function incomparableWarnings(rules: EvaluatedRules, format: RuleFormat): Diagno
       if (best === null) continue;
       const { src, tgt, allowScore, denyScore } = best;
 
+      // A rule written for exactly the overlap settles it: no warning.
       if (ruleset.some((rule) => rule.a === src && rule.b.includes(tgt))) continue;
       const where = `${deny.file}:${deny.span.start.line}`;
       const add = `add \`allow ${src} ${tgt}\` or \`deny ${src} ${tgt}\``;
@@ -1012,6 +1073,7 @@ function incomparableWarnings(rules: EvaluatedRules, format: RuleFormat): Diagno
  * K101, K103, and an unreachable module's entry verdict hash several lines themselves.
  */
 export function canonicalRuleSpec(spec: SpecIR, file: string, line: number): string | null {
+  // Look the line up in each kind of rule; each canonical text matches what its verdict hashes.
   const rules = collectRules(spec, () => undefined);
   const here = (span: Span, path: string): boolean => path === file && span.start.line === line;
   const entry = rules.entryNodes.find((item) => here(item.span, item.file));
@@ -1075,6 +1137,7 @@ function specific(rules: EvaluatedRules, from: string, to: string, within: (id: 
   return winner === undefined ? null : { kind: winner.kind, rule: winner.rule };
 }
 
+/** The rules of a spec, sorted by kind and ready to evaluate. */
 interface EvaluatedRules {
   any: boolean;
   /** Valid `layers` lines. */
@@ -1096,6 +1159,7 @@ interface EvaluatedRules {
 /** What `allow` / `deny` cannot scope: a member of a module rather than a layer, a module or a prefix. */
 const MEMBER_KINDS = new Set(["fn", "type", "event", "dep", "planned fn", "planned type", "planned event"]);
 
+/** Sorts the compiled rules by kind, rejects member-level dependency rules (K005), and settles the layer orders. */
 function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined): EvaluatedRules {
   const unordered = new Set<string>(UNORDERED_LAYERS);
   const allows: Rule[] = [];
@@ -1108,6 +1172,7 @@ function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined):
   const chains: LayerOrder[] = [];
   const nested: { file: string; target: string; span: Span }[] = [];
 
+  // Plain names nested under `layers` lines: layers that take part in no order.
   const takeNested = (file: string, refs: readonly { target: string; span: Span }[]): void => {
     for (const ref of refs) {
       if (ref.target.includes(".")) continue;
@@ -1149,9 +1214,11 @@ function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined):
   }
 
   for (const line of spec.rejectedLayers) takeNested(line.file, line.nested);
+  // Conflicts were reported by `compileSpec` already; this pass only rebuilds the order.
   const { orders, above } = combineOrders(chains, []);
   const ordered = new Set(orders.flatMap((order) => order.layers));
 
+  // A nested name that is also ordered stays ordered (that conflict is K005 elsewhere).
   for (const item of nested) {
     if (!ordered.has(item.target)) unordered.add(item.target);
   }
@@ -1174,6 +1241,7 @@ function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[])
   for (const chain of chains) {
     let conflict: [string, string] | null = null;
 
+    // A chain conflicts when it orders some pair the other way round from the orders before it.
     for (let i = 0; i < chain.layers.length && !conflict; i++) {
       for (let j = i + 1; j < chain.layers.length && !conflict; j++) {
         const lower = chain.layers[i]!;
@@ -1191,6 +1259,7 @@ function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[])
 
     orders.push(chain);
 
+    // Record the chain's adjacent pairs and recompute the closure for the next chain's check.
     for (let i = 0; i + 1 < chain.layers.length; i++) {
       const lower = chain.layers[i]!;
       const set = direct.get(lower) ?? new Set<string>();
@@ -1204,6 +1273,7 @@ function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[])
   return { orders, above };
 }
 
+/** Transitive closure of `direct`: each layer → every layer above it, by depth-first search. */
 function transitive(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
 
@@ -1235,6 +1305,7 @@ function base(snapshot: SnapshotView, criterion: string, area: string, verdict: 
   return { verdict, criterion, area, snapshotId: snapshot.snapshotId, specHash: hashText(spec), file, line, col, code, message };
 }
 
+/** Hex SHA-256 of a rule's canonical text: the verdict's specHash. */
 function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }

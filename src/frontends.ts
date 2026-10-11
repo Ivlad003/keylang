@@ -2,6 +2,10 @@
 // `FileFacts`, its resolver turns an import specifier into a file, and its
 // capabilities say which edges it looks for. Graph, snapshot and checks are
 // the same for every language; adding one means a frontend here.
+//
+// Pipeline: source → FileFacts (the frontend's extractor) → graph (via its
+// resolver). Entry points: `frontendFor(path)` and `frontendOf(language)`;
+// key terms: frontend, `FileFacts`, `SourceResolver`, edge kinds, globals.
 
 import type { Config } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
@@ -15,6 +19,7 @@ import { PhpResolver } from "./php-imports.ts";
 import { PythonResolver } from "./python-imports.ts";
 import { RustResolver } from "./rust-imports.ts";
 
+/** The per-language plug-in of the code pipeline: extractor, import resolver and what it can and cannot see. */
 export interface Frontend {
   name: string;
   extract(path: string, src: string): Promise<FileFacts>;
@@ -31,6 +36,7 @@ export interface Frontend {
   globals: { values: ReadonlySet<string>; types: ReadonlySet<string> };
 }
 
+// JavaScript and TypeScript share one frontend: the same extractor and resolver.
 const ecmascript: Frontend = {
   name: "ecmascript",
   extract: extractTs,
@@ -86,6 +92,7 @@ const php: Frontend = {
   globals: { values: new Set(), types: new Set() },
 };
 
+/** Each supported language mapped to the frontend that reads it. */
 const FRONTENDS: Record<Language, Frontend> = {
   javascript: ecmascript,
   php,
@@ -94,6 +101,7 @@ const FRONTENDS: Record<Language, Frontend> = {
   typescript: ecmascript,
 };
 
+/** The JS/TS resolver, with SFCC cartridge and PWA Kit lookups on unless `frameworks` excludes them. */
 function ecmascriptResolver(root: string, sources: ReadonlySet<string>, _files: readonly FileFacts[], config?: Pick<Config, "sfcc" | "frameworks">): SourceResolver {
   // `frameworks` in keylang.json that leaves `sfcc` out turns the cartridge path off with the adapter.
   const sfcc = config?.frameworks == null || config.frameworks.includes("sfcc");
@@ -103,25 +111,30 @@ function ecmascriptResolver(root: string, sources: ReadonlySet<string>, _files: 
   return new ImportResolver(root, sources, undefined, { cartridgePath: config?.sfcc.cartridgePath ?? null, sfcc, pwaKit });
 }
 
+/** Python resolver; it needs only the root and the known source files. */
 function pythonResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
   return new PythonResolver(root, sources);
 }
 
+/** Rust resolver; it needs only the root and the known source files. */
 function rustResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
   return new RustResolver(root, sources);
 }
 
+/** PHP resolver; it also needs the facts, since `use` names declarations rather than files. */
 function phpResolver(root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]): SourceResolver {
   return new PhpResolver(root, sources, files);
 }
 
+/** The frontend of a supported language. */
 export function frontendOf(language: Language): Frontend {
   return FRONTENDS[language];
 }
 
-/** The frontend for a source file; undefined for a file of no known language. */
+/** Re-exported so callers of a frontend can type its resolver without importing `imports.ts`. */
 export type { SourceResolver };
 
+/** The frontend for a source file; undefined for a file of no known language. */
 export function frontendFor(path: string): Frontend | undefined {
   const language = languageOf(path);
 

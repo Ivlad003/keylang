@@ -5,6 +5,9 @@
 // ends the process itself. While the screen belongs to someone else — a
 // terminal `$EDITOR`, or the shell after `Ctrl+Z` — the session's surface is
 // detached, so neither a finished analysis nor a resize draws over it.
+//
+// Layer: TUI entry. The CLI's `keylang` (no command) calls `runTerminal`; it
+// wires the process (stdin, stdout, signals, `$EDITOR`) to an `App`.
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -20,6 +23,7 @@ export function editorCommand(env: NodeJS.ProcessEnv, file: string, line: number
   const configured = (env.VISUAL ?? env.EDITOR ?? "").trim();
 
   if (configured === "") return null;
+  // Split the value into words; an empty value or one with only quotes names no editor.
   const [command, ...extra] = splitCommand(configured);
 
   if (!command) return null;
@@ -39,11 +43,14 @@ export function editorCommand(env: NodeJS.ProcessEnv, file: string, line: number
  * that names an existing file is one word, so a path with spaces works as is.
  */
 export function splitCommand(value: string, exists: (path: string) => boolean = existsSync): string[] {
+  // Fast path: an existing path with no quoting is a single word, spaces and all.
   if (!/["'\\]/.test(value) && exists(value)) return [value];
   const words: string[] = [];
   let word: string | null = null;
   let quote: '"' | "'" | null = null;
 
+  // A small shell-word state machine: outside quotes whitespace ends a word;
+  // inside double quotes a backslash escapes the next char; single quotes are literal.
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
 
@@ -77,6 +84,7 @@ export interface TerminalInput {
   resume(): void;
 }
 
+/** The terminal's output: its size, writes, and resize events. */
 export interface TerminalOutput {
   readonly columns?: number;
   readonly rows?: number;
@@ -85,6 +93,7 @@ export interface TerminalOutput {
   off(event: "resize", listener: () => void): void;
 }
 
+/** The signals the session reacts to. */
 export type TerminalSignal = "SIGTERM" | "SIGHUP" | "SIGINT" | "SIGQUIT" | "SIGTSTP" | "SIGCONT";
 
 /** What the terminal session needs from its process; `processHost()` is the real one. */
@@ -102,8 +111,10 @@ export interface TerminalHost {
 /** Whether the platform has job control: a stopped process the shell resumes with `fg`. */
 const JOB_CONTROL = process.platform !== "win32";
 
+/** The signals a real process listens for. */
 const SIGNALS: readonly TerminalSignal[] = ["SIGTERM", "SIGHUP", "SIGINT", "SIGQUIT", "SIGTSTP", "SIGCONT"];
 
+/** The real process as a `TerminalHost`. */
 export function processHost(): TerminalHost {
   return {
     stdin: process.stdin,
@@ -129,6 +140,7 @@ export function processHost(): TerminalHost {
 
 /** `session`: the operation runner or worker the session uses instead of its own (tests hold an operation with it). */
 export async function runTerminal(root: string, host: TerminalHost = processHost(), session: Pick<AppOptions, "operations" | "operationWorker"> = {}): Promise<number> {
+  // Track the session's end once: quit, signal or crash, whichever comes first.
   const { stdin, stdout } = host;
   const worker = new SnapshotWorker();
   let finish: (code: number) => void = () => {};
@@ -144,6 +156,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
 
   const size = (): [number, number] => [stdout.columns ?? 80, stdout.rows ?? 24];
 
+  // The session analyses through the snapshot worker, so the TUI thread stays responsive.
   const app = new App({
     root,
     cols: size()[0],
@@ -200,6 +213,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
    * happened; null once a terminal editor gave the screen back.
    */
   const openEditor = async (abs: string, line: number): Promise<string | null> => {
+    // Without a configured editor, nothing opens.
     const command = editorCommand(host.env, abs, line);
 
     if (!command) return "no $VISUAL or $EDITOR to open the code in";
@@ -218,6 +232,8 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
       });
     }
 
+    // A terminal editor takes the screen: give it away, run the editor attached
+    // to this terminal, and take the screen back unless the session ended meanwhile.
     if (finished) return null;
 
     if (away !== null) return `${place} not opened: the screen is with ${away === "editor" ? "the editor" : "the shell"}`;
@@ -241,12 +257,14 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     host.suspend();
   };
 
+  // The surface offers opening an editor and suspending only where they can work.
   const surface: Surface = { write: (ansi) => stdout.write(ansi) };
 
   if (editorCommand(host.env, "", 1)) surface.openEditor = openEditor;
 
   if (JOB_CONTROL) surface.suspend = stop;
 
+  // Signal handling: stop and resume for job control, and end the session on the rest.
   const onSignal = (signal: TerminalSignal): void => {
     if (signal === "SIGTSTP") return stop();
 
@@ -269,6 +287,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     end(2);
   };
 
+  // Take the screen, start listening, and draw the first frame; then wait for the end.
   stdin.setEncoding("utf8");
   enter();
   const unlisten = host.listen(onSignal, onCrash);
@@ -277,6 +296,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
   stdin.resume();
   app.attach(surface, ...size());
   const code = await done;
+  // Tear down in reverse, restoring the screen last.
   unlisten();
   stdin.off("data", onData);
   stdout.off("resize", onResize);

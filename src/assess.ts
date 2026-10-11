@@ -1,4 +1,8 @@
 // One assessment for `keylang check` and `keylang lsp`: the same diagnostics and verdicts.
+// Pipeline: parsed spec Documents (Markdown → IR) + the analysis snapshot
+// (code → graph) + test/trace evidence → resolve, rules, flows, wiring,
+// migration and system checks → one sorted list of diagnostics and verdicts.
+// Entry points: `assess`, `sameFinding` (used to merge a verdict with its diagnostic).
 
 import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
@@ -27,6 +31,7 @@ export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & {
   manifest?: { config: { layers: Record<string, readonly string[]> } };
 };
 
+/** The outcome of one assessment: the resolved index, every diagnostic (sorted) and every verdict. */
 export interface Assessment {
   index: Index;
   diagnostics: Diagnostic[];
@@ -56,6 +61,10 @@ export interface AssessEvidence {
   assessed?: (file: string) => boolean;
 }
 
+/**
+ * Assess spec documents against a snapshot (null: no code analysed yet) and the
+ * evidence. `format` is the rules format of `keylang.json`.
+ */
 export function assess(
   docs: readonly Document[],
   snapshot: SnapshotInput | null,
@@ -63,6 +72,8 @@ export function assess(
   format: RuleFormat = 1,
 ): Assessment {
   const { spec: whole, diagnostics: allSpecDiags } = compileSpec(docs);
+  // Scope to the assessed files (`check <file>`): all files still resolve references,
+  // but only claims and diagnostics of the assessed ones are reported.
   const assessed = evidence.assessed ?? (() => true);
   const own = <T extends { file: string }>(items: readonly T[]): T[] => items.filter((item) => assessed(item.file));
   const ownDocs = docs.filter((doc) => assessed(doc.path));
@@ -80,6 +91,7 @@ export function assess(
     return node?.kind !== "module" ? undefined : node.members === "opaque" ? "opaque" : "complete";
   };
 
+  // Resolve references with what only the snapshot knows: empty layers, opaque modules, known packages.
   const resolveContext: ResolveContext = { layers: Object.keys(snapshot?.manifest?.config.layers ?? {}) };
 
   if (nodes) resolveContext.members = members;
@@ -89,6 +101,7 @@ export function assess(
 
   const { index } = refined;
   const resolveDiags = own(refined.diagnostics);
+  // Run each checker over the scoped spec; flows need a snapshot to say anything.
   const rules = evaluateRules(spec, index, snapshot, ownDocs, format);
 
   const flows: FlowEvaluation = snapshot === null ? { diagnostics: [], verdicts: [] } : evaluateFlows(spec, index, flowInput(snapshot, evidence));
@@ -104,10 +117,13 @@ export function assess(
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
 
+  // Sorted by file, position and code so every run prints the same order.
   diagnostics.sort(compareDiagnostics);
   // A flow step reports its own ID verdict for the same reference.
   const flowIds = new Set(flows.verdicts.filter((verdict) => verdict.criterion === "ID").map((verdict) => `${verdict.file}:${verdict.line}`));
 
+  // References the resolver could not confirm become `unverified` ID verdicts,
+  // hashed by their canonical rule line so the hash survives reformatting.
   const refinedVerdicts: Verdict[] = own(refined.unverified).filter((item) => !flowIds.has(`${item.file}:${item.line}`)).map((item) => ({
     verdict: "unverified",
     criterion: "ID",
@@ -121,6 +137,7 @@ export function assess(
     message: item.message,
   }));
 
+  // An `ok` on a line whose tree the parser had to guess is downgraded to unverified.
   const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts, ...migration.verdicts, ...own(system.verdicts)], recoveredLines(docs));
 
   return { index, diagnostics, verdicts, spec: whole, systems: system.systems };
@@ -137,6 +154,7 @@ function recoveredLines(docs: readonly Document[]): Map<string, string> {
   for (const doc of docs) {
     const k003 = new Map<number, string>();
 
+    // The first K003 on each line, as `line:col`.
     for (const diag of doc.diagnostics) {
       const line = diag.span.start.line;
 
@@ -145,6 +163,7 @@ function recoveredLines(docs: readonly Document[]): Map<string, string> {
 
     if (k003.size === 0) continue;
 
+    // Walk the tree: a node on a K003 line, and every descendant of one, inherits that position.
     const visit = (node: Node, inherited: string | undefined): void => {
       const at = k003.get(node.span.start.line) ?? inherited;
 
@@ -176,6 +195,10 @@ function afterRecovery(verdicts: Verdict[], recovered: ReadonlyMap<string, strin
   });
 }
 
+/**
+ * Whether a diagnostic on the verdict's line reports the same finding: same or
+ * contained message, or a failed ID verdict and the K001 about the same target.
+ */
 export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]): boolean {
   return diagnostics.some((diag) => {
     if (diag.file !== verdict.file || diag.span.start.line !== verdict.line) return false;

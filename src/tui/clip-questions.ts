@@ -5,6 +5,8 @@
 // (spec П8). The counter next to the clip is the length of the list; the
 // chat says the list when it opens and on `/questions`, and the model reads
 // it with every message.
+// Layer: TUI. Reads the analysis (verdicts, flow IR) the session already has;
+// `clip.ts` and `clip-chat.ts` show and send the list.
 
 import type { Analysis } from "../analyze.ts";
 import { walkFlow } from "../spec-ir.ts";
@@ -23,6 +25,7 @@ function failKey(fail: Pick<Verdict, "file" | "line" | "message">): string {
   return `${fail.file}\0${fail.line}\0${fail.message}`;
 }
 
+/** The failing verdicts of an analysis. */
 function failsOf(analysis: Analysis): Verdict[] {
   return analysis.verdicts.filter((verdict) => verdict.verdict === "fail");
 }
@@ -34,12 +37,16 @@ function failsOf(analysis: Analysis): Verdict[] {
  * session's first) every fail was there before the session.
  */
 export function newFailsAfter(counted: readonly Verdict[], previous: Analysis | null, next: Analysis): Verdict[] {
+  // Keys of what `next` reports, and of what was there before it (on the first
+  // analysis, the same set, so nothing counts as new).
   const now = failsOf(next);
   const reported = new Set(now.map(failKey));
   const before = new Set((previous === null ? now : failsOf(previous)).map(failKey));
+  // Fails counted earlier stay only while `next` still reports them.
   const kept = counted.filter((fail) => reported.has(failKey(fail)));
   const seen = new Set(kept.map(failKey));
 
+  // Then append fails `next` reports that were neither there before nor already counted, in `next`'s order.
   for (const fail of now) {
     const key = failKey(fail);
 
@@ -55,6 +62,7 @@ export function newFailsAfter(counted: readonly Verdict[], previous: Analysis | 
 function questionsIn(analysis: Analysis, path: string): OpenQuestion[] {
   const found: OpenQuestion[] = [];
 
+  // Walk only the flows of this file; a nested `- ?` item anywhere in a flow counts.
   for (const flow of analysis.spec.flows) {
     if (flow.file !== path) continue;
     walkFlow(flow, (item) => {
@@ -65,6 +73,7 @@ function questionsIn(analysis: Analysis, path: string): OpenQuestion[] {
   return found;
 }
 
+/** `file:line`, the key that merges the same place named by two sources. */
 const placeOf = (question: OpenQuestion): string => `${question.file}:${question.line}`;
 
 /**
@@ -77,12 +86,15 @@ const placeOf = (question: OpenQuestion): string => `${question.file}:${question
  */
 export function openQuestions(state: Pick<State, "current" | "analysis" | "featureLine" | "clip">): OpenQuestion[] {
   const path = state.current;
+  // The three sources: `- ?` lines of the open file, the open feature's non-question
+  // gaps (only when the feature line is about the open file), and the new fails.
   const lines = path === null || state.analysis === null ? [] : questionsIn(state.analysis, path);
   const feature = state.featureLine;
   const gaps = feature === null || feature.path !== path ? [] : feature.gaps.filter((gap) => gap.kind !== "question").map((gap) => ({ file: gap.file, line: gap.line, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
   const fails = state.clip.newFails.map((fail) => ({ file: fail.file, line: fail.line, text: `✗ ${fail.code ?? fail.criterion} ${fail.message}` }));
   const list: OpenQuestion[] = [];
 
+  // Merge the sources in priority order; a place an earlier source named is dropped from later ones.
   for (const source of [lines, gaps, fails]) {
     const named = new Set(list.map(placeOf));
     list.push(...source.filter((question) => !named.has(placeOf(question))));

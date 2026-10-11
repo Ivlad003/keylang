@@ -17,11 +17,16 @@
 //
 // Its config files are each project's `package.json`, `routes.*` and
 // `ssr.*` of `app/` and of the overrides' `app/`.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse),
+// plus `extensibilityOf`/`projects` for the import resolver. Entry points:
+// `pwaKit`, `projects`, `extensibilityOf`.
 
 import { posix } from "node:path";
 import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
 import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
 
+/** The runtime package whose dependency marks a PWA Kit project. */
 const RUNTIME = "@salesforce/pwa-kit-runtime";
 
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
@@ -29,6 +34,7 @@ const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"
 /** `app/routes.jsx`, `overrides/app/ssr.js`: the files that place a project. */
 const PROJECT_FILE = /^(?:(.*)\/)?app\/(?:routes|ssr)\.(?:js|jsx|ts|tsx|mjs)$/;
 
+/** Extensions tried for `routes.*` and `ssr.*`. */
 const EXTENSIONS = ["js", "jsx", "ts", "tsx", "mjs"];
 
 /** Template extensibility of a `package.json`: the base package and the overrides directory (POSIX, relative to the manifest, no `./`). */
@@ -42,6 +48,7 @@ export function extensibilityOf(manifest: JsonValue): Extensibility | null {
   const cc = isJsonObject(manifest) ? manifest.ccExtensibility : undefined;
 
   if (!isJsonObject(cc) || !isJsonString(cc.extends) || cc.extends === "") return null;
+  // Normalise `overridesDir` to POSIX, relative, without `./` or a trailing slash; the manifest's own directory is "".
   const dir = isJsonString(cc.overridesDir) ? posix.normalize(cc.overridesDir.replace(/\\/g, "/").replace(/^\/+/, "")).replace(/^\.\/?/, "").replace(/\/$/, "") : "";
 
   return { base: cc.extends, overridesDir: dir === "." ? "" : dir };
@@ -56,10 +63,12 @@ export const pwaKit: FrameworkAdapter = {
   files(context) {
     const out: { path: string; owner: string | null }[] = [];
 
+    // A file is listed once, and only when it exists and is analysed.
     const add = (path: string, owner: string | null): void => {
       if (!out.some((f) => f.path === path) && context.analysed(path) && context.read(path) !== null) out.push({ path, owner });
     };
 
+    // Per project: its manifest, then `routes.*` and `ssr.*` of `app/` and of the overrides' `app/`.
     for (const { dir, extensibility } of projects(context)) {
       const at = (rel: string): string => (dir === "" ? rel : `${dir}/${rel}`);
       add(at("package.json"), dir === "" ? null : dir);
@@ -68,11 +77,13 @@ export const pwaKit: FrameworkAdapter = {
       for (const app of apps) for (const name of ["routes", "ssr"]) for (const ext of EXTENSIONS) add(at(`${app}/${name}.${ext}`), dir === "" ? null : dir);
     }
 
+    // Sorted by path (code units) so the config file order is stable.
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse(path, text) {
     const facts: ConfigFacts = { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], error: null };
 
+    // Only `package.json` is parsed here, and only to report malformed JSON; the sources are read as code.
     if (posix.basename(path) !== "package.json") return facts;
 
     try {
@@ -91,6 +102,7 @@ export const pwaKit: FrameworkAdapter = {
 
 /** The PWA Kit projects of the analysis: the root, and each directory above an `app/routes.*` or `app/ssr.*`, whose `package.json` says so. */
 export function projects(context: Pick<FrameworkContext, "sources" | "read">): { dir: string; extensibility: Extensibility | null }[] {
+  // Candidate project dirs: the root, each directory holding a project file, and every ancestor of it.
   const dirs = new Set<string>([""]);
 
   for (const path of context.sources) {
@@ -109,6 +121,7 @@ export function projects(context: Pick<FrameworkContext, "sources" | "read">): {
 
   const out: { dir: string; extensibility: Extensibility | null }[] = [];
 
+  // Keep a candidate only if its `package.json` writes `ccExtensibility` or depends on the runtime.
   for (const dir of [...dirs].sort()) {
     const manifest = readJson(context.read(dir === "" ? "package.json" : `${dir}/package.json`));
     const extensibility = extensibilityOf(manifest);
@@ -120,6 +133,7 @@ export function projects(context: Pick<FrameworkContext, "sources" | "read">): {
   return out;
 }
 
+/** Parse a JSON file, tolerating a BOM; missing or malformed JSON is `null`. */
 function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 

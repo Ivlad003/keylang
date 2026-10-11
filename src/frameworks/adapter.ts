@@ -12,6 +12,11 @@
 // reads it from the extractor's facts of those files (`code`) instead.
 // A framework that wires in code (Laravel, Symfony attributes) also has a
 // reader of the extractor's facts in `src/framework-code/`, beside the graph.
+//
+// Pipeline: source → FileFacts → graph, with adapters feeding config facts
+// into the graph step. This module holds the shared contract: the fact types
+// (`ConfigFacts` and its parts), `FrameworkAdapter`, the adapter registry
+// `FRAMEWORK_ADAPTERS`, `activeAdapters`, and the cache-shape check `isConfigFacts`.
 
 import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, type JsonObject, type JsonValue } from "../json.ts";
 import { laravel } from "./laravel.ts";
@@ -340,6 +345,7 @@ export interface FrameworkContext {
   isOutside(path: string): boolean;
 }
 
+/** One framework adapter: how to detect the framework, which config files it executes, and how to read them. */
 export interface FrameworkAdapter {
   /** The name in `frameworks` of `keylang.json` and in `manifest.frameworks`. */
   name: string;
@@ -397,6 +403,7 @@ export const FRAMEWORK_CONFIG = "framework:";
 /** Adapters keylang has, by name. */
 export const FRAMEWORK_ADAPTERS: readonly FrameworkAdapter[] = [laravel, magento, nestjs, pwaKit, reactRouter, sfcc, symfony, django, fastapi, flask, celery, express, fastify, next];
 
+/** Adapter names, sorted, for `keylang.json` validation and listings. */
 export const FRAMEWORK_NAMES: readonly string[] = FRAMEWORK_ADAPTERS.map((a) => a.name).sort();
 
 /**
@@ -416,6 +423,7 @@ export function typeLabel(t: TypeName): string {
 
 /** Whether a cached value has the shape of `ConfigFacts`; a cache entry of another shape is parsed again. */
 export function isConfigFacts(value: unknown): value is ConfigFacts {
+  // Every required list must be present and well-formed; an optional list may be absent but not malformed.
   if (!isCachedObject(value)) return false;
 
   return (
@@ -443,22 +451,27 @@ function isCachedObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Has an integer `line` and `col`. */
 function isAt(value: JsonObject): boolean {
   return Number.isInteger(value.line) && Number.isInteger(value.col);
 }
 
+/** A `TokenRef` shape: a string token or a name with its file. */
 function isToken(value: JsonValue | undefined): boolean {
   return isJsonObject(value) && ((value.kind === "string" && isJsonString(value.value)) || (value.kind === "name" && isJsonString(value.name) && isJsonString(value.file)));
 }
 
+/** A `TypeName` shape: a name, with an optional file. */
 function isTypeName(value: JsonValue | undefined): boolean {
   return isJsonObject(value) && isJsonString(value.name) && (value.file === undefined || isJsonString(value.file));
 }
 
+/** An array of strings. */
 function isStringList(value: JsonValue | undefined): boolean {
   return Array.isArray(value) && value.every(isJsonString);
 }
 
+/** An array whose every item is a JSON object passing `check`; anything else (including absent) fails. */
 function every(value: JsonValue | undefined, check: (item: JsonObject) => boolean): boolean {
   return Array.isArray(value) && value.every((item) => isJsonObject(item) && check(item));
 }

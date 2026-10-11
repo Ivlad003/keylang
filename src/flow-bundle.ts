@@ -11,6 +11,11 @@
 // (`# migration <name>`, business-flows/27). Language-independent: IDs,
 // layers and paths are the same for TS/JS, Python, Rust and PHP. Pure; the
 // operations read the repository and write.
+//
+// Works on the spec side (flow sections parsed to IR) plus the snapshot for
+// node details. Entry points: export `bundleNodes` + `bundleText`; import
+// `parseBundle`, layer placement (`parseLayerMap`, `algoLayers`,
+// `layerMapRequest`, `parseLayerMapAnswer`), `importPlan`, `withMigration`.
 
 import { firstSentence } from "./brief.ts";
 import { globPrefix } from "./glob.ts";
@@ -27,11 +32,13 @@ export const BUNDLE_MARK = "keylang:bundle";
 /** The info string of the block reserved for the diagram's layout (business-flows/25 fills it). */
 export const LAYOUT_INFO = "keylang-layout";
 
+/** The bundle format this keylang writes and reads; any other is refused. */
 export const BUNDLE_FORMAT = 1;
 
 /** The migration table a bundle's import adds rows to (business-flows/27). */
 export const MIGRATION_FILE = "migration.md";
 
+/** The `##` headings of the bundle's tables; the parser finds each table by its exact heading. */
 const SECTIONS = { layers: "## Шари", nodes: "## Вузли", tests: "## Тести", reached: "## Події й інтеграції" } as const;
 
 /** Where a bundle came from. */
@@ -48,6 +55,7 @@ export interface BundleHeader {
   withCallees: number;
 }
 
+/** A layer of the source repository as the bundle describes it. */
 export interface BundleLayer {
   name: string;
   /** The globs of `keylang.json`. */
@@ -56,6 +64,7 @@ export interface BundleLayer {
   description: string;
 }
 
+/** One row of the nodes table: a node the flows name or reach, with its source details. */
 export interface BundleNode {
   id: string;
   /** `fn`, `type`, `module`, `layer`, or a planned kind. */
@@ -72,6 +81,7 @@ export interface BundleNode {
   flows: string[];
 }
 
+/** A `test` line of a flow. */
 export interface BundleTest {
   flow: string;
   file: string;
@@ -99,6 +109,7 @@ export interface BundleFlow {
   text: string;
 }
 
+/** A bundle as parsed back from its Markdown file. */
 export interface Bundle {
   header: BundleHeader;
   layers: BundleLayer[];
@@ -127,6 +138,7 @@ export interface ExportFlow {
 export function flowIds(text: string): string[] {
   const out: string[] = [];
 
+  // Spots are in text order; keep each ID at its first mention.
   for (const spot of idSpots(text)) if (!out.includes(spot.id)) out.push(spot.id);
 
   return out;
@@ -163,6 +175,8 @@ export function flowEvents(flow: string, text: string): BundleReach[] {
 export function bundleNodes(snapshot: AnalysisSnapshot, flows: readonly ExportFlow[], withCallees: number): BundleNode[] {
   const rows = new Map<string, BundleNode>();
 
+  // The first role an ID gets sticks (a flow's own mention beats a callee
+  // depth); later flows only add their name.
   const add = (id: string, role: string, flow: string): void => {
     const known = rows.get(id);
 
@@ -175,6 +189,8 @@ export function bundleNodes(snapshot: AnalysisSnapshot, flows: readonly ExportFl
     rows.set(id, { ...describe(snapshot, id), role, flows: [flow] });
   };
 
+  // First pass: every ID a flow names; an ID only planned takes its kind
+  // and signature from the `planned` line.
   for (const flow of flows) {
     const planned = plannedIn(flow.text);
 
@@ -187,6 +203,8 @@ export function bundleNodes(snapshot: AnalysisSnapshot, flows: readonly ExportFl
     }
   }
 
+  // Second pass: breadth-first down resolved calls, `withCallees` levels deep,
+  // per flow; only fns of the repository, never packages.
   for (const flow of flows) {
     let level = flowIds(flow.text).filter((id) => snapshot.nodes[id]?.kind === "fn");
     const seen = new Set(level);
@@ -212,6 +230,7 @@ export function bundleNodes(snapshot: AnalysisSnapshot, flows: readonly ExportFl
   return [...rows.values()];
 }
 
+/** A node's row fields from the snapshot; an unknown ID gets kind `?` and its first segment as layer. */
 function describe(snapshot: AnalysisSnapshot, id: string): Omit<BundleNode, "role" | "flows"> {
   const node = snapshot.nodes[id];
 
@@ -231,6 +250,8 @@ function describe(snapshot: AnalysisSnapshot, id: string): Omit<BundleNode, "rol
 export function bundleText(input: { header: BundleHeader; layers: readonly BundleLayer[]; nodes: readonly BundleNode[]; tests: readonly BundleTest[]; reached: readonly BundleReach[]; flows: readonly ExportFlow[]; layout?: string }): string {
   const { header } = input;
 
+  // Header comment, an intro sentence, then the four tables; an empty table
+  // is written as a sentence instead, so the file stays valid keylang prose.
   const lines: string[] = [
     `<!-- ${BUNDLE_MARK} format=${header.format} repo=${word(header.repo)} commit=${word(header.commit)} snapshot=${word(header.snapshotId)} keylang=${word(header.keylang)} flows=${header.flows.join(",")} with-callees=${header.withCallees} -->`,
     "",
@@ -262,6 +283,7 @@ export function bundleText(input: { header: BundleHeader; layers: readonly Bundl
     "",
   ];
 
+  // Then each flow section, separated by blank lines.
   for (const flow of input.flows) lines.push(...withBundleComment(flow).trimEnd().split("\n"), "");
   // The diagram's fragment (business-flows/25): JSON with no line a fence could close on.
   const layout = (input.layout ?? "").replace(/\r\n/g, "\n").trim();
@@ -291,12 +313,14 @@ function word(value: string): string {
   return value.replace(/\s/g, "%20").replace(/-->/g, "--%3E") || "n/a";
 }
 
+/** A table cell as inline code; a value that already holds a backtick is left as plain text. */
 function code(value: string): string {
   const v = cell(value);
 
   return v === "" ? "" : v.includes("`") ? v : `\`${v}\``;
 }
 
+/** A table cell of prose, with `<` escaped so it opens no HTML. */
 function text(value: string): string {
   return cell(value).replaceAll("<", "&lt;");
 }
@@ -306,6 +330,7 @@ function cell(value: string): string {
   return value.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
 }
 
+/** One Markdown table row. */
 function row(cells: readonly string[]): string {
   return `| ${cells.join(" | ")} |`;
 }
@@ -319,6 +344,7 @@ export function parseBundle(source: string): Bundle | { error: string } {
   const headerLine = lines.find((line) => line.startsWith(`<!-- ${BUNDLE_MARK} format=`));
 
   if (headerLine === undefined) return { error: `not a keylang bundle: no \`<!-- ${BUNDLE_MARK} format=… -->\` header (\`keylang flow export\` writes one)` };
+  // `key=value` pairs of the header, with `word`'s escapes undone.
   const fields = new Map([...headerLine.matchAll(/(\S+?)=(\S*)/g)].map((m) => [m[1]!, m[2]!.replace(/%20/g, " ").replace(/--%3E/g, "-->")]));
   const format = Number(fields.get("format"));
 
@@ -334,6 +360,8 @@ export function parseBundle(source: string): Bundle | { error: string } {
     withCallees: Number(fields.get("with-callees") ?? 0) || 0,
   };
 
+  // The rows of the table under an exact heading, up to the next heading
+  // or fence; non-table lines (an empty-table sentence) are skipped.
   const table = (heading: string): string[][] => {
     const at = lines.indexOf(heading);
 
@@ -368,6 +396,8 @@ export function parseBundle(source: string): Bundle | { error: string } {
 
   const tests = table(SECTIONS.tests).map(([flow, file, name]) => ({ flow: (flow ?? "").trim(), file: plain(file), name: unescapeText(name ?? "") }));
   const reached = table(SECTIONS.reached).map(([flow, kind, what, where]) => ({ flow: (flow ?? "").trim(), kind: (kind ?? "").trim(), what: unescapeText(what ?? ""), where: plain(where) === "" ? null : plain(where) }));
+  // The layout block is the last part of the file; flows are read only
+  // from the text before it.
   const layoutAt = lines.findIndex((line) => line.trim() === "```" + LAYOUT_INFO);
   let layout = "";
 
@@ -377,6 +407,8 @@ export function parseBundle(source: string): Bundle | { error: string } {
   }
 
   const end = layoutAt === -1 ? lines.length : layoutAt;
+  // Parse the bundle as keylang to find `# flow` headings; each flow's text
+  // runs from its heading to the next section heading.
   const doc = parse("bundle.md", lines.slice(0, end).join("\n"));
   const headings = doc.sections.filter((section) => section.heading !== null);
   const flows: BundleFlow[] = [];
@@ -400,6 +432,7 @@ function cells(line: string): string[] {
   const out: string[] = [];
   let current = "";
 
+  // Split on unescaped `|`; `\|` becomes a literal `|` in the cell.
   for (let i = 0; i < inner.length; i++) {
     const c = inner[i]!;
 
@@ -424,6 +457,7 @@ function plain(value: string | undefined): string {
   return v.length >= 2 && v.startsWith("`") && v.endsWith("`") ? v.slice(1, -1) : v;
 }
 
+/** Undo `text`'s escaping of `<`. */
 function unescapeText(value: string): string {
   return value.trim().replaceAll("&lt;", "<");
 }
@@ -455,6 +489,8 @@ export interface LayerChoice {
 export function parseLayerMap(text: string): Map<string, string> | { error: string } {
   const out = new Map<string, string>();
 
+  // Each comma-separated part must be exactly `old=new` without spaces; a
+  // source layer may be mapped once.
   for (const part of text.split(",").map((p) => p.trim()).filter((p) => p !== "")) {
     const m = /^([^=\s]+)=([^=\s]+)$/.exec(part);
 
@@ -481,6 +517,7 @@ export function usedLayers(bundle: Bundle): string[] {
     if (layer !== null) out.add(layer.name);
   }
 
+  // Packages keep their IDs; they are never placed onto a layer.
   out.delete("external");
 
   return [...out].sort(compareText);
@@ -495,6 +532,7 @@ export function algoLayers(layers: readonly string[], target: readonly TargetLay
   const notes: string[] = [];
   const first = target[0]?.name;
 
+  // Layers the flag or the model already placed are skipped.
   for (const layer of layers) {
     if (taken.has(layer)) continue;
 
@@ -510,6 +548,7 @@ export function algoLayers(layers: readonly string[], target: readonly TargetLay
 
 /** The model's request: which target layer each source layer's code belongs in, by names, roots and descriptions. */
 export function layerMapRequest(bundle: Bundle, layers: readonly string[], target: readonly TargetLayer[]): LlmRequest {
+  // Up to eight sample nodes per source layer give the model something concrete.
   const sample = (layer: string): string[] => bundle.nodes.filter((n) => n.layer === layer || n.id.startsWith(`${layer}.`)).slice(0, 8).map((n) => `    - \`${n.id}\` (${n.kind})${n.doc ? `: ${n.doc}` : ""}`);
 
   const source = layers.map((name) => {
@@ -520,6 +559,8 @@ export function layerMapRequest(bundle: Bundle, layers: readonly string[], targe
 
   const own = target.map((t) => `- ${t.name}: roots ${t.globs.join(", ") || "?"}${t.description ? `; ${t.description}` : ""}`);
 
+  // The other repository's text is fenced as untrusted data: a bundle may
+  // come from anywhere, so it must not be able to steer the model.
   const prompt = [
     "<untrusted-bundle>",
     untrusted([`Source layers (from ${bundle.header.repo}):`, ...source].join("\n")),
@@ -547,6 +588,7 @@ export function untrusted(text: string): string {
 /** The model's answer checked: each value a target layer, each key a layer asked for; anything else is noted and left to the algorithm. */
 export function parseLayerMapAnswer(answer: string, layers: readonly string[], target: readonly TargetLayer[]): LayerPlacement {
   const value = jsonOf(answer);
+  // Accept `{"layers": {...}}` or, leniently, the bare mapping object.
   const map = isJsonObject(value) && isJsonObject(value.layers) ? value.layers : isJsonObject(value) ? value : null;
 
   if (map === null) return { choices: [], notes: ["the model's layer map is not JSON with a `layers` object: the algorithm maps every layer"] };
@@ -564,6 +606,7 @@ export function parseLayerMapAnswer(answer: string, layers: readonly string[], t
   return { choices, notes };
 }
 
+/** The JSON object in a model's answer: a code fence stripped, then the text from the first `{` to the last `}`. */
 function jsonOf(answer: string): JsonValue | undefined {
   const text = answer.trim().replace(/^```[a-z]*\s*\n([\s\S]*)\n```$/i, "$1");
   const from = text.indexOf("{");
@@ -605,6 +648,7 @@ export interface ImportPlan {
   notes: string[];
 }
 
+/** What the import needs to know of the target repository. */
 export interface ImportTarget {
   layers: readonly TargetLayer[];
   /** IDs the target's code already has: stepped on as they are, not planned. */
@@ -624,6 +668,7 @@ export function importPlan(bundle: Bundle, choices: readonly LayerChoice[], targ
   const to = new Map(choices.map((c) => [c.from, c.to]));
   const notes: string[] = [];
 
+  // Swap an ID's first segment (its layer) for the chosen target layer.
   const rehome = (id: string): string => {
     const [layer, ...rest] = id.split(".");
     const mapped = to.get(layer!);
@@ -637,6 +682,8 @@ export function importPlan(bundle: Bundle, choices: readonly LayerChoice[], targ
     return t && t.globs[0] !== undefined ? globPrefix(t.globs[0]) : null;
   };
 
+  // Move a test path from its source layer's root to the target layer's
+  // first root; a path under no known layer is kept.
   const rehomePath = (path: string): string => {
     const at = layerOfPath(bundle.layers, path);
 
@@ -656,6 +703,9 @@ export function importPlan(bundle: Bundle, choices: readonly LayerChoice[], targ
   const layerNote = choices.map((c) => `${c.from}=${c.to}`).join(",");
   const provenance = `<!-- keylang:import from=${word(bundle.header.repo)}@${word(bundle.header.commit)} snapshot=${word(bundle.header.snapshotId)} bundle=${word(options.bundleFile)} layer-map=${layerNote || "-"} mode=${options.mode} -->`;
 
+  // Per flow: the IDs it names, then the nodes the bundle attributes to it
+  // (its callees). Each target ID is planned once in the whole file, never
+  // when the target already has it in code or in another spec.
   const flows = bundle.flows.map((flow) => {
     const own = bundle.nodes.filter((n) => n.flows.includes(flow.name)).map((n) => n.id);
     const named = flowIds(flow.text);
@@ -698,6 +748,7 @@ export function importPlan(bundle: Bundle, choices: readonly LayerChoice[], targ
   return { flows, migration: `${migration}\n`, ids, notes };
 }
 
+/** The kinds a `planned` line can declare; any other kind becomes `fn`. */
 const PLANNED_KINDS = new Set(["fn", "module", "type", "event"]);
 
 /** `- planned <kind> <id> <signature>`; a signature the grammar would not read as one line of words is left out (noted). */
@@ -706,6 +757,8 @@ function plannedLine(kind: string | undefined, id: string, signature: string | n
   const plain = `- planned ${decl} ${id}`;
 
   if (signature === null || signature.trim() === "") return plain;
+  // Parse the candidate line in a scratch flow: a signature that makes a
+  // diagnostic, or holds comment markers, would break the spec.
   const line = `${plain} ${signature.replace(/\s+/g, " ").trim()}`;
   const doc = parse("planned.md", `# flow x\n\n${line}\n`);
 
@@ -721,6 +774,8 @@ function plannedLine(kind: string | undefined, id: string, signature: string | n
 /** The flow's text with IDs and test paths replaced, the bundle's comment turned into the import's provenance, and the planned lines before the first item. */
 function rehomedFlow(text: string, rehome: (id: string) => string, rehomePath: (path: string) => string, provenance: string, planned: readonly string[]): string {
   const body = text.replace(/\r\n/g, "\n");
+  // Collect replacements by offset (IDs and test paths), then apply them
+  // from the end so earlier offsets stay valid.
   const edits: { start: number; end: number; text: string }[] = [];
 
   for (const spot of idSpots(body)) edits.push({ start: spot.start, end: spot.end, text: rehome(spot.id) });
@@ -731,6 +786,8 @@ function rehomedFlow(text: string, rehome: (id: string) => string, rehomePath: (
   let out = body;
 
   for (const edit of edits.sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  // Rebuild the section: heading, provenance, the prose before the first
+  // list item, then the planned lines ahead of the flow's items.
   const lines = out.trimEnd().split("\n").filter((line) => !line.startsWith(`<!-- ${BUNDLE_MARK} `));
   const [heading, ...rest] = lines;
 
@@ -754,6 +811,8 @@ export function withMigration(existing: string | null, name: string, section: st
   if (existing === null || existing.trim() === "") return section;
   const text = existing.replace(/\r\n/g, "\n");
   const lines = text.replace(/\n*$/, "").split("\n");
+  // Find the section by parsing; replace its lines up to the next heading,
+  // or append it when the file has no section of that name.
   const sections = parse("migration.md", text).sections;
   const index = sections.findIndex((s) => s.kind === "migration" && s.name?.value === name);
 
@@ -775,12 +834,14 @@ interface IdSpot {
   end: number;
 }
 
+/** The top-level list nodes of every `# flow` section of `text`. */
 function flowNodes(text: string): Node[] {
   const doc = parse("flow.md", text);
 
   return doc.sections.filter((s: Section) => s.kind === "flow").flatMap((s) => s.items.flatMap((item) => (item.type === "node" ? [item] : [])));
 }
 
+/** Every place `text` names an ID, sorted by offset. */
 function idSpots(text: string): IdSpot[] {
   const out: IdSpot[] = [];
 
@@ -790,6 +851,7 @@ function idSpots(text: string): IdSpot[] {
       out.push({ id: ref.target, start: span.start.offset, end: span.end.offset });
     }
 
+    // `- planned <kind> <id> …`: the ID is the third token.
     if (n.kind === "planned" && n.id !== null) {
       const token = n.tokens[2];
 

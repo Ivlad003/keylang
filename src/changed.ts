@@ -2,6 +2,9 @@
 // touch the changed files: a changed spec (every finding in that file), a
 // rule whose scope contains a changed module, and a flow with a step whose
 // code is in a changed file. `hook stop` maps the fails that remain to JSON.
+// Sits after `assess` (spec IR + snapshot → diagnostics and verdicts) and
+// before the CLI output. Entry points: `filterChanged`, `hookFails`,
+// `hookDecision`, `parseHookEvent`, `uncheckedTurn`.
 
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
@@ -11,6 +14,7 @@ import { isJsonBoolean, isJsonObject, parseJson, type JsonValue } from "./json.t
 import { walkFlow, type SpecIR } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
+/** One full assessment plus the snapshot nodes (and edges) needed to tie findings to files. */
 export interface ChangedInput {
   docs: readonly Document[];
   spec: SpecIR;
@@ -30,12 +34,14 @@ export interface ChangedEdge {
   typeOnly?: true;
 }
 
+/** One failure the stop hook reports: where, and the text a person reads. */
 export interface HookFail {
   file: string;
   line: number;
   text: string;
 }
 
+/** A rule line and the modules or layers it is about. */
 interface RuleHit {
   file: string;
   line: number;
@@ -51,21 +57,28 @@ interface RuleHit {
  * flow step that named it is still in the report. Order is preserved.
  */
 export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []): ChangedReport {
+  // An ID is gone when it is a deleted module or lies under one.
   const gone = (id: string): boolean => deleted.some((scope) => id === scope || id.startsWith(`${scope}.`));
 
+  // The modules whose files changed, with their layer (else the first ID segment).
   const modules = Object.entries(input.nodes)
     .filter(([, node]) => node.kind === "module" && node.file !== null && changed.has(node.file))
     .map(([id, node]) => ({ id, layer: node.layer ?? id.split(".")[0] ?? id }));
 
+  // Rules whose scope covers a changed module; flows with a step in a changed or deleted file.
   const rules = modules.length === 0 ? [] : ruleHits(input).filter((rule) => modules.some((mod) => covers(rule.scope, mod.id, mod.layer)));
   const flowLines = flowLinesTouching(input, changed, gone);
   const ruleLine = (file: string, line: number): boolean => rules.some((rule) => rule.file === file && rule.line === line);
   const ruleCriterion = (criterion: string): boolean => rules.some((rule) => rule.criterion === criterion);
 
+  // Keep a verdict when its spec file changed, it sits in a touched flow or rule
+  // line, it shares a touched rule's criterion (a fail reported on the code
+  // line), or it is about a deleted module.
   const verdicts = input.verdicts.filter(
     (verdict) => changed.has(verdict.file) || flowLines.has(`${verdict.file}:${verdict.line}`) || ruleLine(verdict.file, verdict.line) || ruleCriterion(verdict.criterion) || gone(verdict.area),
   );
 
+  // Keep a diagnostic by the same tests, or because it is the same finding as a kept verdict.
   const diagnostics = input.diagnostics.filter(
     (diag) => changed.has(diag.file) || ruleLine(diag.file, diag.span.start.line) || (diag.target !== undefined && gone(diag.target)) || verdicts.some((verdict) => sameFinding(verdict, [diag])),
   );
@@ -95,6 +108,7 @@ export function hookFails(report: { diagnostics: readonly Diagnostic[]; verdicts
 /** Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON. */
 export function hookDecision(event: HookEvent, fails: readonly HookFail[]): string {
   if (event.stop_hook_active === true || fails.length === 0) return "{}\n";
+  // One `file:line: text` line per fail, so the agent sees what to fix.
   const reason = fails.map((fail) => `${fail.file}:${fail.line}: ${fail.text}`).join("\n");
 
   return `${JSON.stringify({ decision: "block", reason })}\n`;
@@ -120,6 +134,7 @@ export interface HookEvent {
  * prefix is dropped; a reason of several lines is kept on one.
  */
 export function uncheckedTurn(error: string): UncheckedTurn {
+  // Strip the command prefix and fold the reason onto a single line.
   const reason = error.replace(/^hook stop: /, "").trim().replace(/\s*\n\s*/g, " ");
   const line = `keylang: this turn was not checked: ${reason}`;
 
@@ -128,6 +143,7 @@ export function uncheckedTurn(error: string): UncheckedTurn {
 
 /** The object on stdin. Empty stdin is an event with no `stop_hook_active`. */
 export function parseHookEvent(text: string): HookEvent {
+  // Validate stdin step by step, so each error says which part is wrong.
   if (text.trim() === "") return {};
   let value: JsonValue;
 
@@ -147,6 +163,7 @@ export function parseHookEvent(text: string): HookEvent {
   return { stop_hook_active: active };
 }
 
+/** Whether a rule scope covers a module: empty scope covers all; otherwise its layer, itself or an ancestor ID. */
 function covers(scope: readonly string[], moduleId: string, layer: string): boolean {
   if (scope.length === 0) return true;
 
@@ -158,6 +175,7 @@ function ruleHits(input: ChangedInput): RuleHit[] {
   const { spec } = input;
   const hits: RuleHit[] = [];
 
+  // One hit per rule line, with the IDs its area starts from, by rule kind.
   for (const rule of spec.rules) {
     const line = rule.span.start.line;
 
@@ -171,6 +189,7 @@ function ruleHits(input: ChangedInput): RuleHit[] {
     else if (rule.kind === "exports") hits.push({ file: rule.file, line, criterion: `exports ${rule.module.target}`, scope: [rule.module.target] });
   }
 
+  // A `layers` line the parser rejected still names its layers: a change there is relevant.
   for (const line of spec.rejectedLayers) {
     if (line.order.length === 0) continue;
     hits.push({ file: line.file, line: line.span.start.line, criterion: line.text, scope: line.order.map((ref) => ref.target) });
@@ -186,6 +205,7 @@ function ruleHits(input: ChangedInput): RuleHit[] {
  * up the id (a class is one too, and lies under its file's module).
  */
 function noCyclesArea(input: ChangedInput, under: string): string[] {
+  // Walk up the dotted ID to the nearest module node.
   const moduleOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
       if (input.nodes[cur]?.kind === "module") return cur;
@@ -194,6 +214,7 @@ function noCyclesArea(input: ChangedInput, under: string): string[] {
     }
   };
 
+  // Module-level adjacency over the edges a cycle can run through: resolved, non-types-only import/reexport.
   const adj = new Map<string, Set<string>>();
 
   for (const edge of input.edges ?? []) {
@@ -211,6 +232,7 @@ function noCyclesArea(input: ChangedInput, under: string): string[] {
 
   const reached = new Set<string>();
 
+  // Depth-first search from `under` and all its submodules.
   const stack = Object.entries(input.nodes)
     .filter(([id, node]) => node.kind === "module" && (id === under || id.startsWith(`${under}.`)))
     .map(([id]) => id);
@@ -224,6 +246,7 @@ function noCyclesArea(input: ChangedInput, under: string): string[] {
     for (const next of adj.get(id) ?? []) stack.push(next);
   }
 
+  // `under` goes first; the rest are in discovery order.
   reached.delete(under);
 
   return [under, ...reached];
@@ -237,10 +260,12 @@ function flowLinesTouching(input: ChangedInput, changed: ReadonlySet<string>, go
     doc.sections.forEach((section, index) => {
       if (section.kind !== "flow" || section.name === null) return;
       const name = section.name;
+      // Match the IR section with its compiled flow by file, name and name offset.
       const flow = input.spec.flows.find((item) => item.file === doc.path && item.name === name.value && item.span.start.offset === name.span.start.offset);
 
       if (flow === undefined) return;
       let touch = false;
+      // The flow is touched when any trigger or step names code in a changed file or a deleted module.
       walkFlow(flow, (item) => {
         if (item.kind !== "step" && item.kind !== "trigger") return;
         const file = input.nodes[item.target.target]?.file;
@@ -249,6 +274,7 @@ function flowLinesTouching(input: ChangedInput, changed: ReadonlySet<string>, go
       });
 
       if (!touch) return;
+      // The flow's lines run from its heading to the next section's heading: report every verdict there.
       const start = section.heading?.span.start.line ?? 1;
       const next = doc.sections[index + 1]?.heading?.span.start.line ?? Number.POSITIVE_INFINITY;
 

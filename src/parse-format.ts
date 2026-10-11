@@ -1,9 +1,13 @@
 // The stdout of `keylang parse [--json]` for parsed documents: the indented
 // tree or the Text IR as JSON. Pure text, shared by the CLI and the TUI (and
 // its export), so both give the same bytes; diagnostics are not part of it.
+//
+// Place in the pipeline: the last step of Markdown → Text IR, for display
+// only. Entry point: `parseReportText`.
 
 import { kindLabel, type Document, type Node } from "./ir.ts";
 
+/** The output formats `parse` accepts: the indented tree (default) or the Text IR as JSON. */
 export const PARSE_FORMATS = ["tree", "json"] as const;
 
 export type ParseFormat = (typeof PARSE_FORMATS)[number];
@@ -28,6 +32,7 @@ function treeLines(doc: Document): string[] {
   return out;
 }
 
+/** Appends one node and, depth-first, its children: kind, ID or name, link, text, label, refs, then `@line:col` of its start. */
 function nodeLines(n: Node, depth: number, out: string[]): void {
   let line = `${"  ".repeat(depth)}${kindLabel(n.kind)}`;
   const id = n.id ?? n.name?.value;

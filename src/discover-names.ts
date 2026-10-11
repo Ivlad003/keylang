@@ -11,6 +11,10 @@
 // step's code makes the process stale (as briefs go stale, ADR 0004). Pure
 // over the snapshot, the discovery and the saved README; the operation asks
 // and writes. Nothing here decides a verdict.
+// Pipeline: discovered flows (discover.ts) → one LLM request per layer →
+// checked answer → README view; the diagram reads the saved processes back.
+// Entry points: `planNames`, `namesRequest`, `parseNamesAnswer`,
+// `renderProcesses`, `parseProcesses`, `readProcesses`, `processViews`.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -29,8 +33,10 @@ import { compareText } from "./span.ts";
 /** `algo`: no model, the offline descriptions only; `llm`: a model is required; `hybrid`: a model when there is one. */
 export const NAME_MODES = ["algo", "llm", "hybrid"] as const;
 
+/** One `--names` mode. */
 export type NameMode = (typeof NAME_MODES)[number];
 
+/** Whether `value` is a valid `--names` mode. */
 export function isNameMode(value: string): value is NameMode {
   return NAME_MODES.some((mode) => mode === value);
 }
@@ -38,6 +44,7 @@ export function isNameMode(value: string): value is NameMode {
 /** The domains a model picks from, in the README's order; it may propose another, which goes before `Інше`. */
 export const DOMAINS = ["Каталог", "Кошик", "Оформлення", "Оплата", "Доставка", "Повернення", "Інтеграції", "Адміністрування", "Інше"] as const;
 
+// The catch-all domain, always listed last.
 const OTHER = "Інше";
 
 /** The README of the view, beside its `<layer>.md` files. */
@@ -83,6 +90,8 @@ export function nameGroups(flows: readonly DiscoveredFlow[]): NameGroup[] {
  * it differ.
  */
 export function processBaseline(snapshot: AnalysisSnapshot, flows: readonly Pick<DiscoveredFlow, "name" | "steps">[]): string {
+  // One line per distinct step with its closure fingerprint, sorted, plus the
+  // sorted flow names: the hash then depends on content, not on order.
   const lines = [...new Set(flows.flatMap((flow) => flow.steps))].sort(compareText).map((id) => `${id} ${snapshotBaseline(snapshot, id) ?? "-"}`);
   const names = flows.map((flow) => flow.name).sort(compareText);
 
@@ -91,6 +100,7 @@ export function processBaseline(snapshot: AnalysisSnapshot, flows: readonly Pick
 
 /** A saved process whose flows are gone or whose baseline changed. */
 export function isStaleProcess(snapshot: AnalysisSnapshot, byName: ReadonlyMap<string, DiscoveredFlow>, process: BusinessProcess): boolean {
+  // Any flow of the process missing from the fresh discovery makes it stale.
   const flows = process.flows.flatMap((name) => {
     const flow = byName.get(name);
 
@@ -115,6 +125,7 @@ export interface NamesPlan {
  */
 export function planNames(snapshot: AnalysisSnapshot, flows: readonly DiscoveredFlow[], saved: readonly BusinessProcess[], options: { stale: boolean; layer?: string; limit?: number }): NamesPlan {
   const byName = new Map(flows.map((flow) => [flow.name, flow]));
+  // A layer is asked again when it has a stale process or, unless only stale ones are wanted, a flow no fresh process covers.
   const stale = saved.filter((p) => isStaleProcess(snapshot, byName, p));
   const staleLayers = new Set(stale.map((p) => p.layer));
   const covered = new Set(saved.filter((p) => !stale.includes(p)).flatMap((p) => p.flows));
@@ -137,6 +148,7 @@ const MAX_STEPS = 30;
  */
 export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }): LlmRequest {
   const flows = group.flows.map((flow) => {
+    // Steps after the trigger, capped so a long flow does not blow up the prompt; each with its brief when one exists.
     const steps = flow.steps.slice(1, MAX_STEPS + 1).map((id) => {
       const e = explanationOf(snapshot, options.briefs, id);
 
@@ -156,6 +168,7 @@ export function namesRequest(snapshot: AnalysisSnapshot, group: NameGroup, optio
 
   const prompt = [`Layer: ${group.layer}`, `Discovered flows (${group.flows.length}):\n${flows.join("\n\n")}`].join("\n\n");
 
+  // The instructions: the JSON shape, the domain list and the rule against invented names and IDs.
   const system = [
     "You group the discovered flows of one layer of a codebase into business processes, for a person new to the repository.",
     `Write names and descriptions in the language with code \`${options.lang}\`.`,
@@ -194,6 +207,7 @@ export type AnsweredProcess = Omit<BusinessProcess, "agent" | "date" | "closure"
  * `processes` list: `error`.
  */
 export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, answer: string): { processes: AnsweredProcess[]; dropped: string[]; unknownIds: string[] } | { error: string } {
+  // Accept either a bare list or `{ processes: [...] }`.
   const value = jsonOf(answer);
   const list = Array.isArray(value) ? value : isJsonObject(value) && Array.isArray(value.processes) ? value.processes : null;
 
@@ -204,6 +218,8 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
   const processes: AnsweredProcess[] = [];
   const texts: string[] = [];
 
+  // Keep each process with a name; its flows must be names the group has, and a
+  // flow already claimed by an earlier process is not given to a second one.
   for (const item of list) {
     if (!isJsonObject(item)) continue;
     const name = oneLine(item.name);
@@ -233,6 +249,7 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
       flows,
     };
 
+    // Collect all the prose, to look for IDs the model made up.
     texts.push(process.name, process.description, ...process.inputs, ...process.outputs);
 
     if (flows.length > 0) processes.push(process);
@@ -243,6 +260,7 @@ export function parseNamesAnswer(snapshot: AnalysisSnapshot, group: NameGroup, a
 
 /** `` `a.b.c` `` in `text` whose first segment is a layer of the snapshot and which the snapshot does not have. */
 function unknownIdsIn(snapshot: AnalysisSnapshot, text: string): string[] {
+  // Only dotted IDs that start with a known top-level segment count; other backticked text is left alone.
   const layers = new Set(Object.keys(snapshot.nodes).map((id) => id.split(".")[0]!));
   const out = new Set<string>();
 
@@ -255,6 +273,7 @@ function unknownIdsIn(snapshot: AnalysisSnapshot, text: string): string[] {
   return [...out].sort(compareText);
 }
 
+/** The JSON in a model answer: strip a code fence, then parse from the first `{`/`[` to the last `}`/`]`; undefined when none parses. */
 function jsonOf(answer: string): JsonValue | undefined {
   const text = answer.trim().replace(/^```[a-z]*\s*\n([\s\S]*)\n```$/i, "$1");
   const from = Math.min(...[text.indexOf("{"), text.indexOf("[")].filter((i) => i >= 0));
@@ -289,6 +308,7 @@ export function flowAnchor(name: string): string {
     .replace(/\s/g, "-");
 }
 
+// The provenance comment of a process: model, date, closure (may be empty) and layer.
 const PROVENANCE = /^<!-- keylang:llm model=(\S+) date=(\S+) closure=(\S*) layer=(\S+) -->$/;
 
 /** Domains in the README's order: the known ones, then others by name, `Інше` last. */
@@ -310,6 +330,7 @@ export function renderProcesses(processes: readonly BusinessProcess[], fileOf: (
 
   if (domains.length === 0) lines.push("No process yet: `keylang flows discover --names` asks a model to group the discovered flows.", "");
 
+  // Domains in fixed order, processes by name then layer: the same processes give the same bytes.
   for (const domain of domains) {
     lines.push(`## ${domain}`, "");
     const own = processes.filter((p) => p.domain === domain).sort((a, b) => compareText(a.name, b.name) || compareText(a.layer, b.layer));
@@ -336,12 +357,15 @@ export function renderProcesses(processes: readonly BusinessProcess[], fileOf: (
 export function parseProcesses(text: string): BusinessProcess[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
 
+  // Only a file keylang generated is trusted: a hand-written README has no processes.
   if (lines[0] !== DISCOVER_MARK) return [];
   const out: BusinessProcess[] = [];
   let domain = OTHER;
   let current: BusinessProcess | null = null;
   const list = (rest: string): string[] => (rest === "—" ? [] : rest.split(", ").filter((item) => item !== ""));
 
+  // A small line-based reader: `##` sets the domain, `###` opens a process,
+  // and the lines under it fill provenance, entities, flows or description.
   for (const line of lines) {
     if (line.startsWith("## ")) {
       domain = line.slice(3).trim();
@@ -359,11 +383,13 @@ export function parseProcesses(text: string): BusinessProcess[] {
         current.layer = provenance[4]!;
       } else if (line.startsWith("- in: ")) current.inputs = list(line.slice(6));
       else if (line.startsWith("- out: ")) current.outputs = list(line.slice(7));
+      // A flow is a Markdown link `[name](file#anchor)` or a bare name.
       else if (line.startsWith("- flows: ")) current.flows = line.slice(9).split(", ").map((item) => /^\[([^\]]+)\]\(/.exec(item)?.[1] ?? item);
       else if (line.trim() !== "") current.description = current.description === "" ? unproseLine(line) : `${current.description} ${unproseLine(line)}`;
     }
   }
 
+  // A process without its provenance comment is incomplete: drop it.
   return out.filter((p) => p.layer !== "");
 }
 
@@ -386,6 +412,7 @@ export function readProcesses(root: string, specDir: string): BusinessProcess[] 
  */
 export function processViews(snapshot: AnalysisSnapshot, spec: SpecIR, processes: readonly BusinessProcess[]): DiagramProcess[] {
   if (processes.length === 0) return [];
+  // Rediscover the flows from the current snapshot so the diagram reflects the code as it is now.
   const flows = new Map(discoverFlows(snapshot, specifiedTriggers(spec.flows)).flows.map((flow) => [flow.name, flow]));
   const out: DiagramProcess[] = [];
 

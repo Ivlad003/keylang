@@ -1,5 +1,12 @@
 // `keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.
 //
+// The CLI layer: `main` parses argv against one option table, dispatches to a
+// `cmd*` handler per command, and maps every outcome to an exit code (0 ok,
+// 1 findings or differences, 2 usage or I/O error). Most handlers are thin
+// printers over a shared operation (`runOperation` in operations.ts, also
+// used by the TUI, web and MCP): they build a request, run it, and route its
+// messages to stdout (machine-readable output) or stderr (notes, summaries).
+//
 // A module only one command needs (the terminal TUI, web, LSP, MCP, `new`,
 // `hook install`, `completions`, `check --stale`) is imported in that
 // command's handler, so `--version` and `check` do not compile it. The
@@ -30,6 +37,7 @@ import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckRequest, type CodeToSpecRequest, type CodeToSpecSource, type DraftFlowRequest, type DraftRulesRequest, type EntriesRequest, type ExplainBatchRequest, type ExplainLlmRequest, type ExplainPlanRequest, type ExplainRequest, type ExportC4Request, type FeatureRequest, type FlowExportRequest, type FlowImportRequest, type FlowsAdoptRequest, type FlowsDiscoverRequest, type GitignoreStage, type MigrationStatusRequest, type OperationEnvelope, type SpecToCodeRequest, type SystemRequest, type TourRequest, type TracePlanRequest } from "./operations.ts";
 
+// The help text. `completions` also reads the command names from its `Commands:` block, so keep its layout.
 const USAGE = `keylang: architecture description bound to a repository
 
 Usage: keylang                      Open the TUI in this terminal (needs a TTY)
@@ -463,6 +471,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 }
 
 async function run(argv: readonly string[]): Promise<number> {
+  // Strict parsing: an unknown flag is a usage error (thrown, so exit 2), not ignored.
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
@@ -482,6 +491,7 @@ async function run(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
+  // The first positional is the command; the rest are its paths or subcommands.
   const [cmd, ...paths] = positionals;
 
   if (cmd === undefined) {
@@ -498,6 +508,7 @@ async function run(argv: readonly string[]): Promise<number> {
   }
 
   switch (cmd) {
+    // One case per command: unpack the flags it takes and hand off to its handler.
     case "init":
       return cmdInit(paths[0] ?? ".", { agents: values.agents, check: values.check === true });
     case "agents":
@@ -591,6 +602,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "web": {
       const readOnly = values["read-only"] === true;
 
+      // `web` has four mutually exclusive forms: --hub, --export, --new, and serving one repository (optionally cloned first).
       if (values.hub === true) {
         if (paths[0] !== undefined || values.new !== undefined || values.export !== undefined) throw new Error("web --hub: the start page opens repositories itself; it takes no repository, --new or --export");
 
@@ -656,6 +668,7 @@ async function cmdWebNew(dirText: string, portText: string, host: string): Promi
   return cmdWeb(root, portText, host, true);
 }
 
+/** Whether `path` is a symbolic link (dangling ones included). */
 function isLink(path: string): boolean {
   try {
     return lstatSync(path).isSymbolicLink();
@@ -712,6 +725,7 @@ async function cmdWebExport(root: string, outText: string): Promise<number> {
   return 0;
 }
 
+/** `web [url]` and `web --read-only|--new`: serve one repository until SIGINT/SIGTERM, then close the server. */
 async function cmdWeb(root: string, portText: string, host: string, greenfield = false, readOnly = false): Promise<number> {
   const port = Number(portText);
 
@@ -765,6 +779,7 @@ type TraceSource = NonNullable<DraftFlowRequest["fromTrace"]>;
 /** `code-to-spec <path[:line]>`. */
 type CodePosition = Extract<CodeToSpecSource, { file: string }>;
 
+/** The `explain` flags, as parsed. */
 interface ExplainOptions {
   llm: boolean;
   full: boolean;
@@ -776,11 +791,17 @@ interface ExplainOptions {
   jobs: string | undefined;
 }
 
+/**
+ * `explain <code|id> [--llm] [--full|--brief]`, and the batch and stale forms:
+ * validate the flag combination, then hand off to the batch, the stale list,
+ * the offline explanation or the model's.
+ */
 async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Promise<number> {
   if (opts.full && opts.brief) throw new Error("explain: --full and --brief are two details; pass one");
 
   if (opts.missing && opts.stale) throw new Error("explain: --missing already includes stale briefs; pass one of --missing and --stale");
 
+  // `--missing`, or `--stale` with batch flags, is the batch over every node; plain `--stale` lists stale saved answers.
   if (opts.missing || (opts.stale && (opts.llm || opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined))) {
     if (subject !== undefined) throw new Error(`explain ${opts.missing ? "--missing" : "--stale"} explains every node it finds; it takes no id`);
 
@@ -899,6 +920,7 @@ async function explainPlanPrinter(request: ExplainPlanRequest): Promise<number> 
  * `root` is null when nothing usable was made.
  */
 async function prepareClone(sourceText: string | undefined, opts: { dir: string | undefined; explain: string | undefined; dryRun: boolean }): Promise<{ code: number; root: string | null }> {
+  // Validate the flags before touching the network or the disk.
   const mode: CloneExplain | undefined = opts.explain === undefined ? "map-only" : isCloneExplain(opts.explain) ? opts.explain : undefined;
 
   if (mode === undefined) throw new Error(`clone: --explain is one of ${CLONE_EXPLAIN_MODES.join(", ")}, got \`${opts.explain}\``);
@@ -909,6 +931,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   const source = parseRepoSource(sourceText, process.cwd());
 
   if ("error" in source) throw new Error(source.error);
+  // The clone goes to --dir, else to its key under the cache root.
   const dir = opts.dir !== undefined ? resolve(process.cwd(), opts.dir) : join(cloneCacheRoot(process.env, homedir()), ...source.key);
   const synced = syncClone(source, dir);
   process.stdout.write(`${synced.dir}: ${synced.action} from ${source.displayUrl}\n`);
@@ -946,6 +969,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
     return { code: 2, root: null };
   }
 
+  // Briefs for every node, then (with `all`) a full explanation per layer; a failed layer makes the code 1.
   let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });
 
   if (mode === "all") {
@@ -966,6 +990,7 @@ async function prepareClone(sourceText: string | undefined, opts: { dir: string 
   return { code: mapped !== 0 ? mapped : code, root: dir };
 }
 
+/** A flag value that must be a positive integer; anything else is a usage error. */
 function positiveInteger(flag: string, text: string): number {
   const problem = positiveIntegerProblem(flag, text);
 
@@ -974,6 +999,7 @@ function positiveInteger(flag: string, text: string): number {
   return Number(text);
 }
 
+/** `draft flow|rules|map`: validate the subcommand and its flags, then hand off to its printer. */
 async function cmdDraft(args: string[], opts: { mode: string; modeGiven: boolean; name: string | undefined; into: string | undefined; print: boolean; fromTrace: string | undefined; run: string | undefined }): Promise<number> {
   const [what, trigger] = args;
 
@@ -1047,6 +1073,7 @@ async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "l
   return 0;
 }
 
+/** `spec-to-code <id>`: validate, then preview/propose or apply. */
 async function cmdSpecToCode(id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }): Promise<number> {
   if (opts.apply && opts.print) throw new Error("spec-to-code: --apply writes the files, --print writes nothing; give one");
 
@@ -1140,6 +1167,7 @@ async function specToCodePrinter(root: string, id: string, into: string | undefi
   return 0;
 }
 
+/** `code-to-spec <path[:line]> | --since <ref>`: analyse once, then hand the source to the printer. */
 async function cmdCodeToSpec(at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }): Promise<number> {
   if (at !== undefined && opts.since !== undefined) throw new Error("code-to-spec: give a path or --since, not both");
 
@@ -1151,6 +1179,7 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
   let source: CodeToSpecSource;
 
   if (at !== undefined) {
+    // `path` or `path:line`; the path is taken relative to the working directory.
     const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
     const position: CodePosition = { file: toPosix(relative(root, resolve(process.cwd(), m[1]!))) };
 
@@ -1217,6 +1246,7 @@ async function codeToSpecPrinter(root: string, source: CodeToSpecSource, analysi
   return 0;
 }
 
+/** `draft rules|map`: check the mode, then the printer for each. */
 async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }): Promise<number> {
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft ${what}: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
   const root = findRoot(process.cwd());
@@ -1282,10 +1312,10 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
   return 0;
 }
 
-/** `keylang wire [--check]`: the CLI is a printer over the shared wire operation. */
 /**
  * `keylang export c4` (c4-zoom/12): the diagram on stdout, or written to
  * `--out` with a note on stderr and nothing on stdout. Exit code 0 or 2.
+ * `export bpmn|drawio <view>` goes through the diagram-export operation.
  */
 async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
   const [what, ...rest] = args;
@@ -1355,6 +1385,7 @@ async function cmdDiagram(args: readonly string[], options: { from: string | und
   const specHash = wrapped?.["specHash"];
   const { runDiagramPropose } = await import("./operations/diagram-propose.ts");
 
+  // `empty` is the CLI's name for the empty canvas, which the operation calls "".
   const result = await runDiagramPropose({
     root: findRoot(process.cwd()),
     view: view === "empty" ? "" : view,
@@ -1426,6 +1457,7 @@ async function cmdProposals(args: readonly string[]): Promise<number> {
 
   if (rest.length > 0) throw new Error(`proposals ${action}: unexpected \`${rest[0]}\`; one target at a time`);
   const root = findRoot(process.cwd());
+  // Proposals live under the spec directory, as a root-relative POSIX path.
   const specDir = toPosix(relative(root, resolve(root, loadConfig(root).dir)));
 
   if (action === undefined) {
@@ -1441,6 +1473,7 @@ async function cmdProposals(args: readonly string[]): Promise<number> {
     return 0;
   }
 
+  // One target: validate its path, then show, reject or accept it.
   const target = proposalTarget(name!);
 
   if (target === null) throw new Error(`proposals ${action}: \`${name}\` is not a plain relative path`);
@@ -1499,6 +1532,7 @@ async function cmdProposals(args: readonly string[]): Promise<number> {
   return 0;
 }
 
+/** `keylang wire [--check]`: the CLI is a printer over the shared wire operation. */
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   const result = await runOperation({ kind: "wire", root: findRoot(process.cwd()), out: toPosix(out), check: checkOnly });
   const payload = result.payload;
@@ -1690,6 +1724,7 @@ async function cmdFlows(
 
   if (opts.kind !== undefined && !isEntryKind(opts.kind)) throw new Error(`flows discover: --kind is one of ${ENTRY_KINDS.join(", ")}, got \`${opts.kind}\``);
 
+  // `--names` adds the model step: its own flags, its own handler.
   if (opts.names) return cmdFlowsNames(root, opts, depth);
 
   if (opts.mode !== undefined || opts.dryRun || opts.jobs !== undefined || opts.stale) throw new Error("flows discover: --mode, --dry-run, --jobs and --stale need --names");
@@ -1820,6 +1855,7 @@ function wholeNumber(flag: string, text: string, min: number): number {
   return n;
 }
 
+/** Throw a usage error when a command that needs paths got none. */
 function needPaths(cmd: string, paths: string[]): void {
   if (paths.length === 0) throw new Error(`${cmd}: at least one path is required`);
 }
@@ -1853,6 +1889,7 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
     return result.exitCode ?? 2;
   }
 
+  // `--check`: only the stage reports, nothing written.
   if (payload.check) {
     if (payload.agents) printAgents(payload.agents);
 
@@ -1943,6 +1980,7 @@ async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
   return printBaseline(await runOperation({ kind: "baseline", root, check: checkOnly }));
 }
 
+/** The baseline's lines: file lines and a stale `--check` to stdout; a refusal's notes and failures to stderr. */
 function printBaseline(result: OperationEnvelope<"baseline">): number {
   const payload = result.payload;
 
@@ -2026,10 +2064,12 @@ async function cmdHookStop(): Promise<number> {
 async function stopDecision(input: string, cwd: string): Promise<string> {
   const event = parseHookEvent(input);
 
+  // A Stop hook re-entered by its own block never blocks again (no loop).
   if (event.stop_hook_active === true) return hookDecision(event, []);
   const root = findRoot(cwd);
   // The next turn's hook parses only what changed: the fact cache is saved best-effort.
   const analyzed = await analyze({ root, saveFacts: true });
+  // The turn's change: files changed against HEAD (deleted modules included).
   const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
   const changed = changedPathSet(root, gitChanged.paths, cwd);
 
@@ -2059,6 +2099,7 @@ async function cmdHookInstall(checkOnly: boolean): Promise<number> {
   const shown = toPosix(relative(cwd, file));
   // The hook is bound to the keylang root around `cwd`: git runs it from the top level, which may hold no `keylang.json`.
   const root = findRoot(cwd);
+  // Where the keylang root sits inside the git work tree; the hook `cd`s there.
   const subdir = existsSync(join(root, CONFIG_FILE)) ? toPosix(relative(top, root)) : "";
 
   if (subdir.startsWith("..") || isAbsolute(subdir)) throw new Error(`hook install: the keylang root ${root} is outside the git work tree ${top}`);
@@ -2067,6 +2108,7 @@ async function cmdHookInstall(checkOnly: boolean): Promise<number> {
 
   if (entry !== null && !entry.isFile()) throw new Error(`hook install: ${shown}: not a file`);
   const current = entry === null ? null : readFileSync(file, "utf8");
+  // current / stale / missing / foreign (a hook keylang did not write).
   const state = preCommitState(current, entry !== null && (entry.mode & 0o111) !== 0, version, subdir);
   const foreign = `${shown}: a pre-commit hook keylang did not write; add \`${preCommitCommand(version)}\` to it`;
 
@@ -2113,6 +2155,7 @@ async function cmdNew(args: readonly string[], layer: string | undefined): Promi
   let path: string;
   let text: string;
 
+  // A flow file needs only a name; a module needs a configured layer, with a precise error for each way it can be missing.
   if (what === "flow") {
     if (layer !== undefined) throw new Error("new flow: --layer is for `new module`");
     path = `${defaultSpecPath("flow", config.dir)}${name}.md`;
@@ -2136,6 +2179,7 @@ async function cmdNew(args: readonly string[], layer: string | undefined): Promi
 
   const shown = toPosix(relative(process.cwd(), join(root, path)));
 
+  // Never overwrite; then the write rules of the spec directory.
   if (existsSync(join(root, path))) throw new Error(`new ${what}: ${shown} exists; new never overwrites a file`);
   const refused = newSpecProblem(root, config.dir, path);
 
@@ -2164,17 +2208,20 @@ async function cmdCompletions(shell: string | undefined): Promise<number> {
   const { SHELLS, completionScript, helpCommands, isShell } = await import("./completions.ts");
 
   if (shell === undefined || !isShell(shell)) throw new Error(`completions: expected a shell: ${SHELLS.join(", ")}${shell === undefined ? "" : `; got \`${shell}\``}`);
+  // Flags straight from the parser's table, so completions never drift from what is accepted.
   const flags = Object.entries(OPTIONS).map(([long, option]) => ("short" in option ? { long, short: option.short } : { long }));
   process.stdout.write(completionScript(shell, { commands: helpCommands(USAGE), flags }));
 
   return 0;
 }
 
+/** keylang's own version, from its package.json. */
 function packageVersion(): string {
   // SAFETY: the package's own package.json ships with the code and always carries a string `version`.
   return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 }
 
+/** All of stdin as UTF-8 text. */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
 
@@ -2183,6 +2230,7 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** `map [dir] [--check] [--export-index <file>]`: write the map, check it, or write it and export the index. */
 async function cmdMap(dir: string, checkOnly: boolean, exportIndex: string | undefined): Promise<number> {
   const root = resolve(process.cwd(), dir);
 
@@ -2241,6 +2289,7 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
 
   for (const line of payload.refused) process.stdout.write(`${line}\n`);
 
+  // Conflicts or refusals stop before any write: nothing landed.
   if (payload.conflicts.length > 0) return result.exitCode ?? 2;
 
   if (payload.refused.length > 0) {
@@ -2289,9 +2338,15 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
+/**
+ * `check [paths] [--format] [--strict] [--static] [--changed [--since]]`, and
+ * `--stale` and `--explain-edge`: validate the flag combination, then print
+ * the shared check operation's report (stdout) and summary (stderr).
+ */
 async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean; acceptWeakening?: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
 
+  // `--stale` is a separate review mode with its own flags; mixing it with check's report flags is an error.
   if (opts.stale) {
     const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
 
@@ -2313,6 +2368,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   }
 
+  // Flags that only make sense together.
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
 
   if (opts.acceptWeakening === true && !opts.changed) throw new Error("check: --accept-weakening requires --changed");
@@ -2320,6 +2376,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
 
+  // `--explain-edge <from> <to>`: why one dependency is allowed or not, instead of a full check.
   if (opts.explain) {
     const [from, to, extra] = paths;
     const root = findRoot(cwd);
@@ -2377,6 +2434,7 @@ async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean):
   const { runStaleCheck, staleLine, staleSummary } = await import("./stale.ts");
   const cwd = process.cwd();
   const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
+  // Review everything not fresh, and fresh statements whose evidence is incomplete.
   const toReview = report.findings.filter((f) => f.state !== "fresh" || f.incomplete.length > 0);
 
   for (const f of toReview) process.stdout.write(`${staleLine(f)}\n`);
@@ -2413,6 +2471,7 @@ async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
     else if (message.level === "error") process.stderr.write(`${message.text}\n`);
   }
 
+  // Generated files are left alone; say so, so a person does not expect them formatted.
   for (const file of result.payload.files) if (file.state === "generated") process.stderr.write(`keylang: note: ${fmtGeneratedNote(file)}\n`);
 
   return result.exitCode ?? 2;

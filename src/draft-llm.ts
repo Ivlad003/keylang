@@ -6,6 +6,11 @@
 // dropped, every trigger and step is judged against the algo projection with
 // its nesting, and `hybrid` puts what the model missed under its caller.
 // Each step line carries its provenance: `<!-- keylang:llm model=… status=… -->`.
+// Pipeline: Analysis (snapshot + spec IR) + algo draft (draft.ts) → LLM
+// prompt → answer parsed back to IR → reconciled Markdown. Also drafts rules
+// (checked with `assess`) and layer globs (validated as keylang.json).
+// Entry points: `draftFlowWithModel`, `draftRulesWithModel`,
+// `draftLayoutWithModel`, `answerObject`.
 
 import type { Analysis } from "./analyze.ts";
 import { assess, type AssessEvidence } from "./assess.ts";
@@ -18,8 +23,10 @@ import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { isId, parse } from "./parser.ts";
 import { compileSpec, type FlowItem, type Trigger } from "./spec-ir.ts";
 
+/** How a drafted item relates to the algo projection: both have it, only one has it, or the snapshot contradicts it. */
 export type DraftStatus = "agree" | "llm-only" | "algo-only" | "conflict";
 
+/** A model-drafted flow after reconciliation, with per-status counts and what was dropped or left unknown. */
 export interface ModelDraft {
   name: string;
   text: string;
@@ -31,6 +38,7 @@ export interface ModelDraft {
   dropped: string[];
 }
 
+// The flow grammar as the model sees it: a compact subset of docs/grammar.md.
 const GRAMMAR = `A flow is Markdown:
 # flow <name>
 
@@ -47,6 +55,7 @@ Two spaces per level. IDs are the dotted IDs of the map below.`;
 /** `context`: the pack from the TUI context panel, sent as it is shown; `options.signal` cancels the model's rounds. */
 export async function draftFlowWithModel(analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string, options: LlmCallOptions = {}): Promise<ModelDraft> {
   const snapshot = analysis.snapshot!;
+  // The algo projection first: it names the flow, bounds the map in the prompt and is the reference for the statuses.
   const algo = draftFlow(snapshot, trigger, name !== undefined ? { name } : {});
 
   const system = [
@@ -56,6 +65,7 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
     "Answer with the flow only, in one ```markdown block.",
   ].join("\n\n");
 
+  // The prompt: the request, a compact map, up to three similar hand-written flows, and any context the person picked.
   const prompt = [
     `Draft \`# flow ${algo.name}\` for the trigger \`${trigger}\`.`,
     `Map (fn id and signature):\n${compactMap(analysis, algo.steps)}`,
@@ -109,9 +119,11 @@ function reconcile(analysis: Analysis, text: string, algo: { text: string; steps
   const lines = text.split("\n");
   const broken = new Map<number, string>();
 
+  // Lines with a parse error other than K003 (indentation, which the parser recovers from).
   for (const d of doc.diagnostics) if (d.severity === "error" && d.code !== "K003" && !broken.has(d.span.start.line)) broken.set(d.span.start.line, d.message);
   const dropped: string[] = [];
 
+  // Drop a broken or unknown item with its subtree, recording the line and the reason.
   const keep = (node: Node): boolean => {
     const why = broken.get(node.span.start.line) ?? (node.kind === "unknown" ? "not a flow item" : null);
 
@@ -132,6 +144,7 @@ function reconcile(analysis: Analysis, text: string, algo: { text: string; steps
   const reach = reachability(nodes);
   const flow = compileSpec([doc]).spec.flows.find((item) => item.name === section.name?.value);
 
+  // Walk the compiled flow, giving each trigger and step a status and a provenance comment.
   const judge = (item: Trigger | FlowItem, parent: string | null): void => {
     const id = item.kind === "trigger" || item.kind === "step" ? item.target.target : undefined;
 
@@ -155,6 +168,7 @@ function reconcile(analysis: Analysis, text: string, algo: { text: string; steps
   // A step beside the trigger has the trigger as its parent (format §7).
   if (flow) for (const item of flow.top) judge(item, item === head ? null : trigger);
 
+  // The answer lacks the requested trigger: insert it as the first item, marked algo-only.
   if (!head) {
     const added = { type: "node" as const, ...algoItem("trigger", trigger) };
     const first = section.items.findIndex((item) => item.type === "node");
@@ -163,6 +177,7 @@ function reconcile(analysis: Analysis, text: string, algo: { text: string; steps
     counts["algo-only"]++;
   }
 
+  // Hybrid: each algo step the model missed goes under its nearest caller the draft already has, else the trigger.
   if (mode === "hybrid") {
     for (const [id, callers] of algoCallers(algo.text)) {
       if (placed.has(id)) continue;
@@ -188,6 +203,7 @@ function algoItem(kind: "trigger" | "step", id: string): Node {
 function algoCallers(text: string): [string, string[]][] {
   const out: [string, string[]][] = [];
 
+  // Preorder walk keeping the chain of ancestor IDs.
   const visit = (item: Trigger | FlowItem, path: string[]): void => {
     // A `when` has no id, and the projection does not look through it.
     if (item.kind !== "trigger" && item.kind !== "step") return;
@@ -212,6 +228,7 @@ function reachability(nodes: NonNullable<Analysis["snapshot"]>["nodes"]): (from:
 
     if (!reached) {
       reached = new Set<string>();
+      // Everything `from` reaches over `calls`, computed once per source and memoised.
       const queue = [...(nodes[from]?.calls ?? [])];
 
       while (queue.length > 0) {
@@ -235,12 +252,15 @@ function reachability(nodes: NonNullable<Analysis["snapshot"]>["nodes"]): (from:
  * (`` - step `a.b` ``, which the prompt's own examples invite) is the ID.
  */
 function flowText(answer: string, name: string): string {
+  // Take the first ```markdown (or bare ```) block, else the whole answer.
   const fenced = /```(?:markdown|md)?\n([\s\S]*?)```/.exec(answer);
   const body = (fenced ? fenced[1]! : answer).trim().split("\n");
+  // Drop the model's own heading and stop at the next `# ` heading.
   const start = body.findIndex((line) => /^# flow\b/.test(line));
   const section = start === -1 ? body : body.slice(start + 1);
   const end = section.findIndex((line) => line.startsWith('# '));
 
+  // Collapse runs of blank lines, and unwrap backticked IDs in list items.
   const lines = (end === -1 ? section : section.slice(0, end))
     .filter((line, i, all) => line.trim() !== "" || (i > 0 && all[i - 1]!.trim() !== ""))
     .map((line) => (/^\s*- /.test(line) ? line.replace(/`([^`\s]+)`/g, (whole, inner: string) => (isId(inner) ? inner : whole)) : line));
@@ -254,6 +274,7 @@ function unknownIn(analysis: Analysis, text: string): string[] {
   const planned = new Set<string>();
   const refs = new Set<string>();
 
+  // `planned` declarations count from the draft and every spec; references only from the draft.
   for (const d of [doc, ...analysis.docs]) {
     for (const section of d.sections) {
       for (const top of sectionNodes(section)) {
@@ -272,6 +293,7 @@ function unknownIn(analysis: Analysis, text: string): string[] {
 /** The fns the draft can reach, then the rest of their modules; at most 300 lines, which the prompt says. */
 function compactMap(analysis: Analysis, steps: readonly string[]): string {
   const nodes = analysis.snapshot!.nodes;
+  // The algo steps, then every fn of their modules; capped at 300 lines.
   const modules = new Set(steps.map((id) => id.slice(0, id.lastIndexOf("."))));
   const ids = [...new Set([...steps, ...Object.keys(nodes).filter((id) => nodes[id]!.kind === "fn" && [...modules].some((m) => id.startsWith(`${m}.`)))])];
   const lines = ids.slice(0, 300).map((id) => `${id}${nodes[id]?.signature ? ` ${nodes[id]!.signature}` : ""}`);
@@ -285,6 +307,7 @@ function compactMap(analysis: Analysis, steps: readonly string[]): string {
 function similarFlows(docs: readonly Document[], steps: readonly string[]): string[] {
   const flows: { text: string; shared: number }[] = [];
 
+  // Every hand-written flow section, rebuilt as text, with the number of IDs it shares with the draft.
   for (const doc of docs) {
     if (doc.generated !== null) continue;
 
@@ -304,9 +327,11 @@ function similarFlows(docs: readonly Document[], steps: readonly string[]): stri
     }
   }
 
+  // Stable sort: equal scores keep document order.
   return flows.sort((a, b) => b.shared - a.shared).slice(0, 3).map((f) => f.text);
 }
 
+/** A node and its children as indented list lines, two spaces per level. */
 function lineTree(node: Pick<Node, "tokens" | "children">, level: number): string[] {
   const out = [`${"  ".repeat(level)}- ${node.tokens.map((t) => t.text).join(" ")}`];
 
@@ -315,6 +340,7 @@ function lineTree(node: Pick<Node, "tokens" | "children">, level: number): strin
   return out;
 }
 
+/** A model-drafted rules section, with per-status counts and the evidence of each conflict. */
 export interface RulesDraft {
   text: string;
   counts: Record<DraftStatus, number>;
@@ -331,6 +357,7 @@ export interface RulesDraft {
  */
 export async function draftRulesWithModel(analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string, options: LlmCallOptions = {}): Promise<RulesDraft> {
   const snapshot = analysis.snapshot!;
+  // Layer-to-layer dependency counts for the prompt (packages left out).
   const uses = new Map<string, number>();
 
   for (const e of snapshot.edges) {
@@ -351,13 +378,16 @@ export async function draftRulesWithModel(analysis: Analysis, client: LlmClient,
     maxTokens: 2048,
   }, options);
 
+  // List items of the first markdown block (or the whole answer).
   const body = (/```(?:markdown|md)?\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).split("\n").filter((line) => /^\s*- /.test(line));
   const counts: Record<DraftStatus, number> = { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 };
   const conflicts: string[] = [];
+  // The other specs without rules: the context a rule is judged in, alone.
   const others = analysis.docs.filter((d) => d.path !== target && !d.sections.some((s) => s.kind === "rules"));
   const lines = ["# rules", ""];
   const seen = new Set<string>();
 
+  // Judge each distinct rule (provenance comment stripped) and mark its line.
   for (const raw of body) {
     const rule = raw.replace(/\s*<!--.*-->\s*$/, "").trim();
 
@@ -368,6 +398,7 @@ export async function draftRulesWithModel(analysis: Analysis, client: LlmClient,
     lines.push(`${rule} <!-- keylang:llm model=${client.agent} status=${status} -->`);
   }
 
+  // Hybrid: add the algo rules the model did not propose, with their algo provenance.
   if (mode === "hybrid") {
     for (const line of algoText.split("\n").filter((l) => l.startsWith("- "))) {
       const rule = line.replace(/\s*<!--.*-->\s*$/, "");
@@ -392,6 +423,8 @@ function judgeRule(analysis: Analysis, others: readonly Document[], target: stri
     return "conflict";
   }
 
+  // Assess once without the rule and once with it: only findings the rule adds
+  // count against it.
   const key = (d: { code: string; file: string; span: { start: { line: number; col: number } }; message: string }): string => `${d.code}:${d.file}:${d.span.start.line}:${d.span.start.col}:${d.message}`;
   const mode = resolveStatic(undefined, analysis.config.check.static);
   const evidence: AssessEvidence = { tests: null, traces: null, static: mode.mode };
@@ -453,12 +486,14 @@ export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient
  * around it and a second object after it are left out.
  */
 export function answerObject(answer: string): JsonObject | null {
+  // First: a ```json fence (any info string after `json`) that holds an object.
   for (const block of answer.matchAll(/^[ \t]*```[ \t]*json[^\n]*\n([\s\S]*?)^[ \t]*```/gim)) {
     const value = jsonObject(block[1]!);
 
     if (value !== null) return value;
   }
 
+  // Then: try each `{` in turn until one balanced span parses as an object.
   for (let start = answer.indexOf("{"); start !== -1; start = answer.indexOf("{", start + 1)) {
     const end = balancedEnd(answer, start);
     const value = end === null ? null : jsonObject(answer.slice(start, end));
@@ -487,6 +522,7 @@ function balancedEnd(text: string, start: number): number | null {
   let depth = 0;
   let string = false;
 
+  // A brace counter that ignores braces inside JSON strings (with backslash escapes).
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
 

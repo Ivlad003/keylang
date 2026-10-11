@@ -14,6 +14,10 @@
 // `keylang draft map` prints a layout. The drawn shapes a proposal took are
 // marked in the view's layout file, so the editor can tell, after a merge,
 // which were not accepted.
+//
+// Place in the pipeline: the reverse direction, drawing → spec Markdown;
+// it reads an analysis (snapshot + SpecIR) and writes proposals through
+// `shared.ts`. Entry points: `runDiagramPropose`, `specHash`.
 
 import { isAbsolute, join } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
@@ -46,6 +50,8 @@ import type { JsonValue } from "../json.ts";
  * keeps it from `/api/diagram` and sends it back with the drawing.
  */
 export function specHash(root: string, docs: readonly Document[]): string {
+  // Sorted paths with NUL separators, keylang.json first, so the hash is
+  // the same for the same files whatever order the analysis listed them.
   const files = docs
     .flatMap((doc) => (doc.generated === null ? [doc.path] : []))
     .sort(compareText)
@@ -54,6 +60,7 @@ export function specHash(root: string, docs: readonly Document[]): string {
   return sha256([`${CONFIG_FILE}\u0000${sha256(readTextOrNull(join(root, CONFIG_FILE)) ?? "")}`, ...files].join("\n"));
 }
 
+/** A request to propose a drawing: the view, the editor's model, and the spec hash it was opened with. */
 export interface DiagramProposeRequest {
   root: string;
   /** The view key (`flow:checkout`, `layers`, "" for the empty canvas). */
@@ -73,6 +80,7 @@ export interface ProposedHunk {
   added: string[];
 }
 
+/** One spec a drawing changes: its proposal, its hunks and diff, and the shapes it took. */
 export interface ProposedFile {
   target: string;
   /** `.keylang/proposals/<target>`, or null when nothing was written (`--print`). */
@@ -86,6 +94,7 @@ export interface ProposedFile {
   shapes: string[];
 }
 
+/** The answer to the editor or the CLI: a status with its exit code, the files proposed, and the warnings. */
 export interface DiagramProposeResult {
   exitCode: 0 | 1 | 2;
   status: "proposed" | "printed" | "nothing" | "conflict" | "refused" | "invalid" | "failed";
@@ -100,6 +109,7 @@ export interface DiagramProposeResult {
   merge: string | null;
 }
 
+/** An answer with no files: a status, its code and the reason. */
 function result(view: string, status: DiagramProposeResult["status"], exitCode: 0 | 1 | 2, error: string | null = null): DiagramProposeResult {
   return { exitCode, status, error, view, targets: [], weakenings: [], config: null, notes: [], merge: null };
 }
@@ -131,6 +141,8 @@ function baseDiagram(analysis: Analysis, root: string, view: string): Diagram | 
 export async function runDiagramPropose(request: DiagramProposeRequest, context: OperationContext = {}): Promise<DiagramProposeResult> {
   const { root, view } = request;
 
+  // Validate the request: an absolute root, a model the editor could have
+  // sent, and one that draws the requested view (or the empty canvas).
   if (!isAbsolute(root)) return result(view, "invalid", 2, "diagram propose: root must be an absolute path");
   const model = parseEditorModel(request.model);
 
@@ -145,10 +157,13 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
     return result(view, "failed", 2, errorText(error));
   }
 
+  // Stale drawing: the specs on disk are not the ones the page drew from.
   if (request.specHash !== undefined && request.specHash !== null && request.specHash !== specHash(root, analysis.docs)) {
     return result(view, "conflict", 1, "the specs changed since this diagram was opened: the view is drawn again from the specs as they are now; draw the change on it and propose again");
   }
 
+  // The base the drawing is compared with: a system's view is compared with
+  // its `# system` section (below), any other view with its diagram.
   const specDir = rootRelative(root, analysis.config.dir);
   const system = /^system:(.+)$/.exec(view)?.[1] ?? null;
   const diagram = system !== null ? { nodes: [], edges: [], groups: [] } : baseDiagram(analysis, root, view);
@@ -185,6 +200,8 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
     return result(view, "failed", 2, errorText(error));
   }
 
+  // `keylang.json` changes (new lanes as layers) are only printed: no
+  // proposal may change it.
   const out: DiagramProposeResult = { ...result(view, "nothing", 0), notes: [...notes, ...changes.notes] };
 
   if (changes.config !== null) {
@@ -217,6 +234,7 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   const proposed = new Map(candidates.map((c) => [c.target, c.text]));
   const nowDocs = [...baseDocs.filter((doc) => !proposed.has(doc.path)), ...[...proposed].flatMap(([path, text]) => (path.endsWith(".md") ? [parse(path, text)] : []))];
   out.weakenings = specWeakenings(baseDocs, nowDocs, specDir, "the specs on disk").map(({ file, line, col, message }) => ({ file, line, col, message: `K108 ${message}` }));
+  // The hunks MERGE will offer, computed on LF-normalised lines.
   const normal = (text: string): string[] => text.replace(/\r\n/g, "\n").split("\n");
   out.targets = candidates.map((c) => ({
     target: c.target,
@@ -231,6 +249,8 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
   if (request.print === true) return { ...out, status: "printed" };
   const inputs = sourceInputs(analysis.config, analysis.snapshot?.manifest.files ?? []);
 
+  // Commit each target in turn; a refusal or failure stops at that target
+  // (the proposals before it stay written).
   for (const [i, c] of candidates.entries()) {
     const committed = await commitProposal({ root, specDir, generated, target: c.target, text: c.text, expected: { target: c.before, proposal: c.pending }, config: analysis.config, inputs }, context);
 

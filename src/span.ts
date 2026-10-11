@@ -1,5 +1,8 @@
-// Source positions. Every node, name, link and reference carries a Span so
-// that diagnostics and the future LSP (hover, definition) can point at it.
+// Source positions shared by the whole Markdown pipeline (Text IR, SpecIR,
+// resolve, rules) and by the editor surfaces (LSP, MCP). Every node, name, link
+// and reference carries a Span so that diagnostics and the LSP (hover,
+// definition) can point at it. Entry points: the `Pos`/`Span`/`Spanned` types,
+// `spanContains` for cursor hit-testing and `compareText` for stable sorting.
 
 /**
  * A position in a source file. `offset` is an index into the file text
@@ -24,6 +27,7 @@ export interface Spanned<T> {
   span: Span;
 }
 
+/** The span covers `offset` (half-open: the end offset itself is outside). */
 export function spanContains(span: Span, offset: number): boolean {
   return span.start.offset <= offset && offset < span.end.offset;
 }

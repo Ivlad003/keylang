@@ -8,6 +8,12 @@
 // technology or the target's own code; `unverified` otherwise — a network
 // call is invisible to the graph, so the system never says `fail`. K403
 // warns when the bound code reaches a driver no relation of it names.
+//
+// Spans both pipelines: `systemsOf` compiles parsed sections (Markdown → IR →
+// rules), and `systemCheck` judges relations against a module graph derived
+// from the snapshot. Entry points: `systemsOf`, `systemCheck`, `moduleGraph`,
+// `modulesUnder`, `reach`; the `System*` types are shared by the system views
+// and by discovery from code.
 
 import { createHash } from "node:crypto";
 import { diagnostic, type Diagnostic } from "./diag.ts";
@@ -19,6 +25,7 @@ import { compareText, type Span } from "./span.ts";
 import { evidenceIds, technologiesOfPackage, technologyOf, type Technology } from "./system-catalog.ts";
 import type { Verdict, VerdictKind } from "./verdict.ts";
 
+/** A `zone` of a system: a named grouping of components, possibly nested. */
 export interface SystemZone {
   name: string;
   label: string | null;
@@ -27,6 +34,7 @@ export interface SystemZone {
   line: number;
 }
 
+/** A column of a table, with its flags and an optional foreign key `fk <table>.<column>`. */
 export interface SystemColumn {
   name: string;
   type: string;
@@ -37,6 +45,7 @@ export interface SystemColumn {
   line: number;
 }
 
+/** A table of a data store, with its columns and index lines. */
 export interface SystemTable {
   name: string;
   /** The data store it lives in. */
@@ -47,6 +56,7 @@ export interface SystemTable {
   line: number;
 }
 
+/** A component of a system: a service, store, queue… with its zone, code binding and tables. */
 export interface SystemComponent {
   name: string;
   kind: ComponentKind;
@@ -63,8 +73,10 @@ export interface SystemComponent {
   col: number;
 }
 
+/** The verbs a relation line may start with. */
 export type RelationVerb = "calls" | "reads" | "writes" | "publishes" | "consumes" | "replicates" | "uses";
 
+/** A relation `- <verb> <target> [caption]` under a component. */
 export interface SystemRelation {
   from: string;
   verb: RelationVerb;
@@ -76,6 +88,7 @@ export interface SystemRelation {
   span: Span;
 }
 
+/** One message of a sequence: `from → to text`, or `⇢` for an asynchronous one. */
 export interface SystemMessage {
   from: string;
   to: string;
@@ -84,14 +97,17 @@ export interface SystemMessage {
   line: number;
 }
 
+/** A named sequence of messages between components. */
 export interface SystemSequence {
   name: string;
   messages: SystemMessage[];
   line: number;
 }
 
+/** Kinds of interview notes a system section may hold. */
 export type NoteKind = "requirement" | "nfr" | "estimate" | "tradeoff" | "question";
 
+/** One compiled `# system` section (or the system discovered from code, whose `file` is ""). */
 export interface SystemSpec {
   name: string;
   file: string;
@@ -114,6 +130,8 @@ export function systemsOf(docs: readonly Document[]): SystemsOf {
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind !== "system" || section.name === null) continue;
+      // A repeated system name is K002; it is still compiled, so its own
+      // diagnostics show, but only the first declaration is kept.
       const name = section.name.value;
       const first = seen.get(name);
 
@@ -128,10 +146,13 @@ export function systemsOf(docs: readonly Document[]): SystemsOf {
   return { systems, diagnostics };
 }
 
+/** One section into a `SystemSpec`; reports K002 for repeated names, K401 for unknown components and K402 for bad `fk`s. */
 function compileSystem(file: string, name: string, line: number, nodes: readonly Node[], diagnostics: Diagnostic[]): SystemSpec {
   const system: SystemSpec = { name, file, line, zones: [], components: [], relations: [], sequences: [], notes: [] };
+  // Zones and components share one namespace; sequences and each component's tables have their own.
   const declared = new Map<string, Span>();
 
+  // Record a name in its scope; a repeat is K002 and the caller skips the item.
   const declare = (what: string, scope: Map<string, Span>, value: string, span: Span): boolean => {
     const prev = scope.get(value);
 
@@ -148,8 +169,11 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
 
   const text = (node: Node): string => node.description.map((line) => line.value).join("\n");
   const sequenceNames = new Map<string, Span>();
+  // Component names used by relations and messages, checked once the whole
+  // section is read, since a component may be declared after its first use.
   const pendingRefs: { name: string; span: Span; what: string }[] = [];
 
+  // Walk the section's items; `zone` is the innermost enclosing zone.
   const visit = (node: Node, zone: string | null): void => {
     if (node.kind === "zone" && node.name) {
       if (declare("zone", declared, node.name.value, node.name.span)) system.zones.push({ name: node.name.value, label: node.text?.value ?? null, parent: zone, line: node.span.start.line });
@@ -161,6 +185,7 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
       system.components.push(component);
       const tables = new Map<string, Span>();
 
+      // A component's children: code bindings, scale, relations and tables.
       for (const child of node.children) {
         if (child.kind === "code") component.code.push(...child.refs.map((ref) => ref.target));
         else if (child.kind === "scale") component.scale = child.text?.value ?? null;
@@ -177,6 +202,7 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
 
       for (const child of node.children) {
         if (child.kind !== "message" || !child.name || !child.label) continue;
+        // The arrow token decides sync (`→`, `->`) or async (`⇢`, `-->`).
         const arrow = child.tokens[1]?.text;
         sequence.messages.push({ from: child.name.value, to: child.label.value, text: child.text?.value ?? null, async: arrow === "⇢" || arrow === "-->", line: child.span.start.line });
         pendingRefs.push({ name: child.name.value, span: child.name.span, what: "the message" }, { name: child.label.value, span: child.label.span, what: "the message" });
@@ -189,6 +215,7 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
   };
 
   for (const node of nodes) visit(node, null);
+  // Now every component is known: report K401 for the rest, with a suggestion.
   const components = new Set(system.components.map((component) => component.name));
 
   for (const ref of pendingRefs) {
@@ -202,6 +229,7 @@ function compileSystem(file: string, name: string, line: number, nodes: readonly
   return system;
 }
 
+/** A `table` item into a `SystemTable`: `index` lines and `- <column> <type> [pk] [unique] [null] [fk t.c]` columns. */
 function compileTable(file: string, component: string, node: Node, diagnostics: Diagnostic[]): SystemTable {
   const table: SystemTable = { name: node.name!.value, component, columns: [], indexes: [], description: node.description.map((line) => line.value).join("\n"), line: node.span.start.line };
   const columns = new Map<string, Span>();
@@ -210,6 +238,7 @@ function compileTable(file: string, component: string, node: Node, diagnostics: 
     if (child.kind === "index" && child.text) table.indexes.push({ text: child.text.value, line: child.span.start.line });
 
     if (child.kind !== "column" || !child.name || !child.text) continue;
+    // Tokens after the name and type are flags; `fk` takes the next token as `table.column`.
     const flags = child.tokens.slice(2);
     const words = flags.map((token) => token.text);
     const at = words.indexOf("fk");
@@ -239,6 +268,7 @@ function compileTable(file: string, component: string, node: Node, diagnostics: 
 
 /** K402: an `fk` names a table of no data store of the system, or a column that table does not have. */
 function checkForeignKeys(file: string, system: SystemSpec, diagnostics: Diagnostic[]): void {
+  // Tables of all stores by name; the first of a repeated name wins.
   const tables = new Map<string, SystemTable>();
 
   for (const component of system.components) for (const table of component.tables) if (!tables.has(table.name)) tables.set(table.name, table);
@@ -279,12 +309,14 @@ function moduleOf(nodes: SystemSnapshot["nodes"], id: string): string | null {
   for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") {
     const node = nodes[at];
 
+    // A class is a module node too, but the graph is between files' modules.
     if (node?.kind === "module" && node.class !== true) return at.startsWith(`${EXTERNAL}.`) ? null : at;
   }
 
   return null;
 }
 
+/** Lifts the snapshot's edges (imports, calls, types) to module → module edges and module → package imports. */
 export function moduleGraph(snapshot: SystemSnapshot): ModuleGraph {
   const modules = new Set<string>();
 
@@ -299,6 +331,8 @@ export function moduleGraph(snapshot: SystemSnapshot): ModuleGraph {
     set.add(value);
   };
 
+  // Every resolved edge: into a package, it is that module's import of the
+  // package; into project code, a module edge (self-edges dropped).
   for (const edge of snapshot.edges) {
     if (edge.target === null) continue;
     const from = moduleOf(snapshot.nodes, edge.source);
@@ -335,6 +369,8 @@ export function reach(graph: ModuleGraph, start: readonly string[], hit: (module
     queue.push(module);
   }
 
+  // Breadth-first with parent pointers; successors in sorted order so the path
+  // reported is the same on every run.
   for (let i = 0; i < queue.length; i++) {
     const module = queue[i]!;
 
@@ -356,6 +392,7 @@ export function reach(graph: ModuleGraph, start: readonly string[], hit: (module
   return null;
 }
 
+/** A path for a message: in full up to three modules, else its ends and its length. */
 function pathText(path: readonly string[]): string {
   return path.length <= 3 ? path.map((id) => `\`${id}\``).join(" → ") : `\`${path[0]}\` → … → \`${path.at(-1)}\` (${path.length - 1} imports)`;
 }
@@ -370,6 +407,8 @@ export function systemCheck(docs: readonly Document[], snapshot: SystemSnapshot 
   if (snapshot === null) return { systems, diagnostics, verdicts };
   const graph = moduleGraph(snapshot);
 
+  // Judge each relation from a code-bound component; the spec hash makes the
+  // verdict stable across edits elsewhere in the file.
   for (const system of systems) {
     const byName = new Map(system.components.map((component) => [component.name, component]));
 
@@ -404,11 +443,13 @@ export function systemCheck(docs: readonly Document[], snapshot: SystemSnapshot 
   return { systems, diagnostics, verdicts };
 }
 
+/** The verdict of one relation: `ok` with the import path found, `unverified` without one, null when the target names no known technology. */
 function judge(graph: ModuleGraph, from: SystemComponent, to: SystemComponent): { verdict: VerdictKind; reason: string } | null {
   const start = modulesUnder(graph, from.code);
 
   if (start.length === 0) return { verdict: "unverified", reason: `the snapshot has no module under ${from.code.map((id) => `\`${id}\``).join(", ")}` };
 
+  // A target with code of its own: the import path must reach that code from outside the source's own modules.
   if (to.code.length > 0) {
     const targets = new Set(modulesUnder(graph, to.code));
     const path = reach(graph, start, (module) => targets.has(module) && !start.includes(module));
@@ -416,6 +457,7 @@ function judge(graph: ModuleGraph, from: SystemComponent, to: SystemComponent): 
     return path !== null ? { verdict: "ok", reason: `${pathText(path)} imports the code of \`${to.name}\`` } : { verdict: "unverified", reason: `no import from the code of \`${from.name}\` reaches the code of \`${to.name}\`; a network call is not in the static graph` };
   }
 
+  // Otherwise the target is judged by its technology: the path must reach a module importing one of its drivers.
   const tech = technologyOf(to.tech);
 
   if (tech === null) return null;
@@ -432,6 +474,7 @@ function judge(graph: ModuleGraph, from: SystemComponent, to: SystemComponent): 
 function undeclaredStores(system: SystemSpec, component: SystemComponent, graph: ModuleGraph, diagnostics: Diagnostic[]): void {
   if (component.code.length === 0) return;
   const start = modulesUnder(graph, component.code);
+  // Technologies the component's relations already name.
   const named = new Set<string>();
 
   for (const relation of system.relations) {
@@ -441,6 +484,9 @@ function undeclaredStores(system: SystemSpec, component: SystemComponent, graph:
     if (tech) named.add(tech.name);
   }
 
+  // Breadth-first over everything the bound code imports; each unnamed
+  // technology is reported once. External services and auth are not stores, so
+  // they are left out; an ambiguous package (several technologies) too.
   const reported = new Set<string>();
   const seen = new Set<string>();
   const queue = [...start];

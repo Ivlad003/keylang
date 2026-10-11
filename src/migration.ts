@@ -12,6 +12,10 @@
 // missing evidence is `unverified` (no tests, no report, a step not in the
 // table, an opaque module), and `ok` needs every step present and every
 // test of the old flow passing under the same name in both reports.
+//
+// Place in the pipeline: on the spec side (Text IR → rules) it feeds
+// `check` with `migrationCheck`; on the snapshot side it compares two
+// stacks for `migration status` (`migrationStatus`, `migrationStatusText`).
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -48,12 +52,15 @@ export interface MigrationRow {
 export function migrationRows(docs: readonly Document[]): MigrationRow[] {
   const rows: MigrationRow[] = [];
 
+  // Walk every `# migration` section; skip nodes that are no row, or a
+  // `map` row whose new side failed to parse (the parser reported it).
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind !== "migration") continue;
 
       for (const node of sectionNodes(section)) {
         if ((node.kind !== "migrate" && node.kind !== "dropped") || node.id === null) continue;
+        // The old ID's own span (the second token), for precise diagnostics.
         const oldSpan = node.tokens[1]?.span ?? node.span;
         const to = node.kind === "migrate" ? (node.refs[0]?.target ?? null) : null;
 
@@ -105,6 +112,7 @@ export interface OldIndex {
 
 /** Reads an index file; a file that is not one is an error naming it. */
 export function readOldIndex(abs: string): OldIndex {
+  // Parse the file, tolerating a UTF-8 BOM; a read or JSON error names the file.
   let value: JsonValue;
 
   try {
@@ -113,6 +121,8 @@ export function readOldIndex(abs: string): OldIndex {
     throw new Error(`${abs}: not a keylang index: ${errorText(error)}`);
   }
 
+  // Validate the shape before trusting it: `snapshotId`, `nodes` and
+  // `entries` (absent entries count as none) with the fields parity reads.
   const snapshotId = isJsonObject(value) ? value.snapshotId : undefined;
   const nodes = isJsonObject(value) ? value.nodes : undefined;
   const entries = isJsonObject(value) ? (value.entries ?? []) : undefined;
@@ -145,6 +155,8 @@ function isEntryRows(entries: JsonValue[]): entries is (JsonObject & OldIndex["e
  */
 export function lookupNode(nodes: Readonly<Record<string, NodeView>>, id: string): "present" | "opaque" | "missing" {
   if (nodes[id] !== undefined) return "present";
+  // Climb the ID's dotted prefixes until one is a node: only that nearest
+  // ancestor decides whether the area is opaque or fully read.
   let end = id.length;
 
   for (;;) {
@@ -178,6 +190,8 @@ export function migrationCheck(docs: readonly Document[], old: OldSnapshot, snap
   const verdicts: Verdict[] = [];
 
   for (const row of migrationRows(docs)) {
+    // Every verdict is hashed over the row's canonical text, so an edited
+    // row gets a fresh verdict.
     const say = (verdict: VerdictKind, reason: string): void => {
       verdicts.push({
         verdict,
@@ -193,6 +207,7 @@ export function migrationCheck(docs: readonly Document[], old: OldSnapshot, snap
       });
     };
 
+    // Without an old snapshot nothing can be confirmed or refuted.
     if (old.state === "absent") {
       say("unverified", "no old snapshot (set `migration.from` in keylang.json)");
       continue;
@@ -203,6 +218,8 @@ export function migrationCheck(docs: readonly Document[], old: OldSnapshot, snap
       continue;
     }
 
+    // A missing ID in an area the old snapshot reads fully is a dangling
+    // reference (K001), not a verdict.
     const found = lookupNode(old.nodes, row.old);
 
     if (found === "present") say("ok", `in the old snapshot ${old.from}`);
@@ -231,6 +248,7 @@ export interface StackFlow {
   imported?: true;
 }
 
+/** An outgoing integration of a stack, with the fns that call it. */
 export interface StackIntegration {
   id: string;
   label: string;
@@ -239,6 +257,7 @@ export interface StackIntegration {
   fns: string[];
 }
 
+/** An incoming webhook of a stack. */
 export interface StackWebhook {
   id: string;
   label: string;
@@ -257,6 +276,7 @@ export interface Stack {
   integrations: { outgoing: readonly StackIntegration[]; webhooks: readonly StackWebhook[] } | null;
 }
 
+/** How one step of an old flow is carried over by the table. */
 export interface StepParity {
   /** The old ID. */
   old: string;
@@ -265,6 +285,7 @@ export interface StepParity {
   to: { id: string; planned: boolean; verdict: VerdictKind; reason: string }[];
 }
 
+/** One test of an old flow, judged on both sides by its name. */
 export interface TestParity {
   name: string;
   old: { file: string; verdict: VerdictKind; message: string };
@@ -272,6 +293,7 @@ export interface TestParity {
   new: { file: string; verdict: VerdictKind; message: string } | null;
 }
 
+/** The verdict for one old flow: its counterpart in the new stack, its steps and its tests. */
 export interface FlowParity {
   name: string;
   source: "spec" | "discovered";
@@ -285,6 +307,7 @@ export interface FlowParity {
   tests: TestParity[];
 }
 
+/** The whole `migration status` result: per-flow parity and what is left to carry over. */
 export interface MigrationStatus {
   /** The old stack as given (`--from` or `migration.from`). */
   from: string;
@@ -309,6 +332,7 @@ export interface MigrationStatus {
 /** Entry kinds the report lists when the table has no row for them: work that runs without a user's request. */
 const BACKGROUND_KINDS: ReadonlySet<string> = new Set(["cron", "consumer", "observer", "webhook"]);
 
+/** Verdict severity, for taking the worst of several findings. */
 const RANK: Record<VerdictKind, number> = { ok: 0, unverified: 1, fail: 2 };
 
 /** The parity of every flow of the old stack, and what is not carried over yet. Deterministic: same inputs, same bytes. */
@@ -317,11 +341,15 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
   const mapped = new Map<string, MigrationRow[]>();
   const dropped = new Map<string, MigrationRow>();
 
+  // Index the table: an old ID may map to several new IDs; for `dropped`
+  // the first row wins.
   for (const row of rows) {
     if (row.kind === "map") mapped.set(row.old, [...(mapped.get(row.old) ?? []), row]);
     else if (!dropped.has(row.old)) dropped.set(row.old, row);
   }
 
+  // Candidates for a counterpart: hand-written flows before discovered ones,
+  // then by name and file, so ties resolve the same way every run.
   const candidates = [...current.flows].sort((a, b) => (a.source === b.source ? compareText(a.name, b.name) || compareText(a.file ?? "", b.file ?? "") : a.source === "spec" ? -1 : 1));
   const flows: FlowParity[] = [];
   const droppedFlows: MigrationStatus["droppedFlows"] = [];
@@ -330,6 +358,7 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
   const oldFlows = [...old.flows].sort((a, b) => compareText(a.name, b.name) || compareText(a.source, b.source));
 
   for (const flow of oldFlows) {
+    // A flow whose trigger the table drops is out of scope: reported, not judged.
     const drop = flow.trigger === null ? undefined : dropped.get(flow.trigger);
 
     if (drop !== undefined) {
@@ -339,6 +368,8 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
 
     const findings: { verdict: VerdictKind; reason: string }[] = [];
 
+    // Each step: dropped, not in the table (unverified), or mapped, where
+    // each new ID is checked against the new snapshot.
     const steps = flow.steps.map((id): StepParity => {
       if (dropped.has(id)) return { old: id, status: "dropped", to: [] };
       const targets = mapped.get(id);
@@ -370,6 +401,8 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
     const counterpart = counterpartOf(flow, candidates, mapped);
     const tests: TestParity[] = [];
 
+    // No counterpart is a confirmed gap. With one, each old test must exist
+    // under the same name in the counterpart and pass on both sides.
     if (counterpart === null) {
       findings.push({ verdict: "fail", reason: "no counterpart flow in the new stack" });
       notFlows.push({ name: flow.name, source: flow.source });
@@ -399,6 +432,8 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
       if (shared === 0) withoutTests.push(flow.name);
     }
 
+    // The flow's verdict is the worst finding; its reasons are those of
+    // that level only, deduplicated.
     const verdict = findings.reduce<VerdictKind>((worst, item) => (RANK[item.verdict] > RANK[worst] ? item.verdict : worst), "ok");
 
     const reasons = verdict === "ok"
@@ -418,6 +453,8 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
     });
   }
 
+  // Background entry points (cron, consumers, ...) of the old stack that no
+  // row carries over, once each, sorted for stable output.
   const carried = (id: string): boolean => mapped.has(id) || dropped.has(id);
   const entrySeen = new Set<string>();
   const entries: MigrationStatus["notMigrated"]["entries"] = [];
@@ -435,6 +472,9 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
   const notes = [...(input.notes ?? [])];
   const integrations: MigrationStatus["notMigrated"]["integrations"] = [];
 
+  // Integrations: an outgoing one is carried over when the new stack has the
+  // same ID or a row covers one of the fns calling it; a webhook when the new
+  // stack has the same label or a row covers its ID.
   if (old.integrations === null) notes.push("the old stack's integrations are unknown: the old snapshot does not carry them (export it with `keylang map --export-index <file>`, or pass the old repository's directory)");
   else {
     const newIds = new Set(current.integrations?.outgoing.map((item) => item.id) ?? []);
@@ -455,6 +495,7 @@ export function migrationStatus(input: { from: string; old: Stack; current: Stac
 
   integrations.sort((a, b) => compareText(a.kind, b.kind) || compareText(a.id, b.id) || compareText(a.label, b.label));
 
+  // Missing test reports leave tests unverified; say so once.
   if (old.tests === null) notes.push("the old stack has no test report (`check.tests` of the old repository): its tests stay unverified");
 
   if (current.tests === null) notes.push("this repository has no test report (`check.tests` in keylang.json): the new side of every test stays unverified");
@@ -491,6 +532,9 @@ function evidence(stack: Stack, file: string, name: string, side: "old" | "new")
  * least one). Hand-written flows before discovered ones, then by name.
  */
 function counterpartOf(flow: StackFlow, candidates: readonly StackFlow[], mapped: ReadonlyMap<string, readonly MigrationRow[]>): { flow: StackFlow; by: "import" | "trigger" | "steps" } | null {
+  // Three ways to find the counterpart, in order of confidence: `flow
+  // import` provenance under the same name, a mapped trigger, then the
+  // largest overlap of mapped steps (first in candidate order on ties).
   const imported = candidates.find((item) => item.imported === true && item.name === flow.name);
 
   if (imported !== undefined) return { flow: imported, by: "import" };

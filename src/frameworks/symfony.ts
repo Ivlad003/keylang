@@ -15,6 +15,10 @@
 //
 // Detected from `symfony/framework-bundle` in the root `composer.json`, or a
 // `config/bundles.php`.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse);
+// the facts become bindings, constructor arguments, route entries and holes
+// on the graph. Entry points: `symfony`, `parseSymfonyConfig`.
 
 import { posix } from "node:path";
 import { isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, type Node as YamlNode, type Pair, type Scalar, type YAMLMap } from "yaml";
@@ -24,13 +28,16 @@ import type { ConfigAt, ConfigFacts, EntryConfigFact, FrameworkAdapter, TypeName
 /** `EVERY_CLASS` of `./adapter.ts`, written out: the adapter imports this module, so it imports no value back. */
 const EVERY_CLASS = "*";
 
+/** A type reference by class name, the form adapter facts use. */
 const type = (name: string): TypeName => ({ name });
 
 /** PHP class names compare without ASCII case. */
 const key = (name: string): string => name.replace(/^\\+/, "").replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 
+/** `config/services.*` or `config/services_<env>.*`; group 1 is the format. */
 const SERVICES = /^config\/services(?:_[A-Za-z0-9]+)?\.(yaml|yml|xml|php)$/;
 
+/** `config/routes.*` or one file under `config/routes/`; group 1 is the format. */
 const ROUTES = /^config\/routes(?:\/[^/]+)?\.(yaml|yml|xml|php)$/;
 
 export const symfony: FrameworkAdapter = {
@@ -52,13 +59,16 @@ export const symfony: FrameworkAdapter = {
     const names = ["services", "services_dev", "services_test", "services_prod", "routes", "routes/attributes", "routes/annotations"].flatMap((n) => ["yaml", "yml", "xml", "php"].map((ext) => `config/${n}.${ext}`));
     const out: { path: string; owner: string | null }[] = [];
 
+    // The well-known names plus any matching source path, deduplicated; only files that exist and are analysed.
     for (const path of new Set([...names, ...context.sources.filter((p) => SERVICES.test(p) || ROUTES.test(p))])) if (context.analysed(path) && context.read(path) !== null) out.push({ path, owner: null });
 
+    // Sorted by path (code units) so the config file order is stable.
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse: parseSymfonyConfig,
 };
 
+/** Parse a JSON file, tolerating a BOM; missing or malformed JSON is `null`. */
 function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 
@@ -74,6 +84,7 @@ function className(written: string): string {
   return written.trim().replace(/\\+/g, "\\").replace(/^\\/, "");
 }
 
+/** A namespaced PHP class name (at least one `\`), optionally fully qualified; a bare service id does not match. */
 const CLASS_NAME = /^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\+[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)+$/;
 
 /**
@@ -86,6 +97,7 @@ const CLASS_NAME = /^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\+[A-Za-z_
 export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
   const facts: ConfigFacts = { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], entries: [], holes: [], routePrefixes: [], error: null };
 
+  // Only YAML is read; XML and PHP configs become an error, i.e. a hole of the snapshot.
   if (!/\.ya?ml$/.test(path)) return { ...facts, error: { line: 1, reason: `\`${path}\` is Symfony config keylang does not read (only YAML is): what it wires is unknown` } };
   const counter = new LineCounter();
   const doc = parseDocument(text, { lineCounter: counter, uniqueKeys: false });
@@ -96,6 +108,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
     return { ...facts, error: { line: first.linePos?.[0]?.line ?? 1, reason: `\`${path}\` is no YAML: ${first.message.split("\n")[0]}` } };
   }
 
+  // Source position of a YAML node or pair (its key when a pair), 1-based, for diagnostics.
   const at = (node: YamlNode | Pair | null | undefined): ConfigAt => {
     const range = node && "range" in node ? node.range : node && "key" in node && isNode(node.key) ? node.key.range : null;
     const pos = range ? counter.linePos(range[0]) : { line: 1, col: 1 };
@@ -111,6 +124,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
 
   if (!isMap(root)) return facts;
 
+  // services.yaml: walk each service definition under `services:`.
   if (SERVICES.test(path)) {
     const services = root.items.find((p) => isScalar(p.key) && p.key.value === "services")?.value;
 
@@ -123,6 +137,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
       const id = String(keyNode.value);
       const value = isNode(pair.value) ? pair.value : null;
 
+      // `_defaults.bind` applies to every class.
       if (id === "_defaults") {
         const bind = isMap(value) ? value.items.find((p) => isScalar(p.key) && p.key.value === "bind")?.value : null;
 
@@ -130,6 +145,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
         continue;
       }
 
+      // Other `_…` keys (`_instanceof`) and resource prefixes (`App\:`) define no single service.
       if (id.startsWith("_") || id.endsWith("\\")) continue;
 
       // `I: '@C'`: an alias.
@@ -148,11 +164,13 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
         return isNode(found) ? found : null;
       };
 
+      // `alias:` binds the id to another class; a `class:` different from the id binds the id (an interface) to it.
       const alias = field("alias");
       const klass = field("class");
 
       if (isTextScalar(alias) && CLASS_NAME.test(id)) facts.bindings.push({ from: type(className(id)), to: type(className(alias.value.replace(/^@/, ""))), ...at(keyNode) });
       else if (isTextScalar(klass) && CLASS_NAME.test(id) && key(className(klass.value)) !== key(className(id))) facts.bindings.push({ from: type(className(id)), to: type(className(klass.value)), ...at(keyNode) });
+      // Constructor arguments belong to the service's class: `class:` if written, else the id when it is a class name.
       const owner = isTextScalar(klass) ? className(klass.value) : CLASS_NAME.test(id) ? className(id) : null;
 
       if (owner === null) continue;
@@ -179,6 +197,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
     const route = mapJson(pair.value);
     const position = at(keyNode);
 
+    // A route definition (it has a path and no `resource`): one entry per HTTP method, or one for any method.
     if (isJsonString(route.path) || (isStructured(route.path) && !("resource" in route))) {
       const routePath = isJsonString(route.path) ? route.path : null;
       const controller = isJsonString(route.controller) ? route.controller : isJsonObject(route.defaults) && isJsonString(route.defaults._controller) ? route.defaults._controller : null;
@@ -201,6 +220,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
       continue;
     }
 
+    // Otherwise a route import: an attribute import of a directory gives a prefix for the routes found in it.
     const resource = route.resource;
     const dir = isJsonString(resource) ? resource : isJsonObject(resource) && isJsonString(resource.path) ? resource.path : null;
 
@@ -208,6 +228,7 @@ export function parseSymfonyConfig(path: string, text: string): ConfigFacts {
     const prefix = isJsonString(route.prefix) ? route.prefix : "";
 
     if (route.type === "attribute" || route.type === "annotation") {
+      // A single file or a bundle path (`@…Bundle`) is no directory of this project.
       if (dir.endsWith(".php") || dir.startsWith("@")) continue;
       facts.routePrefixes!.push({ dir: posix.normalize(posix.join(posix.dirname(path), dir)).replace(/\/$/, ""), prefix, ...position });
     } else if (isStructured(route.prefix)) hole(pair, name, `route import \`${name}\`: a prefix per locale is not read`);
@@ -228,11 +249,13 @@ function serviceRef(value: string): string | null {
 function argument(facts: ConfigFacts, owner: string, pair: Pair, at: (node: YamlNode | Pair | null | undefined) => { line: number; col: number }, hole: (node: YamlNode | Pair | null | undefined, text: string, reason: string) => void): void {
   const keyNode = isScalar(pair.key) ? pair.key : null;
   const name = keyNode === null ? null : String(keyNode.value);
+  // The key ends with `$param`, optionally after a type (`Psr\Log\LoggerInterface $logger`).
   const param = name === null ? null : /(?:^|\s)\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(name)?.[1] ?? null;
 
   if (param === null) return;
   const value = isNode(pair.value) ? pair.value : null;
 
+  // Only service references (`@…`) are bindings; scalars and parameters are values keylang ignores.
   if (!isTextScalar(value) || !value.value.startsWith("@")) return;
   const target = serviceRef(value.value);
 

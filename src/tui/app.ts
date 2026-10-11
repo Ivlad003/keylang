@@ -20,6 +20,11 @@
 // F6 panel in `results-panel.ts`, with what each record shows in `reports/`.
 // This class dispatches input to them and keeps the editor, the analysis and
 // the session's one explicit operation with its save step and commit.
+//
+// Pipeline place: a consumer of both pipelines. It runs Markdown → IR →
+// resolve/rules and source → FileFacts → graph through `analyze()`, and the
+// LSP features (`lsp-features.ts`) over the result. Entry points: the `App`
+// class (`attach`, `input`, `resize`, `frame`, `close`) and `configErrorCursor`.
 
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -76,6 +81,7 @@ import { operationLabel, recordSummary } from "./reports/records.ts";
 import { clipOnScreen, contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
+/** Where the session draws: a terminal or a WebSocket client. */
 export interface Surface {
   write(ansi: string): void;
   /**
@@ -87,11 +93,13 @@ export interface Surface {
   suspend?: () => void;
 }
 
+/** Runs one analysis; the default is the shared `analyze()`, tests inject their own. */
 export type Analyzer = (request: AnalysisRequest) => Promise<Analysis>;
 
 /** Runs one explicit operation; the session's default is the shared `runOperation`. Tests inject a gated one. */
 export type OperationRunner = (request: OperationRequest, context: OperationContext) => Promise<OperationResult>;
 
+/** How a session is created: the repository, the screen size and the injectable collaborators. */
 export interface AppOptions {
   root: string;
   cols: number;
@@ -112,6 +120,7 @@ export interface AppOptions {
   home?: string;
 }
 
+/** The generated map directory and the explained-map directory, relative to the root. */
 type MapDirs = { map: string; explained: string };
 
 /** The save step of an operation, as `saveStep` names it. */
@@ -129,6 +138,7 @@ const PASTE_MS = 1000;
 /** The largest frame a session draws; a bigger size from a client is cut to it. */
 export const MAX_COLS = 1000;
 
+/** The tallest frame a session draws. */
 export const MAX_ROWS = 400;
 
 /** At most this many of one key in one chunk are a key held down (auto-repeat); more are pasted text. */
@@ -140,6 +150,7 @@ const TYPED_KEYS = 8;
 /** Keys handled before the mode: they show panels and the clip's chat and reanalyse, and never edit. */
 const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6", "f7"]);
 
+/** One TUI session: its state, its input dispatch, the background analysis and the one explicit operation. */
 export class App {
   readonly state: State;
   private surface: Surface | null = null;
@@ -208,6 +219,7 @@ export class App {
   /** The rows of the last hover, for its workspace, file and target (or position off any target). */
   private lastHover: { ws: Workspace; path: string; key: string; lines: Hover["lines"] | null } | null = null;
 
+  /** Builds the state and the helpers, shows the first file from disk, then reads the config and analyses. */
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
     this.operationWorker = options.operationWorker ?? null;
@@ -408,6 +420,7 @@ export class App {
 
   // ---------- transport ----------
 
+  /** A transport takes the screen: the next frame is drawn whole. */
   attach(surface: Surface, cols: number, rows: number): void {
     this.surface = surface;
     this.previous = null;
@@ -419,6 +432,7 @@ export class App {
     this.surface = null;
   }
 
+  /** A new screen size, clamped to what the session draws. */
   resize(cols: number, rows: number): void {
     this.state.cols = Math.max(20, Math.min(MAX_COLS, cols));
     this.state.rows = Math.max(8, Math.min(MAX_ROWS, rows));
@@ -448,6 +462,9 @@ export class App {
 
     if (whole && this.decoder.waiting) events.push(...this.decoder.flush());
 
+    // Walk the decoded events in runs: a run of printable keys that looks
+    // pasted (too many at once) is inserted as one paste, never as keystrokes
+    // that could trigger view-mode commands.
     for (let i = 0; i < events.length; ) {
       const typed = typedRun(events, i);
       // In the clip's chat a pasted line break is a space but Enter sends: an Enter that ends the chunk
@@ -468,6 +485,8 @@ export class App {
       i += keys;
     }
 
+    // An unfinished sequence (a lone ESC, an open bracketed paste) is flushed
+    // after a pause, so it is not left waiting for bytes that never come.
     if (this.decoder.waiting || this.decoder.pasting) {
       this.escTimer = setTimeout(
         () => {
@@ -512,6 +531,7 @@ export class App {
     return new Promise((done) => this.waiters.push(done));
   }
 
+  /** Ends the session: timers, the assistant, the chat, the running operation and its worker. */
   close(): void {
     this.closed = true;
 
@@ -530,6 +550,7 @@ export class App {
     this.wake();
   }
 
+  /** Paints the state and sends only what changed since the last frame. */
   private draw(): void {
     if (!this.surface) return;
     const grid = this.paint();
@@ -546,6 +567,7 @@ export class App {
 
   // ---------- analysis ----------
 
+  /** Unsaved buffers by absolute path: the analysis reads them instead of the files on disk. */
   private overlay(): Map<string, string> {
     const overlay = new Map<string, string>();
 
@@ -570,6 +592,8 @@ export class App {
     }
 
     if (!this.readConfig(explicit)) return;
+    // Each run takes a new generation; a result that arrives after a newer run
+    // started is dropped. `edits` tells whether typing happened while it ran.
     const generation = ++this.generation;
     const edits = this.edits;
     this.state.updating = true;
@@ -659,6 +683,7 @@ export class App {
     else if (event.name === "q") this.quit();
   }
 
+  /** Takes a finished analysis as current, keeping the F6 selection on the same finding. */
   private adoptResult(analysis: Analysis, edits: number, selected: CheckResult | undefined): void {
     this.state.updating = false;
     // Typing while it ran: the marks belong to older text and stay dimmed until the next run.
@@ -705,10 +730,12 @@ export class App {
       });
   }
 
+  /** Nothing runs or waits to run: no analysis, no settle timer, no assistant request. */
   private quiet(): boolean {
     return this.running === 0 && this.settleTimer === null && !this.assist.waiting;
   }
 
+  /** Resolves the `idle()` waiters once the session is quiet. */
   private wake(): void {
     if (!this.quiet()) return;
     const waiters = this.waiters;
@@ -727,6 +754,8 @@ export class App {
     this.state.briefs = loadBriefs(analysis.config);
     const ws = workspace(this.state.root, analysis, new Map());
 
+    // Clean buffers take the text the analysis read (a regenerated map, an
+    // edit outside the session); a dirty buffer is the user's and is left alone.
     for (const buffer of this.state.buffers.values()) {
       if (isDirty(buffer)) continue;
       const fresh = ws.text(buffer.path);
@@ -746,6 +775,7 @@ export class App {
     // A snapshot other than the one a result was computed on: the code changed under it.
     const snapshotId = analysis.snapshot?.snapshotId ?? null;
 
+    // Each kind of result names its snapshot in a different field of its payload.
     for (const record of this.state.records) {
       const result = record.result;
 
@@ -826,6 +856,7 @@ export class App {
     }
   }
 
+  /** The spec files and `keylang.json` on disk, sorted for the files panel; saved explanations left out. */
   private diskFiles(): string[] {
     const dir = join(this.state.root, this.specDir());
     // The settings are `keylang.json` in the same editor, not a separate form (design §7.1).
@@ -841,10 +872,12 @@ export class App {
 
   // ---------- buffers ----------
 
+  /** The buffer of the current file, or null when none is open. */
   private buffer(): Buffer | null {
     return this.state.current ? (this.state.buffers.get(this.state.current) ?? null) : null;
   }
 
+  /** The buffer of `path`, loaded once: from the analysis's text of it (a generated view), else from disk. */
   private load(path: string): Buffer {
     const existing = this.state.buffers.get(path);
 
@@ -859,6 +892,7 @@ export class App {
     return buffer;
   }
 
+  /** Shows `path` in the editor at `cursor`; `remember` pushes the place left onto the Ctrl+O stack. */
   private open(path: string, cursor: Cursor, remember = true): void {
     // Opening a file leaves the start screen; the analysis still waits for Browse or F5.
     this.state.start = null;
@@ -884,12 +918,14 @@ export class App {
     if (this.state.featureLine?.path !== path) this.refreshFeatureLine();
   }
 
+  /** The current buffer's lines (none without a file). */
   private lines(): readonly string[] {
     const buffer = this.buffer();
 
     return buffer ? bufferLines(buffer) : [];
   }
 
+  /** Keeps the cursor on an existing line and grapheme cluster. */
   private clampCursor(): void {
     const buffer = this.buffer();
     const cursor = this.state.cursor;
@@ -929,6 +965,10 @@ export class App {
     this.state.left = Math.min(this.state.left, scrollToFit(line, 0, line.clusters.length, textWidth));
   }
 
+  /**
+   * Applies `change` to the current buffer's lines with an undo step (one per
+   * burst of typing when `coalesce`), then schedules an analysis.
+   */
   private edit(change: (lines: string[], cursor: Cursor) => void, coalesce = false): void {
     const buffer = this.buffer();
 
@@ -944,6 +984,8 @@ export class App {
     if (this.state.lastMerge?.path === buffer.path) this.state.lastMerge = null;
     const last = buffer.undo.at(-1);
 
+    // A coalesced edit adds no undo step while the last step's text already
+    // differs (the burst has one); the history keeps the latest 200 steps.
     if (!coalesce || !last || last.text === buffer.text) buffer.undo.push({ text: buffer.text, cursor: { ...this.state.cursor } });
 
     if (buffer.undo.length > 200) buffer.undo.shift();
@@ -956,6 +998,7 @@ export class App {
     this.reanalyzeSoon();
   }
 
+  /** Ctrl+S: writes the current buffer, unless an operation is writing or the file changed on disk meanwhile. */
   private save(): void {
     const buffer = this.buffer();
 
@@ -984,6 +1027,7 @@ export class App {
     this.reanalyze();
   }
 
+  /** The file on disk differs from what the buffer last read or wrote. */
   private changedOnDisk(buffer: Buffer): boolean {
     return readText(resolve(this.state.root, buffer.path)) !== buffer.disk;
   }
@@ -1075,6 +1119,7 @@ export class App {
     const barrier = this.state.barrier!;
     let saved = 0;
 
+    // Each listed buffer that is still dirty: check it as Ctrl+S would, then write it.
     for (const path of barrier.files) {
       const buffer = this.state.buffers.get(path);
 
@@ -1126,6 +1171,8 @@ export class App {
     const last = this.liveWorkspace;
 
     if (last?.analysis === analysis && last.buffers.length === buffers.length && buffers.every((buffer, i) => last.buffers[i] === buffer && last.versions[i] === buffer.version)) return last.ws;
+    // Otherwise rebuild: each buffer's own parse replaces the analysed document,
+    // and a buffer with no document yet (a new spec) is added.
     const docs = analysis.docs.map((doc) => this.state.buffers.get(doc.path)?.doc ?? doc);
 
     for (const buffer of buffers) if (buffer.doc && !docs.some((doc) => doc.path === buffer.path)) docs.push(buffer.doc);
@@ -1136,6 +1183,7 @@ export class App {
     return ws;
   }
 
+  /** The cursor as an LSP position: the column in UTF-16 units, as the LSP features count. */
   private lspPosition(cursor: Cursor): LspPosition {
     const buffer = this.buffer();
 
@@ -1153,6 +1201,7 @@ export class App {
     const editor = layout(this.state).editor;
 
     if (x < editor.x || x >= editor.x + editor.width || y < editor.y || y >= editor.y + editor.height) return null;
+    // A screen row may be a text line or an evidence row; only a text line has a column.
     const row = editorRows(this.state, buffer, editor.height)[y - editor.y];
 
     if (!row || row.kind !== "line") return null;
@@ -1207,6 +1256,7 @@ export class App {
     const doc = this.buffer()?.doc;
 
     if (!ws || !path || !doc) return null;
+    // Cache key: the target's span when over one, else the exact position.
     const target = targetAt(doc, this.offsetOf(cursor));
     const key = target === null ? `at ${cursor.line}:${cursor.col}` : `${target.kind} ${target.span.start.offset}-${target.span.end.offset}`;
     const last = this.lastHover;
@@ -1228,6 +1278,7 @@ export class App {
     for (const line of content.evidence) lines.push({ text: `• ${runsText(line)}`, kind: "evidence" });
 
     if (content.flows.length > 0) lines.push({ text: `flows: ${content.flows.join(", ")}`, kind: "text" });
+    // A code declaration shows its first four lines (tabs as two spaces) under a rule.
     const declaration = content.declaration;
     const code = declaration === null || extname(declaration.file) === ".md" ? null : readText(resolve(this.state.root, declaration.file));
 
@@ -1257,6 +1308,7 @@ export class App {
 
   // ---------- navigation ----------
 
+  /** Enter: the code that the ID (or code link) on or near the cursor names. */
   private goToCode(): void {
     const at = this.targetNear(this.state.cursor);
     const ws = this.live();
@@ -1284,6 +1336,8 @@ export class App {
   private jump(abs: string, line: number): void {
     const rel = toPosix(relative(this.state.root, abs));
 
+    // A spec of the repository opens in the session; code goes to `$EDITOR` when
+    // the transport has one, else to the read-only viewer.
     if (extname(abs) === ".md" && !rel.startsWith("..")) {
       this.open(rel, { line: line - 1, col: 0 });
 
@@ -1376,6 +1430,7 @@ export class App {
     const dirs = this.mapDirs(analysis);
     let target: string;
 
+    // Map ↔ explained map, same layer file name; the explained map's README has no twin.
     if (path.startsWith(dirs.map)) {
       if (!analysis.map?.explained) {
         this.state.message = 'the explained map is off: add "explain": {"map": true} to keylang.json, then F5';
@@ -1409,10 +1464,12 @@ export class App {
     const line = this.lineOfNode(path, id);
 
     if (line === null) return this.goToSpec(id);
+    // The cursor lands after the item's indentation and `- ` marker.
     const text = bufferLines(this.load(path))[line] ?? "";
     this.open(path, { line, col: graphemes(/^\s*(?:- )?/.exec(text)![0]).length });
   }
 
+  /** Alt+Enter: the spec line that declares `id`. */
   private goToSpec(id: string | null): void {
     const analysis = this.state.analysis;
 
@@ -1434,6 +1491,7 @@ export class App {
     this.open(found.decl.file, { line: found.decl.span.start.line - 1, col: clusterAt(lines[found.decl.span.start.line - 1] ?? "", found.decl.span.start.col - 1) });
   }
 
+  /** The ID reference on or near the cursor, or null. */
   private idAtCursor(): string | null {
     const buffer = this.buffer();
     const at = this.targetNear(this.state.cursor);
@@ -1444,6 +1502,7 @@ export class App {
     return target?.kind === "id" ? target.id : null;
   }
 
+  /** Ctrl+O: the place before the last jump. */
   private goBack(): void {
     this.state.completion = null;
     const place = this.state.back.pop();
@@ -1466,6 +1525,11 @@ export class App {
 
   // ---------- events ----------
 
+  /**
+   * Dispatches one input event. Order matters: modal layers first (the save
+   * step, the quit question, prompts, help, MERGE…), then the panel keys and
+   * the mode's own keys, so a key reaches only the topmost thing that takes it.
+   */
   private handle(event: InputEvent): void {
     // A ghost line answers the next key in the editor (Tab takes it, Alt+] cycles); a click, a paste,
     // a panel key or anything outside the editor (the clip's chat too) drops it, so it is never taken into other text.
@@ -1582,6 +1646,7 @@ export class App {
     }
   }
 
+  /** Keys over the help: arrows and pages scroll it, any other key closes it. */
   private helpKey(event: KeyEvent): void {
     const page = Math.max(1, layout(this.state).panel.height - 4);
     const step = event.name === "up" || event.name === "k" ? -1 : event.name === "down" || event.name === "j" ? 1 : event.name === "pageup" ? -page : event.name === "pagedown" ? page : 0;
@@ -1702,6 +1767,7 @@ export class App {
     this.quitIfSaved(outcome);
   }
 
+  /** Moves the cursor by `lines` (negative: up), clamped and kept on screen. */
   private move(lines: number): void {
     this.state.cursor.line += lines;
     this.clampCursor();
@@ -1710,8 +1776,10 @@ export class App {
     if (this.state.hover?.source === "key") this.state.hover = null;
   }
 
+  /** The cursor keys the view and the editor share; true when the key was one of them. */
   private common(event: KeyEvent): boolean {
     const page = Math.max(1, layout(this.state).editor.height - 2);
+    // Shift+↑/↓ in the editor starts or extends a line selection; any other motion ends it.
     const shift = event.shift && this.state.mode === "edit";
 
     if (shift && (event.name === "up" || event.name === "down")) this.state.selection ??= this.state.cursor.line;
@@ -1803,6 +1871,7 @@ export class App {
     if (!this.state.hover) this.state.message = this.state.analysis ? "nothing known about this id" : "analysis is still running";
   }
 
+  /** Keys of the view (and reading mode): navigation, jumps, and the single-letter commands. */
   private viewKey(event: KeyEvent): void {
     if (!event.ctrl && !event.alt && this.common(event)) return;
 
@@ -1905,6 +1974,7 @@ export class App {
     }
   }
 
+  /** Keys while editing: a ghost suggestion answers first (Tab takes it, Alt+] cycles), then the editor proper. */
   private editKey(event: KeyEvent): void {
     const ghost = this.state.ghost;
 
@@ -1931,6 +2001,7 @@ export class App {
     if (this.state.mode === "edit") this.assist.ghostSoon();
   }
 
+  /** Editor keys with no ghost shown: an open completion list takes ↑↓/Tab/Enter/Esc, then editing keys. */
   private editKeyWithoutGhost(event: KeyEvent): void {
     const completion = this.state.completion;
 
@@ -2029,6 +2100,7 @@ export class App {
     if (event.text !== undefined && !event.ctrl && !event.alt) return this.insert(event.text);
   }
 
+  /** Inserts typed or pasted text at the cursor; control characters and escape sequences are dropped first. */
   private insert(raw: string): void {
     const text = printable(raw);
     const buffer = this.buffer();
@@ -2036,6 +2108,8 @@ export class App {
     if (text === "" || !buffer) return;
     // The cursor line as laid out before the edit: the split point without segmenting the line again.
     const layout = lineLayout(buffer, this.state.cursor.line);
+    // One typed character (not a space) coalesces into the current undo step;
+    // a space, a paste or a line break starts a new one (the `coalesce` argument).
     this.edit((lines, cursor) => {
       const line = lines[cursor.line] ?? "";
       const col = Math.min(cursor.col, layout.clusters.length);
@@ -2053,6 +2127,8 @@ export class App {
         return;
       }
 
+      // Several lines: the first joins the text before the cursor, the last the
+      // text after it, and the cursor ends after the last inserted line.
       const inserted = [before + parts[0], ...parts.slice(1, -1), parts.at(-1)! + after];
       lines.splice(cursor.line, 1, ...inserted);
       cursor.line += parts.length - 1;
@@ -2061,6 +2137,7 @@ export class App {
     this.complete(false);
   }
 
+  /** Ctrl+Z in the editor: back to the last undo step's text and cursor. */
   private undoEdit(): void {
     this.state.completion = null;
     const buffer = this.buffer();
@@ -2119,6 +2196,7 @@ export class App {
     this.state.completion = open ? { items, index: 0, from, shown: shown ?? Date.now() } : null;
   }
 
+  /** Replaces the word the completion list was opened on with the chosen item. */
   private acceptCompletion(): void {
     const completion = this.state.completion;
 
@@ -2139,10 +2217,12 @@ export class App {
 
   // ---------- panels ----------
 
+  /** Moves the navigation selection off headings (in `direction`) and scrolls it into view. */
   private fixNavIndex(direction: 1 | -1): void {
     const items = navEntries(this.state);
 
     if (items.length === 0) return;
+    // Headings are not selectable: step past them in the direction of travel.
     let index = Math.max(0, Math.min(this.state.navIndex, items.length - 1));
 
     while (items[index]?.kind === "heading" && index + direction >= 0 && index + direction < items.length) index += direction;
@@ -2157,6 +2237,7 @@ export class App {
 
   // ---------- context panel ----------
 
+  /** F2: the files panel; it takes the focus only where keys go to panels (`focusable`). */
   private toggleFiles(focusable: boolean): void {
     this.state.showFiles = !this.state.showFiles;
 
@@ -2168,6 +2249,7 @@ export class App {
     this.keepVisible();
   }
 
+  /** F3: the navigation panel; hiding it gives the focus back to the editor. */
   private toggleNav(): void {
     this.state.showNav = !this.state.showNav;
 
@@ -2207,6 +2289,7 @@ export class App {
     return contextPack(analysis, { path: buffer.path, text: buffer.text, line: this.state.cursor.line, added: context.added, removed: context.removed });
   }
 
+  /** Keys of the focused context panel: move, leave an item out (`x`), add a node (`@`). */
   private contextKey(event: KeyEvent): void {
     const pack = this.contextPack();
     const items = pack?.items ?? [];
@@ -2248,6 +2331,7 @@ export class App {
     }
   }
 
+  /** Adds the node `id` to the agent context, with a message for an unknown ID. */
   private addToContext(id: string): void {
     const analysis = this.state.analysis;
 
@@ -2349,6 +2433,7 @@ export class App {
     return lines;
   }
 
+  /** Keys of the focused navigation panel: move, fold or unfold, open the item's code or spec, zoom. */
   private navKey(event: KeyEvent): void {
     const items = navEntries(this.state);
     const item = items[this.state.navIndex];
@@ -2409,6 +2494,7 @@ export class App {
     }
   }
 
+  /** Keys of the focused files panel: move and open. */
   private filesKey(event: KeyEvent): void {
     switch (event.name) {
       case "up":
@@ -2445,6 +2531,7 @@ export class App {
 
   // ---------- the code viewer ----------
 
+  /** Keys of the read-only code viewer: scroll, and go back (Esc, `q`, Ctrl+O). */
   private codeKey(event: KeyEvent): void {
     const code = this.state.code;
 
@@ -2547,6 +2634,7 @@ export class App {
       return (path) => path === CONFIG_FILE || selected.some((item) => item === "" || path === item || path.startsWith(`${item}/`));
     };
 
+    // A step over `inputs` that also names `targets` when it opens anyway (some input is dirty).
     const naming = (inputs: (path: string) => boolean, targets: string[] | null): SaveStep => {
       const step: SaveStep = { inputs };
 
@@ -2711,6 +2799,8 @@ export class App {
     this.analysisAfterCommit = false;
     const kept: string[] = [];
 
+    // Each written or removed file that has a buffer: a clean one follows the
+    // disk, a dirty one keeps the user's text and is named in the note.
     for (const path of touched) {
       const buffer = this.state.buffers.get(path);
 
@@ -2738,6 +2828,7 @@ export class App {
 
     this.clampCursor();
 
+    // Earlier check-only reports about the files just written no longer hold: mark them outdated.
     for (const record of this.state.records) {
       if (record.kind === "map-check" && result.kind === "map" && touched.length > 0) record.outdated ??= "the map was written since this run";
       const file = record.result?.kind === "baseline" ? record.result.payload?.file : undefined;
@@ -2791,6 +2882,7 @@ export class App {
       progress: null,
     };
 
+    // Where the user was when it started: a proposal opens in MERGE only while they are still there.
     const label = operationLabel(request);
     const buffer = this.state.current === null ? undefined : this.state.buffers.get(this.state.current);
     const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null, results: this.state.results.open, record: this.state.results.index };
@@ -2889,6 +2981,7 @@ export class App {
    * disk under them) — and an apply stops at what blocks its files.
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
+    // Refuses the commit for every target that has a dirty buffer; undefined lets it through.
     const refuse = (targets: readonly string[], why: string): CommitGate => {
       const edited = targets.filter((target) => {
         const buffer = this.state.buffers.get(target);
@@ -3626,6 +3719,7 @@ export class App {
 
   // ---------- mouse ----------
 
+  /** Pointer events: the topmost thing under the pointer takes them (panel, clip, side panels, editor). */
   private mouse(event: MouseEvent): void {
     // The F6 panel is modal over the editor area: only the wheel scrolls its report.
     // While a finding's target is shown (viewing), the keys and the wheel go to it instead.
@@ -3869,6 +3963,7 @@ export class App {
     prompt.index = 0;
   }
 
+  /** Keys of the open prompt (a form, the palette, a search): Esc closes it, the rest go to its key table. */
   private promptKey(event: KeyEvent): void {
     const prompt = this.state.prompt!;
 
@@ -4087,12 +4182,14 @@ export class App {
     }
   }
 
+  /** `n`: the next line (wrapping) that contains the search text, case-insensitively. */
   private findNext(): void {
     const query = this.state.search;
 
     if (!query) return;
     const lines = this.lines();
 
+    // Start on the line after the cursor and wrap around to the cursor's own line last.
     for (let step = 1; step <= lines.length; step++) {
       const line = (this.state.cursor.line + step) % lines.length;
       const at = lines[line]!.toLowerCase().indexOf(query.toLowerCase());
@@ -4110,6 +4207,7 @@ export class App {
 
   // ---------- text → spec ----------
 
+  /** Ctrl+G: free text (the selection, else the paragraph at the cursor) into spec items, proposed through MERGE. */
   private textToSpec(): void {
     const buffer = this.buffer();
 
@@ -4172,10 +4270,12 @@ export class App {
   }
 }
 
+/** Visits every item of every section of `doc`, depth first. */
 function forNodes(doc: Document, visit: (node: Node) => void): void {
   for (const section of doc.sections) for (const top of sectionNodes(section)) walk(top, visit);
 }
 
+/** Every `planned` ID in the documents with its declared kind (`fn` when none is written). */
 function plannedIds(docs: readonly Document[]): { id: string; kind: string }[] {
   const out: { id: string; kind: string }[] = [];
 
@@ -4256,6 +4356,7 @@ function printable(text: string): string {
     .replace(CONTROL_CHARACTER, "");
 }
 
+/** The state of `keylang.json` on disk, and its `clip` setting when it can say. */
 type ConfigOnDisk = { config: ConfigState; clip: boolean | null };
 
 /**

@@ -23,12 +23,17 @@
 // Nothing is guessed from names: a receiver no registration or creation
 // makes a router is no router, a mounted value keylang cannot follow is not
 // mounted, and a computed path of a router is a hole with the reason.
+//
+// Pipeline: FileFacts (`web` registrations) + graph → entry points and holes
+// of the snapshot. Entry point: `webEntries`; key terms: router key, mount,
+// prefix, registration, middleware, server action.
 
 import { fnIn, frameworkEntry, type EntryScope } from "../entries.ts";
 import type { DecoratorArg, FileFacts, WebCallFact } from "../extract/facts.ts";
 import type { Gap, Module } from "../graph.ts";
 import type { EntryPoint } from "../snapshot.ts";
 
+/** A decorator-style argument literal with its position. */
 type Arg = DecoratorArg & { line: number; col: number };
 
 /** A top-level name of a file. */
@@ -49,6 +54,7 @@ interface HandlerRef {
   note: string | null;
 }
 
+/** What the web adapters add to the snapshot: entry points, holes, and the language-level routes they replace. */
 export interface WebEntries {
   entries: EntryPoint[];
   holes: Gap[];
@@ -56,13 +62,16 @@ export interface WebEntries {
   supersedes: Set<string>;
 }
 
+/** Router methods that register a route for one HTTP verb (`all` for any). */
 const VERBS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options"]);
 
+/** A call that creates a router or an app: `express.Router()`, `Router()`, `express()`, `fastify()`; group 1 says which. */
 const CREATOR = /(?:^|\.)(Router|express|fastify|Fastify)$/;
 
 /** Fastify route options that run before the handler. */
 const HOOKS = ["onRequest", "preParsing", "preValidation", "preHandler"];
 
+/** A plain `require('<specifier>')`; group 1 is the specifier. */
 const REQUIRE = /^require\(\s*['"`]([^'"`]+)['"`]\s*\)$/;
 
 /** A registration with the router it is written on. */
@@ -78,6 +87,7 @@ interface Mount {
   prefix: string;
 }
 
+/** The entry points of the active JS web frameworks: Express/Fastify routers, then Next.js. */
 export function webEntries(facts: readonly FileFacts[], scope: EntryScope, active: readonly string[]): WebEntries {
   const out: WebEntries = { entries: [], holes: [], supersedes: new Set() };
 
@@ -88,12 +98,18 @@ export function webEntries(facts: readonly FileFacts[], scope: EntryScope, activ
   return out;
 }
 
+/**
+ * Express and Fastify, in four steps: find routers, resolve mounts between
+ * them, compute each router's full prefixes, then turn each registration and
+ * `use` middleware into entries at every prefix.
+ */
 function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: readonly string[], out: WebEntries): void {
   const files = facts.filter((f) => f.web !== undefined);
   const resolver = new Values(scope);
   /** Kind of a router key: created by `Router()`, an app (`express()`, `fastify()`), a plugin's parameter, else a value. */
   const kinds = new Map<string, "router" | "app" | "plugin">();
 
+  // Step 1a: values created by a router or app factory.
   for (const file of files) {
     for (const v of file.web!.values) {
       const m = CREATOR.exec(v.callee);
@@ -104,6 +120,8 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
 
   const registrations: Registration[] = [];
 
+  // Step 1b: key every registration by the router it is written on: a plugin
+  // function's parameter (by the function), else the value the receiver names.
   for (const file of files) {
     for (const call of file.web!.calls) {
       let key: string;
@@ -121,6 +139,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     }
   }
 
+  // Sorted by file, position and method so entries and holes come out in a stable order.
   registrations.sort((a, b) => cmp(a.file, b.file) || a.call.line - b.call.line || a.call.col - b.call.col || cmp(a.call.method, b.call.method));
   // A router is a value a creation names (`Router()`, `express()`), a plugin's parameter, or a key a route is registered on with a path.
   const routers = new Set<string>(kinds.keys());
@@ -143,6 +162,8 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
   /** `use` middleware: fn → registration, at the parent's prefixes. */
   const middleware: { r: Registration; id: string; prefix: string; arg: Arg }[] = [];
 
+  // Step 2: mounts. `use(path?, router | fn …)` mounts routers or records
+  // middleware; `register(plugin, { prefix })` mounts a Fastify plugin.
   for (const r of registrations) {
     const { call, file } = r;
     const module = scope.graph.byPath.get(file);
@@ -153,6 +174,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     if (call.method === "use") {
       const first = call.args[0]!;
       const pathArg = first.kind === "string" ? first.value : null;
+      // An optional literal path comes first; every other argument is a router to mount or a middleware fn.
       const rest = pathArg === null ? call.args : call.args.slice(1);
 
       for (const [i, arg] of rest.entries()) {
@@ -194,6 +216,8 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
   // Each router's paths: the prefixes of its mounts, up to a router mounted nowhere.
   const memo = new Map<string, { prefix: string; root: string }[]>();
 
+  // Walk up the mounts to every root, joining prefixes; `stack` breaks mount cycles.
+  // Only top-level results are memoised: a result computed under a cycle cut may be partial.
   const prefixes = (key: string, stack: ReadonlySet<string>): { prefix: string; root: string }[] => {
     const known = memo.get(key);
 
@@ -216,6 +240,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     return unique;
   };
 
+  // Which framework a router belongs to: by what its root's file or the registering file imports, else by what is active.
   const frameworkOf = (root: string, file: string): string | null => {
     const imports = (path: string, pkg: string): boolean => scope.facts.get(path)?.imports.some((i) => i.source === pkg) ?? false;
 
@@ -230,6 +255,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     return active.includes("express") ? "express" : active.includes("fastify") ? "fastify" : null;
   };
 
+  // A note for a router or plugin that nothing mounts: its paths lack the prefix they would get.
   const unmounted = (root: string): string | null => {
     const kind = kinds.get(root);
     const { file, name } = keyParts(root);
@@ -241,6 +267,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     return null;
   };
 
+  // One entry per prefix the router is reachable at; the handler's fn is the entry, else the module with a note.
   const add = (r: Registration, verb: string, path: string, handler: Arg | DecoratorArg | undefined, before: readonly (Arg | DecoratorArg)[], at: { line: number; col: number }): void => {
     const module = scope.graph.byPath.get(r.file);
 
@@ -272,6 +299,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     }
   };
 
+  // Step 3: route registrations, as verb calls (`get('/x', …)`, also on `route('/x')`) or Fastify `route({ … })`.
   for (const r of registrations) {
     const { call, file } = r;
     const module = scope.graph.byPath.get(file);
@@ -280,6 +308,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
       const path = pathOf(call);
       const args = call.route === undefined ? call.args.slice(1) : call.args;
 
+      // A registration with no literal path on a known router is a hole; on a non-router it is not ours.
       if (path === null || !(routePath(path) || routers.has(r.key))) {
         if (path === null && routers.has(r.key) && (kinds.has(r.key) || mounts.has(r.key))) {
           const written = call.route ?? call.args[0]!;
@@ -303,6 +332,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
       const method = prop(opts, "method");
       const methods = method?.kind === "string" ? [method.value] : method?.kind === "array" ? method.items.flatMap((i) => (i.kind === "string" ? [i.value] : [])) : [];
 
+      // The url and every method must be literals, else the whole route is a hole.
       if (url?.kind !== "string" || methods.length === 0 || (method?.kind === "array" && methods.length !== method.items.length)) {
         out.holes.push(hole(file, opts, `the route's ${url?.kind !== "string" ? "url" : "method"} is computed at run time`, module));
         continue;
@@ -312,6 +342,7 @@ function routerEntries(facts: readonly FileFacts[], scope: EntryScope, active: r
     }
   }
 
+  // Step 4: `use(fn)` middleware becomes a `USE <prefix>` entry at each prefix of its router.
   for (const { r, id, prefix, arg } of middleware) {
     for (const p of prefixes(r.key, new Set())) {
       const fw = frameworkOf(p.root, r.file);
@@ -337,10 +368,12 @@ class Values {
   value(file: string, name: string, depth = 0): TopName {
     const facts = this.scope.facts.get(file);
 
+    // Bounded depth: re-export chains longer than this are not followed.
     if (facts === undefined || depth > 8) return { file, name };
 
     if (facts.decls.some((d) => d.name === name) || facts.web?.values.some((v) => v.name === name)) return { file, name };
 
+    // An imported name: follow the import to the file it resolves to and the name that file exports.
     for (const imp of facts.imports) {
       const binding = imp.bindings.find((b) => b.local === name);
 
@@ -380,6 +413,7 @@ class Values {
 
     if (module === undefined) return null;
 
+    // Find the graph's dependency edge for this import: by position, else by text, else by the specifier in its text.
     const dep =
       module.deps.find((d) => d.file === file && d.line === line && d.col === col) ??
       module.deps.find((d) => d.file === file && d.text === text) ??
@@ -424,12 +458,14 @@ function literalStrings(items: readonly DecoratorArg[]): string[] | null {
   return strings.length === items.length ? strings : null;
 }
 
+/** Split a router key back into its file and name. */
 function keyParts(key: string): KeyParts {
   const [kind, file, name] = key.split("\0");
 
   return { file: file ?? "", name: kind === "p" ? null : (name ?? null) };
 }
 
+/** The literal path of a registration (from `route('/x')` or the first argument), else null. */
 function pathOf(call: WebCallFact): string | null {
   const arg = call.route ?? call.args[0];
 
@@ -441,6 +477,7 @@ function routePath(path: string): boolean {
   return path.startsWith("/") || path === "*";
 }
 
+/** A property of an object literal argument. */
 function prop(arg: DecoratorArg, key: string): DecoratorArg | undefined {
   return arg.kind === "object" ? arg.props.find((p) => p.key === key)?.value : undefined;
 }
@@ -482,6 +519,7 @@ function middlewareText(scope: EntryScope, file: string, arg: DecoratorArg): str
   return `\`${argText(arg)}\` (unresolved)`;
 }
 
+/** An argument as source-like text, for notes and hole reasons. */
 function argText(arg: DecoratorArg): string {
   switch (arg.kind) {
     case "string":
@@ -501,6 +539,7 @@ function argText(arg: DecoratorArg): string {
   }
 }
 
+/** An `unsupported` gap at an argument, owned by the registering module. */
 function hole(file: string, at: { line: number; col: number }, reason: string, module: Module | undefined): Gap {
   return { kind: "unsupported", file, line: at.line, col: at.col, endLine: at.line, endCol: at.col, text: "", reason, source: module?.id ?? null };
 }
@@ -513,8 +552,10 @@ function joinPath(...parts: string[]): string {
     .join("/")}`;
 }
 
+/** A Pages Router API file; group 1 is its path from `api/` without the extension. */
 const PAGES_API = /(?:^|\/)pages\/(api\/.+)\.(?:ts|tsx|js|jsx|mjs)$/;
 
+/** Next.js middleware: `middleware.*` at the root or under `src/`. */
 const MIDDLEWARE = /^(?:src\/)?middleware\.(?:ts|js|mjs)$/;
 
 /** Next.js: Pages API handlers, server actions, `middleware.ts`. */
@@ -531,6 +572,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
       return row?.symbol != null && scope.fns.has(row.symbol) ? row.symbol : null;
     };
 
+    // `pages/api/x.ts` → `API /api/x` on its default export; `index` names its directory.
     const api = PAGES_API.exec(file.path);
 
     if (api !== null) {
@@ -539,6 +581,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
       out.entries.push(id === null ? { ...entry, note: "the default export is no fn keylang resolves: the module stands for it" } : entry);
     }
 
+    // Middleware: its label lists the `config.matcher` paths when they are literals.
     if (MIDDLEWARE.test(file.path)) {
       const id = exportedFn("middleware") ?? exportedFn("default");
       const matcher = file.web?.config === undefined ? undefined : prop(file.web.config, "matcher");
@@ -554,6 +597,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
     if (web === undefined) continue;
     const seen = new Set<string>();
 
+    // Add one action entry, once per name and fn.
     const action = (name: string, id: string | null, line: number, note: string | null): void => {
       if (seen.has(`${name}\0${id}`)) return;
       seen.add(`${name}\0${id}`);
@@ -579,6 +623,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
       }
     }
 
+    // Functions with their own `'use server'` directive: only a top-level one resolves to a fn.
     for (const a of web.actions ?? []) {
       const id = a.top && a.name !== null ? fnIn(scope, file.path, a.name) : null;
       action(a.name ?? "(anonymous)", id, a.line, id === null ? "a server action written inside another function: the module stands for it" : null);
@@ -586,6 +631,7 @@ function nextEntries(facts: readonly FileFacts[], scope: EntryScope, out: WebEnt
   }
 }
 
+/** Compare strings by code units. */
 function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

@@ -8,6 +8,10 @@
 // Any failure to load one — absent, no prebuilt binary for this platform, an
 // unexpected shape — makes it unavailable with the reason, never an error of
 // the command.
+//
+// Sits beside `voice.ts` at the TUI/CLI edge, outside the analysis pipeline.
+// Entry points: `localStatus`/`microphoneStatus` (for `keylang doctor`),
+// `defaultMicrophone` and `transcribeLocal`.
 
 import { createRequire } from "node:module";
 import { windows, joinWindows } from "./voice.ts";
@@ -16,11 +20,13 @@ import { windows, joinWindows } from "./voice.ts";
 // the packages' own TypeScript sources stay out of this project's type check.
 const require = createRequire(import.meta.url);
 
+/** A started microphone: PCM chunks as they are recorded, and how to stop it. */
 type Microphone = { chunks: AsyncIterable<Int16Array>; stop: () => void };
 
 /** Whether an optional package can be used here: `missing` when it is not installed, `unavailable` with the reason when it is there but does not load. */
 export type ModuleStatus = { status: "ok" } | { status: "missing" } | { status: "unavailable"; reason: string };
 
+/** A loaded whisper model, as `@fugood/whisper.node` returns it; `release` frees the native memory. */
 interface WhisperContext {
   transcribeData(data: ArrayBuffer, options: { prompt?: string }): { stop: () => Promise<void>; promise: Promise<{ result?: string }> };
   release(): Promise<void>;
@@ -31,6 +37,7 @@ interface WhisperBinding {
   WhisperContext: new (...args: never[]) => WhisperContext;
 }
 
+/** The two exports of `@fugood/whisper.node` this module uses. */
 interface Whisper {
   initWhisper: (options: { filePath: string; useGpu: boolean }) => Promise<WhisperContext>;
   loadWhisperModule: () => Promise<Partial<WhisperBinding> | null>;
@@ -42,6 +49,7 @@ type MicrophoneStream = AsyncIterable<Buffer> & { stop: () => void };
 // Unchecked until `isMicrophoneStream`: any member may be missing.
 type MicrophoneClass = new (options: { sampleRate: number; channels: number }) => Partial<MicrophoneStream> | null;
 
+/** The one export of `decibri` this module uses. */
 interface Decibri {
   Microphone: MicrophoneClass;
 }
@@ -51,14 +59,17 @@ function isWhisper(exports: Partial<Whisper> | null): exports is Whisper {
   return typeof exports?.initWhisper === "function" && typeof exports.loadWhisperModule === "function";
 }
 
+/** The loaded native binding exposes a `WhisperContext` constructor. */
 function isWhisperBinding(binding: Partial<WhisperBinding> | null): binding is WhisperBinding {
   return typeof binding?.WhisperContext === "function";
 }
 
+/** `decibri` exports a `Microphone` constructor. */
 function isDecibri(exports: Partial<Decibri> | null): exports is Decibri {
   return typeof exports?.Microphone === "function";
 }
 
+/** A microphone instance that can be iterated asynchronously and stopped. */
 function isMicrophoneStream(mic: Partial<MicrophoneStream> | null): mic is MicrophoneStream {
   return typeof mic?.stop === "function" && typeof mic[Symbol.asyncIterator] === "function";
 }
@@ -76,6 +87,7 @@ async function loadWhisper(): Promise<{ module: Whisper } | Exclude<ModuleStatus
 
   if (!isWhisper(module)) return { status: "unavailable", reason: "@fugood/whisper.node has no initWhisper/loadWhisperModule export; update it" };
 
+  // Force the lazy binary load now, with its warnings captured, so a broken install shows here and not mid-recording.
   const load = module.loadWhisperModule;
   const binary = await quietly(() => load());
 
@@ -98,6 +110,7 @@ export async function localAvailable(): Promise<boolean> {
   return (await localStatus()).status === "ok";
 }
 
+/** `decibri`, when installed and of the expected shape, or why not. */
 function loadDecibri(): { module: Decibri } | Exclude<ModuleStatus, { status: "ok" }> {
   const loaded = optional("decibri", () => require("decibri"));
 
@@ -125,6 +138,7 @@ export async function microphoneAvailable(): Promise<boolean> {
 export async function defaultMicrophone(): Promise<Microphone | null> {
   const loaded = loadDecibri();
 
+  // Not installed is a normal state (the caller falls back); installed but broken is an error worth showing.
   if ("status" in loaded) {
     if (loaded.status === "missing") return null;
     throw new Error(`voice: the microphone is unavailable: ${loaded.reason}`);
@@ -134,6 +148,7 @@ export async function defaultMicrophone(): Promise<Microphone | null> {
 
   if (!isMicrophoneStream(mic)) throw new Error("voice: decibri's Microphone is not a readable stream; update decibri");
 
+  // Adapt decibri's Buffer chunks to the Int16Array chunks the rest of voice uses.
   return {
     chunks: (async function* () {
       for await (const chunk of mic) {
@@ -154,11 +169,14 @@ export async function transcribeLocal(modelFile: string, pcm: Int16Array, terms:
 
   if (!("module" in loaded)) throw new Error(loaded.status === "missing" ? "voice: the optional @fugood/whisper.node is not installed" : `voice: @fugood/whisper.node is unavailable: ${loaded.reason}`);
   const { initWhisper } = loaded.module;
+
+  // Loading the model may also print warnings (no GPU and so on); capture them into the failure.
   const started = await quietly(() => initWhisper({ filePath: modelFile, useGpu: true }));
 
   if ("error" in started) throw new Error(`voice: whisper.cpp could not load ${modelFile}: ${[started.error, ...started.warnings].join("; ")}`);
   const context = started.value;
 
+  // One model load for the whole recording, released even when a window fails.
   try {
     const texts: string[] = [];
 
@@ -194,6 +212,8 @@ function optional<T>(name: string, load: () => T): { module: T } | Exclude<Modul
   }
 }
 
+// The tail of the queue of `quietly` calls: each waits for the previous one,
+// so two never swap `console.warn` at the same time.
 let quiet: Promise<unknown> = Promise.resolve();
 
 /**
@@ -219,6 +239,7 @@ function quietly<T>(load: () => Promise<T>): Promise<({ value: T } | { error: st
     }
   });
 
+  // The next call waits on this one; a rejection here must not stall the queue.
   quiet = run.catch(() => undefined);
 
   return run;

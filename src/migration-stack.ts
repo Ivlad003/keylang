@@ -5,6 +5,11 @@
 // (nodes and entries; flows only as `flows discover` drafts them) or the
 // superset `keylang map --export-index <file>` writes (also the hand-written
 // flows, the test results of `check.tests` and the integrations).
+//
+// Place in the pipeline: after source → FileFacts → snapshot; it turns a
+// snapshot plus the parsed specs into a `Stack` (nodes, entries, flows,
+// tests, integrations) for the parity check in `migration.ts`. Entry points:
+// `stackOf`, `loadOldStack`, `migrationExport`.
 
 import { statSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -23,6 +28,7 @@ import { loadReports, type TestCase } from "./test-report.ts";
 /** The `migration` block `map --export-index` adds to the snapshot. */
 export const MIGRATION_EXPORT_SCHEMA = 1;
 
+/** The `migration` block of an export: what a plain index.json lacks (hand-written flows, test results, integrations). */
 export interface MigrationExport {
   schema: typeof MIGRATION_EXPORT_SCHEMA;
   flows: StackFlow[];
@@ -38,6 +44,8 @@ export interface LoadedStack {
 
 /** The flows of an analysis: the hand-written ones (with `flow import` provenance marked), then the discovered drafts of entry points no hand-written flow starts from. */
 export function stackFlows(analysis: Pick<Analysis, "spec" | "docs" | "config">, snapshot: AnalysisSnapshot): StackFlow[] {
+  // Hand-written flows first; then drafts for the entry points no
+  // hand-written flow starts from, so one entry point is not counted twice.
   const specified = specifiedTriggers(analysis.spec.flows);
   const written = analysis.spec.flows.map((flow) => specFlow(flow, analysis.docs));
   const dir = analysis.config.dir === "" ? "" : `${analysis.config.dir}/`;
@@ -51,17 +59,24 @@ export function stackFlows(analysis: Pick<Analysis, "spec" | "docs" | "config">,
     tests: [],
   }));
 
+  // Sorted by name, then source and file, so both stacks list flows in the
+  // same order whatever order the specs and the snapshot gave.
   return [...written, ...discovered].sort((a, b) => compareText(a.name, b.name) || compareText(a.source, b.source) || compareText(a.file ?? "", b.file ?? ""));
 }
 
+/** A hand-written flow as a stack flow: its trigger and steps (each once), its tests, and whether `flow import` brought it in. */
 function specFlow(flow: Flow, docs: readonly Document[]): StackFlow {
   const steps: string[] = [];
   const tests: StackFlow["tests"] = [];
+  // Collect each target once, in flow order: the trigger and the steps make
+  // the chain parity compares; named tests are kept once each.
   walkFlow(flow, (item) => {
     if ((item.kind === "trigger" || item.kind === "step") && !steps.includes(item.target.target)) steps.push(item.target.target);
 
     if (item.kind === "test" && item.name !== null && !tests.some((test) => test.name === item.name)) tests.push({ file: item.path, name: item.name });
   });
+  // A flow brought in by `flow import` carries a `keylang:import` marker,
+  // either in the section's comment or in an HTML comment in its prose.
   const section = docs.find((doc) => doc.path === flow.file)?.sections.find((s) => s.kind === "flow" && s.name?.value === flow.name);
   const imported = section !== undefined && (section.comment?.value.includes("keylang:import ") === true || section.items.some((item) => item.type === "prose" && item.lines.some((line) => line.includes("<!-- keylang:import "))));
 
@@ -124,6 +139,8 @@ export function fromLabel(root: string, abs: string): string {
 
 /** The old stack from a directory (its checkout) or a file (an index or an export). */
 export async function loadOldStack(abs: string): Promise<LoadedStack> {
+  // A directory is the old checkout: analyse it read-only, the same way as
+  // this repository.
   if (statSync(abs).isDirectory()) {
     const analysis = await analyzeOld(abs, false);
 
@@ -134,6 +151,7 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
   // SAFETY: a `migration` block is what `map --export-index` writes; its schema and flows are checked below before use.
   const migration = body.migration as MigrationExport | undefined;
 
+  // An export (`map --export-index`) carries everything parity needs.
   if (migration !== undefined) {
     if (migration.schema !== MIGRATION_EXPORT_SCHEMA || !Array.isArray(migration.flows)) throw new Error(`${abs}: unsupported \`migration\` block (expected schema ${MIGRATION_EXPORT_SCHEMA})`);
 
@@ -143,6 +161,9 @@ export async function loadOldStack(abs: string): Promise<LoadedStack> {
     };
   }
 
+  // A plain index.json: only nodes and entries are trustworthy; flows can be
+  // drafted from the entry points if the snapshot schema is this keylang's,
+  // and the report says what is missing.
   const notes = ["the old snapshot is a plain index.json: its hand-written flows, test results and integrations are not in it (`keylang map --export-index <file>` in the old repository writes them); its flows are the drafts `flows discover` makes from its entry points"];
   let flows: StackFlow[] = [];
 

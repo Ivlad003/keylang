@@ -1,5 +1,11 @@
 // PHP facts: namespaces, `use`, classes, interfaces, traits, enums, functions
-// and methods, calls, type hints, `require`/`include` and PHPDoc. PHP names a
+// and methods, calls, type hints, `require`/`include` and PHPDoc. This is the
+// source → FileFacts stage for `.php` files: `extractPhp` parses a file with
+// tree-sitter and returns its FileFacts, which the graph turns into nodes and
+// edges; `declarationsOnly` cuts the facts of a file `outside` the architecture
+// down to its class and interface declarations.
+//
+// PHP names a
 // class or a function by its qualified name, never by its file, and a class of
 // the file's own namespace needs no `use`. So every class or function name the
 // file uses is an import whose specifier is the qualified name the PHP rules
@@ -32,17 +38,22 @@ const CALLABLE_CALLS = new Set(["call_user_func", "call_user_func_array", "forwa
 /** Language constructs the grammar reads as calls: no function is called. */
 const CONSTRUCTS = new Set(["isset", "empty"]);
 
+/** Grammar nodes that call something: a function, a method (`->`, `?->`, `::`) or a constructor (`new`). */
 const CALL_NODES = new Set(["function_call_expression", "member_call_expression", "nullsafe_member_call_expression", "scoped_call_expression", "object_creation_expression"]);
 
+/** Values whose code runs later, when they are called or instantiated: calls inside them are marked `closure`. */
 const CLOSURE_NODES = new Set(["anonymous_function", "arrow_function", "anonymous_class"]);
 
+/** Named top-level declarations: each becomes a `DeclFact` and a symbol of the namespace. */
 const DECLARATION_NODES = new Set(["class_declaration", "interface_declaration", "trait_declaration", "enum_declaration", "function_definition"]);
 
+/** `include`, `include_once`, `require` and `require_once`: file imports by path. */
 const INCLUDE_NODES = new Set(["include_expression", "include_once_expression", "require_expression", "require_once_expression"]);
 
 /** A callee longer than this is written as an opaque call through an expression. */
 const MAX_CALLEE = 80;
 
+/** The facts of one PHP file: parses `src` with the PHP grammar and reads the tree; `path` is repository-relative and anchors relative includes. */
 export function extractPhp(path: string, src: string): Promise<FileFacts> {
   return withTree("php", src, (tree) => extractTree(path, tree.rootNode));
 }
@@ -56,10 +67,12 @@ export function extractPhp(path: string, src: string): Promise<FileFacts> {
 export function declarationsOnly(facts: FileFacts): FileFacts {
   const declarations: OutsideDeclFact[] = [];
 
+  // A file that does not parse keeps no declarations: half a class would claim members it may not have.
   if (facts.parseError === null) {
     const qualified = (written: string): string => qualifiedBy(facts, written);
     const symbols = (facts.symbols ?? []).filter((s) => s.table === "class");
 
+    // Classes (traits and enums included) and interfaces only; functions carry nothing a caller inside needs.
     for (const d of facts.decls) {
       if (d.kind !== "class" && d.kind !== "type") continue;
       const name = symbols.find((s) => s.name === d.name)?.qualified ?? d.name;
@@ -83,6 +96,7 @@ export function declarationsOnly(facts: FileFacts): FileFacts {
   return opaque;
 }
 
+/** A method declaration reduced to what an `outside` declaration keeps: its name, whether it is static, and its result type. */
 function methodSig(member: DeclFact): MethodSigFact {
   const sig: MethodSigFact = { name: member.name };
 
@@ -95,9 +109,11 @@ function methodSig(member: DeclFact): MethodSigFact {
 
 /** A class name as the file binds it (`Collector.klass`), qualified through the file's imports: `Foo` with `use A\Foo` → `A\Foo`. */
 function qualifiedBy(facts: FileFacts, written: string): string {
+  // A fully qualified name (`\A\Foo`) needs no import: drop the leading backslash.
   if (written.startsWith("\\")) return written.replace(/^\\+/, "");
   const [head, ...rest] = written.split("\\");
 
+  // Find the class import that binds the first segment; function, constant and include imports bind no class.
   for (const imp of facts.imports) {
     if (/^(?:function|const|include) /.test(imp.source)) continue;
 
@@ -209,7 +225,9 @@ class Collector {
     const key = `${spec}\0${local}`;
     const existing = this.imports.get(key);
 
+    // Keep the first import, unless it came from a docblock and the code now names the class itself.
     if (existing && (docblock || !existing.docblock)) return;
+    // The imported name is the last segment of the qualified name: strip the `function `/`const ` prefix and the `?? global` fallback.
     const imported = spec.replace(/^(function|const) /, "").replace(/ \?\? .*$/, "");
     const fact: ImportFact = { source: spec, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text), bindings: [{ kind: "named", local, imported: lastSegment(imported) }], reexport: false, optional: true };
 
@@ -217,6 +235,7 @@ class Collector {
     this.imports.set(key, fact);
   }
 
+  /** A name read as a value (`X::class`, `'m'` of `[$obj, 'm']`, `f(...)`), once per name; `member`: a method name, not a top-level one. */
   value(name: string, node: Node, member: boolean): void {
     const key = `${member ? "." : ""}${name}`;
 
@@ -226,6 +245,7 @@ class Collector {
   /** Holes already recorded, by position and reason: typing a variable reads a call once more. */
   private readonly holes = new Set<string>();
 
+  /** Records a hole at `node` (once per position and reason); `symbol` is the declaration whose behaviour it leaves unknown, if any. */
   hole(node: Node, reason: string, symbol: string | null): void {
     const key = `${node.startIndex}:${node.endIndex}:${reason}`;
 
@@ -238,6 +258,7 @@ class Collector {
   }
 }
 
+/** The FileFacts of a parsed tree: declarations and symbols per namespace region, then imports, holes and values gathered across the file. */
 function extractTree(path: string, root: Node): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null, symbols: [] };
   const collector = new Collector();
@@ -245,6 +266,7 @@ function extractTree(path: string, root: Node): FileFacts {
   collector.header = header?.id ?? null;
   const explicit: ImportFact[] = [];
 
+  // Each namespace region has its own aliases: a `use` in one namespace does not reach the next.
   for (const region of regionsOf(root)) {
     const names: Names = { ns: region.ns, classes: new Map(), functions: new Map(), consts: new Map() };
     const statements: Node[] = [];
@@ -257,6 +279,7 @@ function extractTree(path: string, root: Node): FileFacts {
     for (const node of statements) {
       if (node.type === "namespace_use_declaration") continue;
 
+      // A named declaration: its fact, its qualified symbol (classes and functions live in separate tables) and an export row.
       if (DECLARATION_NODES.has(node.type)) {
         const decl = declarationOf(node, names, collector);
 
@@ -268,6 +291,7 @@ function extractTree(path: string, root: Node): FileFacts {
         continue;
       }
 
+      // `const A = 1, B = 2;` at the top level: each name is a constant symbol of the namespace.
       if (node.type === "const_declaration") {
         for (const element of node.namedChildren.filter((c) => c.type === "const_element")) {
           const name = element.namedChildren.find((c) => c.type === "name")?.text;
@@ -283,6 +307,7 @@ function extractTree(path: string, root: Node): FileFacts {
     }
   }
 
+  // Imports and value reads in source order, so the facts are stable whatever order the walk found them in.
   facts.imports = [...explicit, ...includesIn(root, path, collector), ...collector.imports.values()].sort((a, b) => a.line - b.line || a.col - b.col);
   facts.unsupported = collector.unsupported;
   facts.valueRefs = [...collector.values.values()].sort((a, b) => a.line - b.line || a.col - b.col);
@@ -295,6 +320,7 @@ function extractTree(path: string, root: Node): FileFacts {
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
 
+  // A syntax error anywhere makes the whole file opaque: what tree-sitter recovered is not trusted as complete.
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -303,6 +329,7 @@ function extractTree(path: string, root: Node): FileFacts {
   return facts;
 }
 
+/** A stretch of the file under one namespace (`""` for the global one) and its top-level statements. */
 interface Region {
   ns: string;
   statements: Node[];
@@ -318,6 +345,7 @@ function regionsOf(root: Node): Region[] {
   let current: Region = { ns: "", statements: [] };
   out.push(current);
 
+  // One pass over the top level: any statement joins the current region; a namespace statement starts a new one.
   for (const node of root.namedChildren) {
     if (node.type !== "namespace_definition") {
       current.statements.push(node);
@@ -327,6 +355,7 @@ function regionsOf(root: Node): Region[] {
     const ns = node.childForFieldName("name")?.text.replace(/\s+/g, "") ?? "";
     const body = node.childForFieldName("body");
 
+    // A bracketed namespace is a region of its own; code after its `}` is global again.
     if (body) {
       out.push({ ns, statements: body.namedChildren });
       current = { ns: "", statements: [] };
@@ -334,11 +363,13 @@ function regionsOf(root: Node): Region[] {
     out.push(current);
   }
 
+  // The opening global region and the ones after `}` are often empty.
   return out.filter((region) => region.statements.length > 0);
 }
 
 /** Statements of a namespace, including those under a top-level `if` (`if (!function_exists('x')) { function x() {} }`) and in plain blocks. */
 function collectTopLevel(node: Node, out: Node[]): void {
+  // Descend into conditional and block statements, skipping the condition itself, so a guarded declaration still counts.
   if (node.type === "if_statement" || node.type === "else_clause" || node.type === "else_if_clause" || node.type === "compound_statement") {
     for (const child of node.namedChildren) if (child.type !== "parenthesized_expression") collectTopLevel(child, out);
 
@@ -348,14 +379,17 @@ function collectTopLevel(node: Node, out: Node[]): void {
   out.push(node);
 }
 
+/** `name` in namespace `ns`: `A\B\name`, or `name` itself in the global namespace. */
 function qualify(ns: string, name: string): string {
   return ns === "" ? name : `${ns}\\${name}`;
 }
 
+/** The last segment of a qualified name: `A\B\Foo` → `Foo`. */
 function lastSegment(name: string): string {
   return name.slice(name.lastIndexOf("\\") + 1);
 }
 
+/** The first line of a source fragment: what a fact quotes. */
 function firstLine(text: string): string {
   return text.split("\n")[0]!;
 }
@@ -374,9 +408,11 @@ function useKind(node: Node): "function" | "const" | null {
  */
 function usesOf(decl: Node, names: Names): ImportFact[] {
   const out: ImportFact[] = [];
+  // A group use (`use A\{B, C}`) has a body; its prefix `A` is prepended to every clause.
   const group = decl.childForFieldName("body");
   const prefix = group ? (decl.namedChildren.find((c) => c.type === "namespace_name")?.text.replace(/\s+/g, "") ?? "") : "";
   const clauses = (group ?? decl).namedChildren.filter((c) => c.type === "namespace_use_clause");
+  // Every clause is placed at the whole `use` statement.
   const at = located(decl);
 
   for (const clause of clauses) {
@@ -384,11 +420,14 @@ function usesOf(decl: Node, names: Names): ImportFact[] {
     const nameNode = clause.namedChildren.find((c) => (c.type === "name" || c.type === "qualified_name") && c.id !== aliasNode?.id);
 
     if (!nameNode) continue;
+    // A `use` name is always fully qualified: a leading `\` changes nothing.
     const written = nameNode.text.replace(/\s+/g, "").replace(/^\\/, "");
     const qualified = prefix ? `${prefix}\\${written}` : written;
+    // The clause's own `function`/`const` wins over the statement's (`use A\{function f, B}`); the default is a class.
     const kind = useKind(clause) ?? useKind(decl) ?? "class";
     const alias = aliasNode?.text ?? lastSegment(qualified);
     const table = kind === "function" ? names.functions : kind === "const" ? names.consts : names.classes;
+    // Class and function aliases are keyed case-insensitively, as PHP compares them; constants are case-sensitive.
     table.set(kind === "const" ? alias : asciiLowerCase(alias), { alias, qualified });
     out.push({ source: kind === "class" ? qualified : `${kind} ${qualified}`, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text), bindings: [{ kind: "named", local: alias, imported: lastSegment(qualified) }], reexport: false });
   }
@@ -410,15 +449,18 @@ interface CanonicalClass {
  * `static` and `parent`.
  */
 function canonicalClass(written: string, names: Names): CanonicalClass {
+  // PHP's name resolution rules, in order: fully qualified, special, `namespace\` relative, aliased, then the current namespace.
   if (written.startsWith("\\")) return { local: written, qualified: written.slice(1), explicit: false };
   const lower = asciiLowerCase(written);
 
+  // `explicit` here only stops an import: `self` and friends name no class of the repository.
   if (SPECIAL_CLASSES.has(lower)) return { local: written, qualified: null, explicit: true };
 
   if (lower.startsWith("namespace\\")) return { local: written, qualified: qualify(names.ns, written.slice("namespace\\".length)), explicit: false };
   const [head = "", ...rest] = written.split("\\");
   const alias = names.classes.get(asciiLowerCase(head));
 
+  // An alias replaces the first segment; only the bare alias is the `use` itself, `Alias\Sub` is a new name under it.
   if (alias) return rest.length === 0 ? { local: alias.alias, qualified: alias.qualified, explicit: true } : { local: [alias.alias, ...rest].join("\\"), qualified: [alias.qualified, ...rest].join("\\"), explicit: false };
 
   return { local: written, qualified: qualify(names.ns, written), explicit: false };
@@ -438,6 +480,7 @@ interface CanonicalFunction {
 function canonicalFunction(written: string, names: Names): CanonicalFunction {
   if (written.startsWith("\\")) return { local: written, spec: `function ${written.slice(1)}`, explicit: false };
 
+  // A qualified function name resolves like a class name (alias of its first segment, or the namespace); no global fallback.
   if (written.includes("\\")) {
     const name = canonicalClass(written, names);
 
@@ -448,9 +491,11 @@ function canonicalFunction(written: string, names: Names): CanonicalFunction {
 
   if (alias) return { local: alias.alias, spec: `function ${alias.qualified}`, explicit: true };
 
+  // An unqualified name: the namespace's function, else the global one (`?? f`), which the resolver tries in that order.
   return { local: written, spec: names.ns === "" ? `function ${written}` : `function ${names.ns}\\${written} ?? ${written}`, explicit: false };
 }
 
+/** Adds `name` to the file's exports once: every top-level PHP declaration is public. */
 function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): void {
   if (facts.exports.has(name)) return;
   facts.exports.add(name);
@@ -475,6 +520,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   /** `implements A, B` of a class; `extends A, B` of an interface. */
   const supers: string[] = [];
 
+  // The header clauses: `extends` and `implements`, each name registered as an import.
   for (const child of node.namedChildren) {
     if (child.type === "base_clause") {
       // A class has one parent; `extends` of an interface lists several, and those are types.
@@ -521,6 +567,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     return decl;
   }
 
+  // A class, trait or enum: read its body.
   const body = node.childForFieldName("body");
   const items = body?.namedChildren ?? [];
   const methods = items.filter((item) => item.type === "method_declaration");
@@ -535,15 +582,18 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   /** Property → the constructor parameter assigned to it; null when assignments disagree or are no parameter. */
   const params = new Map<string, string | null>();
 
+  // First pass over the body: property types, and traits with their conflict rules.
   for (const item of items) {
     if (item.type === "property_declaration") {
       const type = singleClass(item.childForFieldName("type"));
 
+      // One declaration may list several properties (`private A $a, $b;`): they share the type.
       for (const element of item.namedChildren.filter((c) => c.type === "property_element")) {
         const prop = element.childForFieldName("name")?.text.replace(/^\$/, "");
 
         if (!prop) continue;
 
+        // Typed with one class: a checked fact. Untyped: left for the constructor or `@var`. Any other type: no class.
         if (type) fields.set(prop, { cls: collector.klass(type, item, names), qualified: classQualified(type, names) });
         else if (!item.childForFieldName("type")) untyped.set(prop, { node: item, doc: docTag(item, collector.header, /@var\s+(\S+)/) });
         else if (["array", "iterable", "?array", "?iterable"].includes(asciiLowerCase(item.childForFieldName("type")!.text.replace(/\s+/g, "")))) {
@@ -573,6 +623,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
         const [subject, ...rest] = clause.namedChildren;
 
         if (!subject) continue;
+        // The subject is `Trait::method` (the grammar reads it as a constant access) or a bare `method`.
         const qualified = subject.type === "class_constant_access_expression" ? subject.namedChildren : null;
         const traitName = qualified ? classNameOf(qualified[0] ?? null) : null;
         const method = qualified ? qualified[1]?.text : subject.type === "name" ? subject.text : undefined;
@@ -591,6 +642,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
 
           if (trait) traitRules.push({ trait, method, insteadof });
         } else {
+          // `as protected whisper` and `as whisper`: the new name is the last name; a visibility-only `as` has none.
           const alias = rest.filter((c) => c.type === "name").at(-1)?.text;
 
           if (alias) traitRules.push({ trait, method, alias });
@@ -599,6 +651,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     }
   }
 
+  // The constructor types properties: promoted parameters directly, then `$this->x = $x` assignments.
   for (const method of methods) {
     if (asciiLowerCase(method.childForFieldName("name")?.text ?? "") !== "__construct") continue;
 
@@ -624,12 +677,14 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     if (source) fields.set(prop, classType(source.local, source.qualified, source.element === true, source.docblock!));
   }
 
+  // Only properties every assignment fills from the same parameter keep it.
   const filled = new Map<string, string>();
 
   for (const [prop, param] of params) if (param !== null) filled.set(prop, param);
   const self = qualify(names.ns, name);
   const properties: PropertyFact[] = [];
 
+  // Property defaults a framework adapter may read (`protected $listen = [...]`); uninformative ones are dropped.
   for (const item of items) {
     if (item.type !== "property_declaration") continue;
 
@@ -646,6 +701,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const ctx: ClassContext = { name, statics, fields, params: filled };
   const members: DeclFact[] = [];
 
+  // Methods last, once the class context (statics, typed properties) is complete.
   for (const method of methods) {
     const written = method.childForFieldName("name")?.text;
 
@@ -656,6 +712,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     const own = attributesOf(method, names, self);
 
     if (own.length > 0) decl.attributes = own;
+    // A method without a visibility modifier is public in PHP.
     const visibility = asciiLowerCase(method.namedChildren.find((c) => c.type === "visibility_modifier")?.text ?? "");
     decl.exported = visibility !== "private" && visibility !== "protected";
 
@@ -688,6 +745,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   return decl;
 }
 
+/** A typed property as `DeclFact.fields` stores it: the qualified class, with `element` and `docblock` when set. */
 function fieldFact(name: string, field: FieldType): FieldFact {
   const fact: FieldFact = { name, class: field.qualified };
 
@@ -733,10 +791,12 @@ function constructorFields(method: Node, className: string, names: Names, collec
   const decided = new Set<string>();
   const paramDocs = new Map<string, DocType>();
 
+  // `@param Type $name` (also `...$name`, `&$name`): the first tag per parameter wins.
   for (const doc of docTags(method, collector.header, /@param\s+(\S+)\s+(?:\.\.\.)?&?\$([A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)/)) if (doc.name && !paramDocs.has(doc.name)) paramDocs.set(doc.name, doc);
   /** Parameter → the class it names, or null for one of no single class. */
   const params = new Map<string, TypeSource | null>();
 
+  // A declared type decides the parameter's class; only an untyped parameter falls back to its `@param`.
   for (const param of method.childForFieldName("parameters")?.namedChildren ?? []) {
     const variable = param.childForFieldName("name")?.text.replace(/^\$/, "");
 
@@ -757,6 +817,7 @@ function constructorFields(method: Node, className: string, names: Names, collec
   const assigned = new Map<string, { node: Node; sources: (TypeSource | null)[] }>();
   const body = method.childForFieldName("body");
 
+  // Collect every `$this->prop = …` in the constructor body.
   if (body) {
     walkScope(body, (n) => {
       if (n.type !== "assignment_expression") return;
@@ -773,6 +834,7 @@ function constructorFields(method: Node, className: string, names: Names, collec
       const before = filledBy.get(prop.text);
       filledBy.set(prop.text, before === undefined || before === param ? param : null);
 
+      // A property already typed by its declaration or promotion needs no inference.
       if (fields.has(prop.text)) return;
       const source = value?.type === "variable_name" ? (params.get(value.text.replace(/^\$/, "")) ?? null) : null;
       const entry = assigned.get(prop.text) ?? { node: n, sources: [] };
@@ -781,15 +843,19 @@ function constructorFields(method: Node, className: string, names: Names, collec
     });
   }
 
+  // Decide each assigned property: one class from every assignment, or a hole when they disagree.
   for (const [prop, { node, sources }] of assigned) {
     const known = sources.filter((source): source is TypeSource => source !== null);
 
+    // No assignment names a class: nothing settled, a `@var` may still type it.
     if (known.length === 0) continue;
     decided.add(prop);
     const declared = untyped.get(prop);
     const where = declared?.node ?? node;
+    // Distinct classes by qualified key, each shown in its first spelling.
     const distinct = [...new Map(known.map((source) => [source.key, source.written])).values()];
 
+    // Two classes, or a class and a value of no known class: ambiguous.
     if (distinct.length > 1 || known.length < sources.length) {
       const listed = [...distinct, ...(known.length < sources.length ? ["a value of no known class"] : [])].map((item, i) => (i < distinct.length ? `\`${item}\`` : item));
       collector.hole(where, `ambiguous property type \`$${prop}\`: assigned ${listed.join(" and ")} in the constructor`, className);
@@ -799,6 +865,7 @@ function constructorFields(method: Node, className: string, names: Names, collec
     const first = known[0]!;
     const doc = declared?.doc ? docSource(declared.doc, names, collector) : null;
 
+    // A `@var` that names another class contradicts the constructor: trust neither.
     if (doc && doc.key !== first.key) {
       collector.hole(where, `ambiguous property type \`$${prop}\`: \`@var ${doc.written}\`, assigned \`${first.written}\` in the constructor`, className);
       continue;
@@ -827,6 +894,7 @@ function classQualified(written: string, names: Names): string {
  * single class. `arrays`: an array of one class (`Item[]`) counts too, with `element`.
  */
 function docSource(doc: DocType, names: Names, collector: Collector, arrays = false): TypeSource | null {
+  // With `arrays`, an array of one class wins; otherwise (or failing that) the one class the type names.
   const type = arrays ? docType(doc.written) : null;
   const array = type && "cls" in type && type.element ? type.cls : null;
   const written = array ?? singleDocClass(doc.written);
@@ -847,6 +915,7 @@ function docSource(doc: DocType, names: Names, collector: Collector, arrays = fa
  * type or anything else PHPDoc writes.
  */
 function singleDocClass(written: string): string | null {
+  // Drop nullability (`?Foo`, `Foo|null`): what is left must be exactly one name.
   const parts = written
     .replace(/^\?/, "")
     .split("|")
@@ -856,6 +925,7 @@ function singleDocClass(written: string): string | null {
   if (parts.length !== 1) return null;
   const name = parts[0]!;
 
+  // A PHP name, optionally fully qualified: `Foo`, `\App\Foo`; rejects `Foo[]`, `array<Foo>`, `$this`.
   if (!/^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)*$/.test(name)) return null;
 
   return BUILTIN_TYPES.has(asciiLowerCase(name)) ? null : name;
@@ -884,6 +954,7 @@ function docType(written: string): { cls: string; element?: true } | { self: "se
   if (lower === "$this" || lower === "static") return { self: "static" };
 
   if (lower === "self") return { self: "self" };
+  // `Foo[]`, or a one-parameter array generic with an optional key type: `array<Foo>`, `array<int, Foo>`, `list<Foo>`.
   const array = /^(.+)\[\]$/.exec(part) ?? /^(?:array|iterable|list|non-empty-array|non-empty-list)<(?:[^,<>]+,\s*)?([^,<>]+)>$/i.exec(part);
   const name = array ? array[1]!.trim() : part;
 
@@ -902,6 +973,7 @@ function resultOf(node: Node, names: Names, collector: Collector): ResultTypeFac
   const returns = node.childForFieldName("return_type");
   const declared = returns ? returns.text.replace(/\s+/g, "") : null;
 
+  // The declared return type first: PHP checks it, so it outranks any `@return`.
   if (declared !== null) {
     const parts = declared.replace(/^\?/, "").split("|").filter((part) => asciiLowerCase(part) !== "null");
 
@@ -920,6 +992,7 @@ function resultOf(node: Node, names: Names, collector: Collector): ResultTypeFac
     }
   }
 
+  // How much a `@return` may say: anything for no type, `mixed` or `object`; only an array of a class for `array`/`iterable`; nothing otherwise.
   const room = declared === null ? "any" : ["mixed", "object"].includes(asciiLowerCase(declared.replace(/^\?/, ""))) ? "any" : ["array", "iterable"].includes(asciiLowerCase(declared.replace(/^\?/, ""))) ? "array" : null;
 
   if (room === null) return undefined;
@@ -929,8 +1002,10 @@ function resultOf(node: Node, names: Names, collector: Collector): ResultTypeFac
   if (!tag || !type) return undefined;
   const docblock = { line: tag.at.line, col: tag.at.col };
 
+  // `@return $this`/`static`/`self` fits only where any value may come back.
   if ("self" in type) return room === "any" ? { self: type.self, docblock } : undefined;
 
+  // A declared `array` admits `Foo[]` but not a single `Foo`.
   if (room === "array" && !type.element) return undefined;
   const qualified = canonicalClass(type.cls, names).qualified;
 
@@ -977,6 +1052,7 @@ function namedTypes(type: Node | null): { text: string; node: Node }[] {
   return out;
 }
 
+/** A reference to the class `name` (its binding in the file) at `node`: a type dependency of the declaration. */
 function typeRef(name: string, node: Node): TypeRefFact {
   const at = located(node);
 
@@ -1028,6 +1104,7 @@ function elementType(type: VarType | null): VarType | null {
 function valueType(expr: Node, scope: Scope, collector: Collector): VarType | null {
   const n = unparenthesized(expr);
 
+  // `new X(…)`: the class it names; `new self`/`new static` the enclosing class; `new parent` and anonymous classes no known class.
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0] ?? null;
     const written = target && target.type !== "anonymous_class" ? classNameOf(target) : null;
@@ -1045,6 +1122,7 @@ function valueType(expr: Node, scope: Scope, collector: Collector): VarType | nu
   if (n.type === "variable_name") {
     const variable = n.text.replace(/^\$/, "");
 
+    // `$this` is handled by the callers as `this.…`, never as a typed variable.
     return variable === "this" ? null : scope.vars(variable);
   }
 
@@ -1057,6 +1135,7 @@ function valueType(expr: Node, scope: Scope, collector: Collector): VarType | nu
     return field ? classType(field.cls, field.qualified, field.element === true, field.docblock) : null;
   }
 
+  // A call: its result class is not known here, only which call it is; the graph looks up the declared result type.
   if (CALL_NODES.has(n.type) && n.type !== "object_creation_expression" && !firstClassCallable(n)) {
     const call = resultCall(n, scope, collector);
 
@@ -1070,6 +1149,7 @@ function valueType(expr: Node, scope: Scope, collector: Collector): VarType | nu
 function resultCall(n: Node, scope: Scope, collector: Collector): ResultCallFact | null {
   const fact = calleeOf(n, scope, collector);
 
+  // An opaque callee is only usable when it is itself a call on a known result (`on`).
   if (!fact || (fact.opaque && !fact.on)) return null;
   const nameNode = n.type === "function_call_expression" ? n.childForFieldName("function") : n.childForFieldName("name");
 
@@ -1077,6 +1157,7 @@ function resultCall(n: Node, scope: Scope, collector: Collector): ResultCallFact
   const member = n.type === "function_call_expression" ? fact.callee : nameNode.text;
   const args = argsOf(n, scope.names, scope.ctx ? qualify(scope.names.ns, scope.ctx.name) : null);
 
+  // Arguments are kept only when one of them is an informative literal, as on a call fact.
   const call: ResultCallFact = args.some((a) => informative(a.value)) ? { args, callee: fact.callee, member } : { callee: fact.callee, member };
 
   if (fact.bound) call.bound = fact.bound;
@@ -1097,11 +1178,14 @@ function resultCall(n: Node, scope: Scope, collector: Collector): ResultCallFact
  * `@var Foo` right above `$x = …`. A class or an array of one.
  */
 function inlineVars(comment: Node, names: Names, collector: Collector): { variable: string; type: VarType }[] {
+  // Only block comments carry PHPDoc; `// @var` is ignored.
   if (!comment.text.startsWith("/*")) return [];
   const out: { variable: string; type: VarType }[] = [];
+  // A bare `@var Foo` types the variable the next statement assigns, if it assigns one.
   const next = comment.nextNamedSibling;
   const assigned = next?.type === "expression_statement" && next.namedChildren[0]?.type === "assignment_expression" ? next.namedChildren[0].childForFieldName("left") : null;
   const following = assigned?.type === "variable_name" ? assigned.text.replace(/^\$/, "") : null;
+  // One tag per line, tried in three forms: `@var Type $x`, then `@var $x Type`, then a bare `@var Type`.
   comment.text.split("\n").forEach((text, i) => {
     const named = /@var\s+([^\s$][^\s]*)\s+\$([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)/.exec(text);
     const reversed = named ? null : /@var\s+\$([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)\s+([^\s*]+)/.exec(text);
@@ -1113,6 +1197,7 @@ function inlineVars(comment: Node, names: Names, collector: Collector): { variab
     const variable = named ? named[2]! : reversed ? reversed[1]! : following;
 
     if (!variable) return;
+    // The tag's position: only the comment's first line starts at the comment's column.
     const line = comment.startPosition.row + 1 + i;
     const col = (i === 0 ? comment.startPosition.column : 0) + match.index + match[0].indexOf("@") + 1;
     const source = docSource({ written, at: { line, col, endLine: line, endCol: col + match[0].length, text: text.trim() } }, names, collector, true);
@@ -1140,6 +1225,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   const at = located(node);
   const params = node.childForFieldName("parameters");
   const returns = node.childForFieldName("return_type");
+  // The signature is the parameter list and return type as written, whitespace collapsed to single spaces.
   const signature = params ? `${params.text.replace(/\s+/g, " ")}${returns ? ` → ${returns.text.replace(/\s+/g, " ")}` : ""}` : null;
   const types: TypeRefFact[] = [];
   const bound = new Map<string, "parameter" | "local">();
@@ -1154,8 +1240,10 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   const paramFacts: ParamFact[] = [];
   const paramDocs = new Map<string, DocType>();
 
+  // `@param Type $name` (also `...$name`, `&$name`): the first tag per parameter wins.
   for (const doc of docTags(node, collector.header, /@param\s+(\S+)\s+(?:\.\.\.)?&?\$([A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)/)) if (doc.name && !paramDocs.has(doc.name)) paramDocs.set(doc.name, doc);
 
+  // Each parameter: its fact (with the qualified class when typed), its binding for variable typing, and the classes its type names.
   for (const param of params?.namedChildren ?? []) {
     const variable = param.childForFieldName("name")?.text.replace(/^\$/, "");
 
@@ -1163,6 +1251,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
     bound.set(variable, "parameter");
     const type = param.childForFieldName("type");
     const single = singleClass(type);
+    // The parameter fact's type: `self`/`static` is the enclosing class, `parent` unknown.
     const qualified = single === null ? null : SPECIAL_CLASSES.has(asciiLowerCase(single)) ? (asciiLowerCase(single) === "parent" ? null : self) : canonicalClass(single, names).qualified;
     paramFacts.push(qualified ? { name: variable, type: qualified } : { name: variable });
     // A class PHP checks; else the `@param` where the declared type leaves room for one (none, `mixed`, `object`, an array of a class).
@@ -1202,8 +1291,10 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   /** `/** @var Foo $x *\/` in the body: the class the author gives the variable, whatever it is assigned. */
   const inline = new Map<string, VarType | null>();
 
+  // One walk of the body records every way a variable is bound, and the types `catch` and `instanceof` name.
   if (body) {
     walkScope(body, (n) => {
+      // Inline `@var` tags for one variable must agree, or they type nothing.
       if (n.type === "comment") {
         for (const tag of inlineVars(n, names, collector)) {
           const before = inline.get(tag.variable);
@@ -1212,6 +1303,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
       } else if (n.type === "assignment_expression" || n.type === "augmented_assignment_expression" || n.type === "reference_assignment_expression") {
         const left = n.childForFieldName("left");
 
+        // Destructuring (`[$a, $b] = …`, `list(…) = …`): bound, class unknown.
         if (left?.type === "list_literal" || left?.type === "array_creation_expression") return bindAll(left);
 
         if (left?.type !== "variable_name") return;
@@ -1219,6 +1311,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
 
         if (!bound.has(variable)) bound.set(variable, "local");
         const right = n.childForFieldName("right");
+        // Only a plain `=` keeps the value to type later; `.=`, `+=` and `=&` leave the class unknown.
         bindAs(variable, n.type === "assignment_expression" && right ? { value: right } : { type: null });
       } else if (n.type === "foreach_statement") {
         // `foreach ($items as $k => $v)`: what follows `as` is bound; the iterated expression is only read.
@@ -1236,6 +1329,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
       } else if (n.type === "global_declaration" || n.type === "function_static_declaration") {
         bindAll(n);
       } else if (n.type === "catch_clause") {
+        // `catch (A $e)` types `$e`; `catch (A | B $e)` only registers both classes as types.
         const variable = n.childForFieldName("name")?.text.replace(/^\$/, "");
         const typeNode = n.childForFieldName("type");
         const caught = singleClass(typeNode) ?? (typeNode?.type === "type_list" && typeNode.namedChildren.length === 1 ? singleClass(typeNode.namedChildren[0]!) : null);
@@ -1246,6 +1340,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
 
         for (const named of namedTypes(typeNode)) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
       } else if (n.type === "binary_expression" && n.childForFieldName("operator")?.text === "instanceof") {
+        // `$x instanceof Foo` depends on `Foo`; the narrowing itself happens in `callsIn`.
         const right = n.childForFieldName("right");
         const written = classNameOf(right);
 
@@ -1254,7 +1349,9 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
     });
   }
 
+  // `vars` is filled in below: it needs the scope itself to type assigned expressions.
   const scope: Scope = { names, ctx, bound, vars: () => null, symbol };
+  // Memo of resolved variables, and the ones being resolved: `$a = $b; $b = $a;` must not loop.
   const memo = new Map<string, VarType | null>();
   const visiting = new Set<string>();
   /**
@@ -1267,11 +1364,13 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
 
     if (known !== undefined) return known;
 
+    // A cycle through this variable names no class (and is not memoised: the outer call decides).
     if (visiting.has(variable)) return null;
     visiting.add(variable);
     const written = inline.get(variable);
     let type: VarType | null = null;
 
+    // An inline `@var` overrides the bindings; otherwise every binding must give the same class.
     if (written !== undefined) type = written;
     else {
       const each = (bindings.get(variable) ?? []).map((b) => ("type" in b ? b.type : "value" in b ? valueType(b.value, scope, collector) : elementType(valueType(b.elementOf, scope, collector))));
@@ -1290,7 +1389,9 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
   // `return [Event::class => 'on'];` as the whole body: a literal a framework reads.
   const statements = body?.namedChildren.filter((c) => c.type !== "comment") ?? [];
   const returned = statements.length === 1 && statements[0]!.type === "return_statement" && statements[0]!.namedChildren[0] ? literalOf(statements[0]!.namedChildren[0], names, self) : OTHER;
+  // Parameter facts only when at least one parameter names a class.
   const typed = paramFacts.some((p) => p.type !== undefined);
+  // A method's attributes are read by `declarationOf`, with the class as `self`.
   const attributes = node.type === "function_definition" ? attributesOf(node, names, null) : [];
   const result = resultOf(node, names, collector);
 
@@ -1343,8 +1444,10 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
 
   /** `nested`: the closure literals passed as arguments the walk is in, outermost first. */
   const walk = (n: Node, inner: ClosureState, nested: readonly { line: number; col: number }[], sc: Scope): void => {
+    // A nested named declaration is its own declaration: its calls are not this one's.
     if (DECLARATION_NODES.has(n.type) && n.id !== node.id) return;
 
+    // A call: its callee, then what keylang reads around it (callables passed, a name argument, literal arguments, the chain).
     if (CALL_NODES.has(n.type)) {
       const fact = callOf(n, sc, collector);
 
@@ -1362,6 +1465,7 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
         // Object.assign appends the position after `passes` and `nameArg`, the key order of every call fact.
         const call: CallFact = Object.assign(unplaced, { line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
 
+        // Inside a closure the call runs later; inside a closure passed as an argument it also records where that closure starts.
         if (inner) call.closure = true;
 
         if (inner && inner !== "stored") call.closureArg = inner;
@@ -1381,11 +1485,13 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
       if (asciiLowerCase(member?.text ?? "") === "class" && written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.value(collector.klass(written, scopeNode!, scope.names), n, false);
       else if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, scopeNode!, scope.names);
     } else if (n.type === "scoped_property_access_expression") {
+      // `X::$prop` depends on the class `X`.
       const written = classNameOf(n.childForFieldName("scope"));
 
       if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, n.childForFieldName("scope")!, scope.names);
     } else if (n.type === "array_creation_expression") arrayCallable(n, sc, collector);
 
+    // Entering a closure changes the closure state of everything under it; `nested` grows only through argument closures.
     if (CLOSURE_NODES.has(n.type)) {
       const state = closureState(n, inner);
       const here = state === null || state === "stored" ? [] : [...nested, { line: n.startPosition.row + 1, col: startCol(n) }];
@@ -1402,6 +1508,7 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
     for (const child of n.namedChildren) walk(child, inner, nested, branch && child.id === branch.id ? narrowed! : sc);
   };
 
+  // `closure`: the whole node already runs later, as a stored value.
   walk(node, closure ? "stored" : null, [], scope);
 
   return out;
@@ -1419,6 +1526,7 @@ function narrowing(n: Node, scope: Scope, collector: Collector): Scope | null {
     if (inner.type !== "binary_expression") return;
     const operator = asciiLowerCase(inner.childForFieldName("operator")?.text ?? "");
 
+    // Both sides of a conjunction hold in the branch; a disjunction or negation narrows nothing.
     if (operator === "&&" || operator === "and") {
       visit(inner.childForFieldName("left"));
       visit(inner.childForFieldName("right"));
@@ -1439,9 +1547,11 @@ function narrowing(n: Node, scope: Scope, collector: Collector): Scope | null {
 
   if (narrowed.size === 0) return null;
 
+  // The narrowed classes shadow whatever the bindings say; other variables are typed as before.
   return { ...scope, vars: (variable) => narrowed.get(variable) ?? scope.vars(variable) };
 }
 
+/** The literal of an expression keylang does not read as one. */
 const OTHER: LiteralFact = { kind: "other" };
 
 /** A string longer than this is no name a framework reads: `other`. */
@@ -1458,6 +1568,7 @@ function informative(value: LiteralFact): boolean {
 function literalClass(scopeNode: Node | null, names: Names, self: string | null): string | null {
   if (!scopeNode) return null;
 
+  // `self`/`static`/`parent`: the grammar gives them as `relative_scope` or as a plain name.
   if (scopeNode.type === "relative_scope" || SPECIAL_CLASSES.has(asciiLowerCase(scopeNode.text))) return asciiLowerCase(scopeNode.text) === "parent" ? null : self;
   const written = classNameOf(scopeNode);
 
@@ -1469,8 +1580,10 @@ function literalOf(node: Node, names: Names, self: string | null, depth = 0): Li
   const n = unparenthesized(node);
   const text = stringValue(n);
 
+  // A plain string (no interpolation), unless too long to be a name.
   if (text !== null) return text.length <= MAX_LITERAL ? { kind: "string", value: text } : OTHER;
 
+  // `X::class` is the class name itself; `X::CONST` a constant of it.
   if (n.type === "class_constant_access_expression") {
     const [scopeNode, member] = n.namedChildren;
     const cls = literalClass(scopeNode ?? null, names, self);
@@ -1487,6 +1600,7 @@ function literalOf(node: Node, names: Names, self: string | null, depth = 0): Li
     return cls ? { kind: "new", name: cls } : OTHER;
   }
 
+  // An array, recursively, up to 8 levels deep; an array nested deeper reads as `other`.
   if (n.type === "array_creation_expression" && depth < 8) {
     const items: { key: LiteralFact | null; value: LiteralFact }[] = [];
 
@@ -1494,6 +1608,7 @@ function literalOf(node: Node, names: Names, self: string | null, depth = 0): Li
       if (element.type !== "array_element_initializer") continue;
       const parts = element.namedChildren.filter((c) => c.type !== "comment");
 
+      // `key => value` has two parts, a list item one; a spread (`...$x`) or anything else is skipped.
       if (parts.length === 2) items.push({ key: literalOf(parts[0]!, names, self, depth + 1), value: literalOf(parts[1]!, names, self, depth + 1) });
       else if (parts.length === 1) items.push({ key: null, value: literalOf(parts[0]!, names, self, depth + 1) });
     }
@@ -1501,6 +1616,7 @@ function literalOf(node: Node, names: Names, self: string | null, depth = 0): Li
     return { kind: "array", items };
   }
 
+  // A closure literal is identified by its start position, which the calls inside it can be matched against.
   if (n.type === "anonymous_function" || n.type === "arrow_function") return { kind: "closure", line: n.startPosition.row + 1, col: startCol(n) };
 
   return OTHER;
@@ -1513,6 +1629,7 @@ function argList(args: Node | null | undefined, names: Names, self: string | nul
   for (const arg of args?.namedChildren ?? []) {
     if (arg.type !== "argument") continue;
     const name = arg.childForFieldName("name");
+    // The value is the last child; for a named argument the first child is its name.
     const value = arg.namedChildren.filter((c) => c.type !== "comment").at(-1);
     const literal = value && value.id !== name?.id ? literalOf(value, names, self) : OTHER;
     out.push(name ? { name: name.text, value: literal } : { value: literal });
@@ -1521,6 +1638,7 @@ function argList(args: Node | null | undefined, names: Names, self: string | nul
   return out;
 }
 
+/** The arguments of a call node as literals (`argList`); the grammar names the `arguments` field on some call nodes only. */
 function argsOf(call: Node, names: Names, self: string | null): ArgFact[] {
   return argList(call.childForFieldName("arguments") ?? call.namedChildren.find((c) => c.type === "arguments"), names, self);
 }
@@ -1530,6 +1648,7 @@ function chainOf(n: Node, names: Names, self: string | null): ChainLinkFact[] | 
   const links: ChainLinkFact[] = [];
   let cur: Node | null = n;
 
+  // Walk from the outermost `->m()` down its object, collecting links in reverse; a dynamic member name ends the chain.
   while (cur && (cur.type === "member_call_expression" || cur.type === "nullsafe_member_call_expression")) {
     const name = cur.childForFieldName("name");
 
@@ -1539,6 +1658,7 @@ function chainOf(n: Node, names: Names, self: string | null): ChainLinkFact[] | 
     cur = object ? unparenthesized(object) : null;
   }
 
+  // The root: a static call (`X::a()`) or a function call (`f()`); any other root (a variable, `$this`) adds no link.
   if (cur?.type === "scoped_call_expression") {
     const name = cur.childForFieldName("name");
 
@@ -1553,6 +1673,7 @@ function chainOf(n: Node, names: Names, self: string | null): ChainLinkFact[] | 
     links.unshift({ name: fn.text.replace(/\s+/g, ""), args: argsOf(cur, names, self) });
   }
 
+  // A single call is no chain.
   return links.length >= 2 ? links : null;
 }
 
@@ -1560,6 +1681,7 @@ function chainOf(n: Node, names: Names, self: string | null): ChainLinkFact[] | 
 function attributesOf(decl: Node, names: Names, self: string | null): AttributeFact[] {
   const out: AttributeFact[] = [];
 
+  // attribute_list → attribute_group (`#[…]`) → attribute; an attribute whose name does not resolve is skipped.
   for (const list of decl.namedChildren) {
     if (list.type !== "attribute_list") continue;
 
@@ -1591,11 +1713,14 @@ type ClosureState = null | "stored" | { line: number; col: number };
 /** A call fact before its position is known. */
 type UnplacedCall = Omit<CallFact, "line" | "col" | "endLine" | "endCol">;
 
+/** The closure state under `closure`, given the state `inner` around it (see `ClosureState`). */
 function closureState(closure: Node, inner: ClosureState): ClosureState {
+  // Once stored, always stored: an argument closure inside a stored one still runs only when the stored one does.
   if (inner === "stored") return "stored";
 
   if (closure.type === "anonymous_class" || closure.parent?.type !== "argument") return "stored";
 
+  // An argument closure inside another keeps the outermost one's position.
   if (inner) return inner;
   const at = located(closure);
 
@@ -1618,6 +1743,7 @@ function passesOf(call: Node, scope: Scope, collector: Collector): PassFact[] {
 
   if (!args) return [];
   const fn = call.type === "function_call_expression" ? call.childForFieldName("function") : null;
+  // A bare string is a function name only as an argument of a builtin known to take a callable.
   const plain = fn?.type === "name" || fn?.type === "qualified_name" ? CALLABLE_TAKING.has(asciiLowerCase(lastSegment(fn.text.replace(/\s+/g, "")))) : false;
   const out: PassFact[] = [];
   args.namedChildren
@@ -1653,6 +1779,7 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
   const node = unparenthesized(value);
   const method = (holder: string | null, name: string): string | null => (holder ? `${holder}.${name}` : null);
 
+  // `[target, 'method']`: exactly two elements, the second a string that is a valid PHP identifier.
   if (node.type === "array_creation_expression") {
     const elements = node.namedChildren.filter((c) => c.type === "array_element_initializer");
 
@@ -1668,6 +1795,7 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
       if (variable === "this") return scope.ctx ? { callee: `this.${name}`, node } : null;
       const type = scope.vars(variable);
 
+      // `[$obj, 'm']` is followed only when `$obj` has one known class (not a call result, not an array).
       if (!type || !("cls" in type) || type.element) return null;
       const ref: CallableRef = { callee: `${variable}.${name}`, bound: scope.bound.get(variable) ?? "local", receiver: type.cls, node };
 
@@ -1711,6 +1839,7 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
     const text = stringValue(node);
 
     if (!text) return null;
+    // `'Class::method'`: a static method named in a string.
     const scoped = /^(\\?[A-Za-z_\x80-￿][A-Za-z0-9_\\\x80-￿]*)::([A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*)$/.exec(text);
 
     if (scoped) {
@@ -1719,6 +1848,7 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
       return { callee: `${collector.klass(qualifiedString(scoped[1]!), node, scope.names)}.${scoped[2]}`, node };
     }
 
+    // `'helper'` or `'App\helper'`: a function name, where the callee reads strings as callables.
     if (plainStrings && /^\\?[A-Za-z_\x80-￿][A-Za-z0-9_\\\x80-￿]*$/.test(text)) return { callee: collector.fn(qualifiedString(text), node, scope.names), node };
 
     return null;
@@ -1731,9 +1861,11 @@ function callableOf(value: Node, scope: Scope, collector: Collector, plainString
     return inner ? callableOf(inner, scope, collector, true) : null;
   }
 
+  // `f(...)`, `$this->m(...)`, `X::m(...)`: the callee as a call would read it, kept only when its target is known.
   if (CALL_NODES.has(node.type) && firstClassCallable(node)) {
     const fact = calleeOf(node, scope, collector);
 
+    // A variable of unknown class (`$x->m(...)`) names no method keylang can follow.
     if (!fact || fact.opaque || (fact.bound && !fact.receiver)) return null;
 
     const ref: CallableRef = { callee: fact.callee, node };
@@ -1764,6 +1896,7 @@ function classHolder(scopeNode: Node, member: string, scope: Scope, collector: C
 
     if (!scope.ctx || relative === "parent") return null;
 
+    // A static method lives on the class itself; an instance method on `$this`.
     return scope.ctx.statics.has(asciiLowerCase(member)) ? scope.ctx.name : "this";
   }
 
@@ -1780,6 +1913,7 @@ function arrayCallable(n: Node, scope: Scope, collector: Collector): void {
 
   if (!name || !/^[A-Za-z_\x80-￿][A-Za-z0-9_\x80-￿]*$/.test(name)) return;
 
+  // Only a first element that can hold an object or name a class makes the pair a callable; the method name is then read as a value.
   const holder =
     target?.type === "variable_name" ||
     target?.type === "member_access_expression" ||
@@ -1798,6 +1932,7 @@ export const NAME_ARG_MEMBERS: ReadonlySet<string> = new Set(["dispatch"]);
 function nameArgOf(n: Node, callee: string): CallFact["nameArg"] | undefined {
   if (n.type !== "member_call_expression" && n.type !== "nullsafe_member_call_expression" && n.type !== "scoped_call_expression") return undefined;
 
+  // The member is the callee's last dotted segment, compared case-insensitively like PHP method names.
   if (!NAME_ARG_MEMBERS.has(asciiLowerCase(callee.slice(callee.lastIndexOf(".") + 1)))) return undefined;
   const args = n.childForFieldName("arguments") ?? n.namedChildren.find((c) => c.type === "arguments");
   const first = args?.namedChildren.find((a) => a.type === "argument");
@@ -1813,8 +1948,10 @@ function nameArgOf(n: Node, callee: string): CallFact["nameArg"] | undefined {
 function stringValue(node: Node): string | null {
   if (node.type !== "string" && node.type !== "encapsed_string") return null;
 
+  // Any child other than text or an escape is an interpolation (`"{$x}"`): the value is not known.
   if (node.namedChildren.some((c) => c.type !== "string_content" && c.type !== "string_value" && c.type !== "escape_sequence")) return null;
 
+  // Escapes are kept as written (`\n` stays two characters).
   return node.namedChildren.map((c) => c.text).join("");
 }
 
@@ -1837,6 +1974,7 @@ function firstClassCallable(n: Node): boolean {
  * value.
  */
 function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null {
+  // `f(...)` calls nothing: record the name as read, and no call.
   if (n.type !== "object_creation_expression" && firstClassCallable(n)) {
     callableValue(n, scope, collector);
 
@@ -1848,8 +1986,10 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
 
 /** The callee of a call node as `callOf` reads it, whether or not the arguments are `(...)`. */
 function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque" | "docblock" | "param" | "on" | "member"> | null {
+  // A call keylang cannot name: its text, whitespace collapsed and cut to `MAX_CALLEE`.
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
 
+  // `new X`, `new self`, `new parent`, `new $class`; an anonymous class constructs nothing named.
   if (n.type === "object_creation_expression") {
     const target = n.namedChildren[0];
 
@@ -1871,6 +2011,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     return opaque();
   }
 
+  // A function call by name, through a variable (`$f()`), or through any other expression (opaque).
   if (n.type === "function_call_expression") {
     const fn = n.childForFieldName("function");
 
@@ -1878,7 +2019,10 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
       const written = fn.text.replace(/\s+/g, "");
       const lower = asciiLowerCase(lastSegment(written));
 
+      // `isset`/`empty` only when unqualified: `A\isset` would be a real function.
       if (CONSTRUCTS.has(lower) && !written.includes("\\")) return null;
+
+      // A call that dispatches at run time is still a call of the builtin, plus a hole for what it runs.
 
       if (CALLABLE_CALLS.has(lower)) collector.hole(n, `\`${lastSegment(written)}\` calls a callable chosen at run time`, scope.symbol);
 
@@ -1892,11 +2036,13 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     return opaque();
   }
 
+  // A method call: a member name computed at run time (`$obj->$m()`) is opaque.
   const name = n.childForFieldName("name");
 
   if (name?.type !== "name") return opaque();
   const member = name.text;
 
+  // `X::m()`: relative (`self`, `static`, `parent`), a class name, or `$class::m()`.
   if (n.type === "scoped_call_expression") {
     const scopeNode = n.childForFieldName("scope");
 
@@ -1907,6 +2053,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
 
       if (relative === "parent") return { callee: `super.${member}` };
 
+      // `self::m()` of an instance method is a call on `$this`; of a static one, a call on the class.
       return scope.ctx.statics.has(asciiLowerCase(member)) ? { callee: `${scope.ctx.name}.${member}` } : { callee: `this.${member}` };
     }
 
@@ -1925,6 +2072,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
   if (object?.type === "variable_name") {
     const variable = object.text.replace(/^\$/, "");
 
+    // `$this` outside a class (a closure bound later) is a value of unknown class.
     if (variable === "this") return scope.ctx ? { callee: `this.${member}` } : { callee: `this.${member}`, bound: "local" };
     const fact = variableCall(`${variable}.${member}`, scope);
     const type = scope.vars(variable);
@@ -1932,6 +2080,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     // `$x = $this->repo->get(); $x->save()`: the class of the result `get` declares, which the graph reads.
     if (type && "of" in type) return { ...fact, on: type.of, member };
 
+    // No class, or an array of one (no methods to call): a call through a value.
     if (!type || type.element) return fact;
     const typed: Pick<CallFact, "callee" | "bound" | "receiver" | "docblock"> = { ...fact, receiver: type.cls };
 
@@ -1940,6 +2089,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
     return typed;
   }
 
+  // `$this->prop->m()`: the property's class, and the constructor parameter that fills it.
   if ((object?.type === "member_access_expression" || object?.type === "nullsafe_member_access_expression") && object.childForFieldName("object")?.text === "$this") {
     const prop = object.childForFieldName("name");
 
@@ -1965,6 +2115,7 @@ function calleeOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "
   if (object && creation && created && !SPECIAL_CLASSES.has(asciiLowerCase(created))) {
     const callee = `${object.text.replace(/\s+/g, " ")}.${member}`;
 
+    // A long constructor expression falls through to opaque rather than being cut.
     if (callee.length <= MAX_CALLEE) return { callee, receiver: collector.klass(created, creation, scope.names) };
   }
 
@@ -1992,6 +2143,7 @@ function unparenthesized(node: Node): Node {
 function variableCall(callee: string, scope: Scope): Pick<CallFact, "callee" | "bound"> {
   const head = callee.split(".")[0]!;
 
+  // A variable the function never binds (a closure's `use`, a global read implicitly) counts as local.
   return { callee, bound: scope.bound.get(head) ?? "local" };
 }
 
@@ -2019,6 +2171,7 @@ function callableValue(n: Node, scope: Scope, collector: Collector): void {
 function includesIn(root: Node, path: string, collector: Collector): ImportFact[] {
   const out: ImportFact[] = [];
 
+  // Includes may sit anywhere (in functions, conditions, closures): walk the whole tree.
   const walk = (n: Node): void => {
     if (INCLUDE_NODES.has(n.type)) {
       const target = includedPath(n.namedChildren[0] ?? null, path);
@@ -2044,8 +2197,10 @@ function includesIn(root: Node, path: string, collector: Collector): ImportFact[
  */
 function includedPath(expr: Node | null, file: string): string | null {
   const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+  // `levels` directories above `path`.
   const up = (path: string, levels: number): string => normalize([path, ...Array<string>(levels).fill("..")].filter((part) => part !== "").join("/"));
 
+  /** A constant fold of the path expression; `anchored`: the text starts at a known directory (from `__DIR__`/`__FILE__`). */
   const evaluate = (node: Node | null): { text: string; anchored: boolean } | null => {
     if (!node) return null;
 
@@ -2058,6 +2213,7 @@ function includedPath(expr: Node | null, file: string): string | null {
 
     if (node.type === "function_call_expression" && asciiLowerCase(node.childForFieldName("function")?.text ?? "") === "dirname") {
       const args = (node.childForFieldName("arguments")?.namedChildren ?? []).map((a) => a.namedChildren[0] ?? null);
+      // The optional second argument is a literal positive level count; anything else is computed.
       const levels = args[1] ? Number(args[1].text) : 1;
 
       if (!Number.isInteger(levels) || levels < 1) return null;
@@ -2066,9 +2222,11 @@ function includedPath(expr: Node | null, file: string): string | null {
       if (args[0]?.type === "name" && args[0].text === "__FILE__") return { text: up(dir, levels - 1), anchored: true };
       const inner = evaluate(args[0] ?? null);
 
+      // `dirname` of a bare string literal is not followed: only anchored paths.
       return inner?.anchored ? { text: up(inner.text, levels), anchored: true } : null;
     }
 
+    // Concatenation: the anchor may only come first (`__DIR__ . '/x.php'`).
     if (node.type === "binary_expression" && node.childForFieldName("operator")?.text === ".") {
       const left = evaluate(node.childForFieldName("left"));
       const right = evaluate(node.childForFieldName("right"));
@@ -2093,6 +2251,7 @@ function includedPath(expr: Node | null, file: string): string | null {
 function normalize(path: string): string {
   const out: string[] = [];
 
+  // A stack of segments: `..` pops a real segment, but piles up above the root.
   for (const part of path.split("/")) {
     if (part === "" || part === ".") continue;
 
@@ -2121,8 +2280,10 @@ function docOf(node: Node, header: number | null): string | undefined {
 function docComment(node: Node, header: number | null): Node | null {
   let at = node.previousNamedSibling;
 
+  // Skip `//` and `#` comments; stop at the first block comment or code.
   while (at?.type === "comment" && !at.text.startsWith("/*")) at = at.previousNamedSibling;
 
+  // Only `/** */` is PHPDoc, and the file's header comment documents the file, not this declaration.
   return at?.type === "comment" && at.text.startsWith("/**") && at.id !== header ? at : null;
 }
 
@@ -2136,6 +2297,7 @@ function docTags(node: Node, header: number | null, tag: RegExp): (DocType & { n
 
   if (!comment) return [];
   const out: (DocType & { name?: string })[] = [];
+  // Line by line; the `@` column is offset by the comment's column only on its first line.
   comment.text.split("\n").forEach((text, i) => {
     const match = tag.exec(text);
 
@@ -2162,11 +2324,13 @@ function docTag(node: Node, header: number | null, tag: RegExp): DocType | null 
  * instead. A license documents nothing.
  */
 function fileDoc(root: Node): { doc: string; id: number } | null {
+  // The first statement past `<?php`, `declare(…)` and inline HTML must be a `/** */` comment.
   const first = root.namedChildren.find((c) => c.type !== "php_tag" && c.type !== "declare_statement" && c.type !== "text");
 
   if (first?.type !== "comment" || !first.text.startsWith("/**")) return null;
   const next = first.nextNamedSibling;
 
+  // Directly above a declaration (no blank line between), it documents that declaration.
   if (next && DECLARATION_NODES.has(next.type) && next.startPosition.row <= first.endPosition.row + 1) return null;
   const text = jsdocDescription(blockCommentBody(first.text)).trim();
   const doc = isLicense(text) ? null : nonEmpty(text);
@@ -2174,6 +2338,7 @@ function fileDoc(root: Node): { doc: string; id: number } | null {
   return doc === null ? null : { doc, id: first.id };
 }
 
+/** A hole at `node`: its span, its first line of source, and why keylang cannot follow it. */
 function unsupported(node: Node, reason: string): UnsupportedFact {
   const at = located(node);
 

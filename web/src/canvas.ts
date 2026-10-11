@@ -6,6 +6,12 @@
 // one plugin it needs (panning) and only the shapes, perimeters and markers
 // drawn here keeps the bundle small (the build drops the outline's own
 // default plugins, see scripts/build-web.mjs).
+//
+// Place in the pipeline: the web view's read-only renderer. It takes a
+// `Diagram` the server already laid out (src/diagram.ts, src/tui/web.ts) and
+// only draws it; nothing here changes the specs. Entry points: `Canvas` (draw,
+// select, zoom, fit), and the style helpers `nodeStyle`, `wrapLabel`,
+// `glyphOf` and `register` that the editor (editor.ts) shares.
 
 import {
   ActorShape,
@@ -55,13 +61,16 @@ export const VERDICT_COLOUR: ByVerdict<VerdictColour> = {
   planned: { stroke: "#757575", fill: "#f5f5f5" },
 };
 
+/** The look of a shape or edge with no verdict, or one the page does not know. */
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
 /** The terminal's glyphs (src/tui/evidence.ts `MARK_GLYPH`). */
 export const VERDICT_GLYPH: ByVerdict<string> = { ok: "✓", fail: "✗", unverified: "◌", warning: "!", planned: "◇" };
 
+/** The stroke of the picked shape and its edges. */
 const SELECTED = "#1565c0";
 
+/** The stroke of shapes a usages search found. */
 const USED = "#8e24aa";
 
 /** Shapes too small for their text: the text goes below them as a caption. */
@@ -78,6 +87,7 @@ const CROWDED = 60;
 /** Characters of a line of a task's label. */
 const LINE = 24;
 
+// maxGraph's registries are global: register once per page, however many canvases there are.
 let registered = false;
 
 /** Only what the canvases draw: `BaseGraph` registers nothing itself. The editor (editor.ts) shares it. */
@@ -107,6 +117,7 @@ export function wrapLabel(text: string, max = 3): string {
   const lines: string[] = [];
   let line = "";
 
+  // Split after each dot (the dot stays with its part), then pack parts greedily into lines.
   for (const part of text.split(/(?<=\.)/)) {
     if (line !== "" && line.length + part.length > LINE) {
       lines.push(line);
@@ -115,6 +126,7 @@ export function wrapLabel(text: string, max = 3): string {
 
     line += part;
 
+    // A single part longer than a line (an ID segment without dots) is cut hard.
     while (line.length > LINE) {
       lines.push(line.slice(0, LINE));
       line = line.slice(LINE);
@@ -125,9 +137,13 @@ export function wrapLabel(text: string, max = 3): string {
 
   if (lines.length <= max) return lines.join("\n");
 
+  // Too many lines: keep the first ones and end with an ellipsis and the tail of the rest,
+  // since the end of an ID (the fn's name) says the most.
+
   return [...lines.slice(0, max - 1), `…${lines.slice(max - 1).join("").slice(-(LINE - 1))}`].join("\n");
 }
 
+/** The verdict glyph of a node, or `""` when it has no verdict or one the page does not know. */
 export function glyphOf(node: { verdict?: string | null | undefined }): string {
   return node.verdict ? (VERDICT_GLYPH[node.verdict] ?? "") : "";
 }
@@ -145,6 +161,7 @@ export interface ComponentLooks {
   [component: string]: ComponentLook;
 }
 
+/** The look of each component kind of a system diagram. */
 export const COMPONENT_LOOK: ComponentLooks = {
   client: { shape: "rectangle", icon: "👤", fill: "#e3f2fd" },
   cdn: { shape: "cloud", icon: "☁", fill: "#e1f5fe", perimeter: "ellipsePerimeter" },
@@ -206,6 +223,7 @@ export interface NodeLook {
   component?: string | undefined;
 }
 
+/** The maxGraph style of a shape: the verdict gives its colours (dashed when planned), the kind gives its shape. */
 export function nodeStyle(node: NodeLook): CellStyle {
   const colour = (node.verdict && VERDICT_COLOUR[node.verdict]) || NEUTRAL;
   const style: CellStyle = { strokeColor: colour.stroke, fillColor: colour.fill, fontColor: "#212121", fontSize: 11, strokeWidth: 1.5 };
@@ -255,6 +273,7 @@ export function nodeStyle(node: NodeLook): CellStyle {
   }
 }
 
+/** The maxGraph style of an edge: colour by verdict, arrow and dashes by kind. */
 function edgeStyle(edge: DiagramEdge): CellStyle {
   const colour = (edge.verdict && VERDICT_COLOUR[edge.verdict]) || NEUTRAL;
   const base: CellStyle = { strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, labelBackgroundColor: "#ffffff" };
@@ -270,6 +289,8 @@ function edgeStyle(edge: DiagramEdge): CellStyle {
       return { ...base, endArrow: "classic", strokeColor: "#00695c", strokeWidth: 1.5 };
   }
 
+  // Every other kind: weaker relations (denies, emitted events, continuations, calls, plain
+  // dependencies) are dashed; calls and dependencies get an open arrow.
   const dashed = edge.kind === "deny" || edge.kind === "emits" || edge.kind === "continues" || edge.kind === "call" || edge.kind === "dependency";
 
   return { strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, endArrow: edge.kind === "call" || edge.kind === "dependency" ? "open" : "classic", dashed, labelBackgroundColor: "#ffffff" };
@@ -286,6 +307,7 @@ function edgeLabel(edge: DiagramEdge): string {
   return edge.label ?? "";
 }
 
+/** A routed edge: its two bend points and the style that pins its ends to a side. */
 interface Arc {
   points: Point[];
   style: CellStyle;
@@ -301,6 +323,7 @@ function stackArcs(diagram: Diagram): Map<DiagramEdge, Arc> {
   const byId = new Map(diagram.nodes.map((node) => [node.id, node]));
   const out = new Map<DiagramEdge, Arc>();
   const used = new Map<string, number>();
+  // Shortest spans first, so they take the inner tracks and longer arcs wrap around them.
   const ordered = [...diagram.edges].sort((a, b) => span(a) - span(b));
 
   function span(edge: DiagramEdge): number {
@@ -314,6 +337,7 @@ function stackArcs(diagram: Diagram): Map<DiagramEdge, Arc> {
     const from = byId.get(edge.from);
     const to = byId.get(edge.to);
 
+    // Only edges within one column and between different rows become arcs; the rest stay straight.
     if (!from || !to || Math.abs(from.x - to.x) > 1 || from.y === to.y) continue;
     const rule = edge.kind === "allow" || edge.kind === "deny";
     const side = rule ? from.x : from.x + from.w;
@@ -332,6 +356,7 @@ function stackArcs(diagram: Diagram): Map<DiagramEdge, Arc> {
   return out;
 }
 
+/** What the canvas tells the page. */
 export interface CanvasEvents {
   /** A click on a shape, or on the background (null). */
   select(node: DiagramNode | null): void;
@@ -344,6 +369,7 @@ interface EdgeCell {
   arc?: CellStyle;
 }
 
+/** The read-only diagram canvas: draws one `Diagram`, tracks the picked shape and the usages marks, zooms and pans. */
 export class Canvas {
   readonly graph: BaseGraph;
   private readonly container: HTMLElement;
@@ -419,6 +445,7 @@ export class Canvas {
     graph.batchUpdate(() => {
       graph.removeCells(graph.getChildCells(parent, true, true), true);
 
+      // Lanes (layers, modules) first, so the shapes drawn later sit on top.
       for (const group of diagram.groups) {
         graph.insertVertex({
           parent,
@@ -431,6 +458,8 @@ export class Canvas {
 
       const byId = new Map<string, Cell>();
 
+      // Each node: its shape, then the extra cells that belong to it (a table's columns,
+      // a small shape's caption). All of them map back to the node so a click on any picks it.
       for (const node of diagram.nodes) {
         const shape = graph.insertVertex({ parent, value: labelOf(node), position: [node.x, node.y], size: [node.w, node.h], style: this.styleOf(node) });
         const own = [shape];
@@ -469,6 +498,7 @@ export class Canvas {
       // A crowded stack (a baseline's rule for every pair) draws the denies that hold no more: the order of the stack says them.
       const quiet = diagram.direction === "down" && diagram.edges.length > CROWDED;
 
+      // Edges last, between the shapes drawn above; an edge whose end is not drawn is skipped.
       for (const edge of diagram.edges) {
         if (quiet && edge.kind === "deny" && (edge.verdict ?? "ok") === "ok") continue;
         const source = byId.get(edge.from);
@@ -478,12 +508,14 @@ export class Canvas {
         const arc = arcs.get(edge);
         const cell = graph.insertEdge({ parent, value: edgeLabel(edge), source, target, style: { ...this.edgeStyleOf(edge), ...arc?.style } });
 
+        // A routed arc: set the bends on a copy of the geometry, as maxGraph expects geometry to be replaced, not mutated.
         if (arc && cell.geometry) {
           const geometry = cell.geometry.clone();
           geometry.points = arc.points;
           cell.geometry = geometry;
         }
 
+        // Keep the arc's style so a restyle (selection) does not straighten the edge.
         const drawn: EdgeCell = { cell, edge };
 
         if (arc) drawn.arc = arc.style;
@@ -513,8 +545,11 @@ export class Canvas {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
 
+    // Nothing drawn or a hidden container: no size to fit, so reset to the natural size.
     if (bounds.width === 0 || bounds.height === 0 || width === 0 || height === 0) return view.scaleAndTranslate(1, margin, margin);
     const scale = view.scale;
+    // The bounds are in screen pixels; turn them back into model coordinates
+    // (screen = (model + translate) * scale), then pick a scale and centre the box.
     const model = { x: bounds.x / scale - view.translate.x, y: bounds.y / scale - view.translate.y, w: bounds.width / scale, h: bounds.height / scale };
     const next = Math.max(0.05, Math.min(1, (width - 2 * margin) / model.w, (height - 2 * margin) / model.h));
     view.scaleAndTranslate(next, width / 2 / next - (model.x + model.w / 2), height / 2 / next - (model.y + model.h / 2));
@@ -525,6 +560,7 @@ export class Canvas {
     const view = this.graph.getView();
     const scale = view.scale;
     const next = Math.max(0.05, Math.min(4, scale * factor));
+    // The model point under (x, y) before the zoom; translate so it stays under (x, y) after.
     const px = x / scale - view.translate.x;
     const py = y / scale - view.translate.y;
     view.scaleAndTranslate(next, x / next - px, y / next - py);
@@ -540,6 +576,7 @@ export class Canvas {
     view.setTranslate(this.container.clientWidth / 2 / scale - (node.x + node.w / 2), this.container.clientHeight / 2 / scale - (node.y + node.h / 2));
   }
 
+  /** A node's style with the selection or the usages mark over it; the selection wins. */
   private styleOf(node: DiagramNode): CellStyle {
     const style = nodeStyle(node);
 
@@ -566,6 +603,7 @@ export class Canvas {
     return this.diagram.edges.length > CROWDED ? { ...style, opacity: 35 } : style;
   }
 
+  /** Re-applies the styles of every shape and edge after the selection or the usages marks changed. */
   private restyle(): void {
     const model = this.graph.getDataModel();
     this.graph.batchUpdate(() => {

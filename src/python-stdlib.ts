@@ -4,6 +4,8 @@
 // this list, and analysis never runs a Python interpreter). The union keeps a
 // module removed in a later version (`distutils`, `cgi`): code that imports it
 // targets a version that had it. Update it when a new CPython version is supported.
+// Used by the Python import resolver (source → FileFacts) to classify an import
+// as stdlib rather than an unresolved project or third-party module.
 
 /** 329 names, sorted. */
 const NAMES: readonly string[] = [
@@ -43,6 +45,7 @@ const NAMES: readonly string[] = [
   "xmlrpc", "zipapp", "zipfile", "zipimport", "zlib", "zoneinfo",
 ];
 
+// A Set gives constant-time lookups; the import resolver asks once per import.
 const STDLIB: ReadonlySet<string> = new Set(NAMES);
 
 /** `name` (the first segment of a dotted import) is a module of the Python standard library. */

@@ -16,12 +16,18 @@
 // `artisan` beside `bootstrap/app.php`. Nothing is guessed from names: a
 // binding to a closure, a contextual binding, a controller named by a
 // namespace a route provider sets are holes with the reason.
+//
+// Pipeline: source → FileFacts (PHP extractor) → (this reader) → config facts
+// → graph bindings, observers, entry points and holes. Entry point:
+// `laravelFacts`; key terms: service provider, facade, listener, queued job,
+// route group, resource route, schedule.
 
 import { posix } from "node:path";
 import type { CallFact, FileFacts, LiteralFact } from "../extract/facts.ts";
 import type { ConfigFacts, EntryConfigFact, FrameworkConfig, ObserverFact } from "../frameworks/adapter.ts";
 import { arg, callsOf, cls, codeFacts, dispatchesIn, eventName, hasFacts, key, PhpCode, str, strings, type, type PhpClass } from "./php.ts";
 
+/** Framework base classes and interfaces the reader recognises classes by. */
 const SERVICE_PROVIDER = "Illuminate\\Support\\ServiceProvider";
 
 const FACADE = "Illuminate\\Support\\Facades\\Facade";
@@ -64,6 +70,7 @@ const RESOURCE_ACTIONS: [string, string, string[]][] = [
   ["destroy", "/{param}", ["DELETE"]],
 ];
 
+/** Whether a class name is one of `names`, compared as PHP class names. */
 function isOneOf(name: string | null | undefined, names: readonly string[]): boolean {
   return name !== null && name !== undefined && names.some((n) => key(n) === key(name));
 }
@@ -73,6 +80,7 @@ export function laravelFacts(files: readonly FileFacts[]): FrameworkConfig[] {
   const code = new PhpCode(files);
   const out = new Map<string, ConfigFacts>();
 
+  // The facts of a file, created on first use, so only files that say something are kept.
   const at = (path: string): ConfigFacts => {
     let facts = out.get(path);
 
@@ -81,11 +89,13 @@ export function laravelFacts(files: readonly FileFacts[]): FrameworkConfig[] {
     return facts;
   };
 
+  // Classes in file and line order, so the facts of each file come out in a stable order.
   const classes = [...code.classes.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.decl.line - b.decl.line));
   /** Container keys a provider binds by a string (`$this->app->singleton('payment', C::class)`), for a facade's accessor. */
   const keyed = new Map<string, string>();
   const providers = classes.filter((c) => c.file.startsWith("app/Providers/") || code.extends(c, SERVICE_PROVIDER));
 
+  // Providers first: they fill `keyed`, which facades then resolve their accessors through.
   for (const provider of providers) readProvider(code, provider, at(provider.file), keyed);
 
   for (const facade of classes.filter((c) => code.extends(c, FACADE))) readFacade(code, facade, at(facade.file), keyed);
@@ -104,6 +114,7 @@ export function laravelFacts(files: readonly FileFacts[]): FrameworkConfig[] {
     facts.observers!.push({ event: job.qualified, name: `queued job ${job.name}`, instance: type(job.qualified), method: handle.decl.name, disabled: false, entry: false, line: job.decl.line, col: job.decl.col });
   }
 
+  // Code files: route files, console routes, the console kernel, and dispatches in every file.
   const commands = commandNames(code, classes);
 
   for (const file of code.files) {
@@ -116,6 +127,7 @@ export function laravelFacts(files: readonly FileFacts[]): FrameworkConfig[] {
     for (const d of dispatchesIn(code, file)) at(file.path).dispatches!.push({ symbol: d.symbol, event: d.event, text: d.call.callee, line: d.call.line, col: d.call.col, endLine: d.call.endLine, endCol: d.call.endCol });
   }
 
+  // Files that wire nothing are dropped; each remaining file owns its own facts.
   return [...out.values()].filter(hasFacts).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).map((facts) => ({ facts, owner: facts.path }));
 }
 
@@ -142,6 +154,7 @@ function readProvider(code: PhpCode, provider: PhpClass, facts: ConfigFacts, key
     }
   }
 
+  // Container calls in the provider's methods: bindings, contextual bindings (holes) and `Event::listen`.
   for (const member of provider.decl.members) {
     for (const call of member.calls) {
       const parts = call.callee.split(".");
@@ -166,6 +179,8 @@ function bind(facts: ConfigFacts, keyed: Map<string, string>, abstract: LiteralF
   const name = str(abstract);
   const to = cls(concrete);
 
+  // Class to class is a binding (unless it binds a class to itself); a string key to a class is remembered
+  // for facades; any other concrete (closure, expression) is a hole.
   if (to !== null && from !== null) {
     if (key(from) !== key(to)) facts.bindings.push({ from: type(from), to: type(to), line: at.line, col: at.col });
   } else if (to !== null && name !== null) keyed.set(name, to);
@@ -185,6 +200,7 @@ function listen(code: PhpCode, file: string, facts: ConfigFacts, event: string, 
     if (!(facts.observers ?? []).some((o) => o.event === fact.event && key(o.instance?.name ?? "") === key(cls) && o.method === method)) facts.observers!.push(fact);
   };
 
+  // A bare class runs `handle`, or `__invoke` when it has only that.
   if (listener.kind === "class") return add(listener.name, code.method(listener.name, "handle") || !code.method(listener.name, "__invoke") ? "handle" : "__invoke");
 
   if (listener.kind === "array" && listener.items.length === 2 && listener.items[0]!.value.kind === "class" && listener.items[1]!.value.kind === "string") return add(listener.items[0]!.value.name, listener.items[1]!.value.value);
@@ -192,6 +208,7 @@ function listen(code: PhpCode, file: string, facts: ConfigFacts, event: string, 
   if (listener.kind === "string") {
     const [name, method] = listener.value.split("@");
 
+    // `'App\Listeners\X@method'`: a class name, an optional method.
     if (name && /^\\?[A-Za-z_][A-Za-z0-9_\\]*$/.test(name)) return add(name.replace(/\\+/g, "\\").replace(/^\\/, ""), method || "handle");
   }
 
@@ -244,6 +261,7 @@ function readCommand(command: PhpClass, facts: ConfigFacts): void {
   facts.entries!.push({ kind: "cli", label: name, files: [], fn: handle.name, type: type(command.qualified), line: command.decl.line, col: command.decl.col });
 }
 
+/** A command's name: the first word of `$signature` (or `$name`, or `#[AsCommand]`'s name); null without one. */
 function commandName(command: PhpClass): string | null {
   const prop = (command.decl.properties ?? []).find((p) => p.name === "signature" || p.name === "name");
   const fromProp = str(prop?.value);
@@ -268,6 +286,7 @@ function commandNames(code: PhpCode, classes: readonly PhpClass[]): Map<string, 
   return out;
 }
 
+/** What a route group adds to the routes inside it: URL prefixes, and the controller of `Route::controller`. */
 interface Group {
   prefix: string[];
   controller: string | null;
@@ -285,6 +304,7 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
   const isRoute = (call: CallFact): boolean => (call.chain ? isOneOf(call.chain[0]!.class, ROUTE) : isOneOf(code.calleeClass(file.path, call.callee), ROUTE));
   const links = (call: CallFact) => call.chain ?? [{ name: call.callee.slice(call.callee.lastIndexOf(".") + 1), args: call.args ?? [] }];
 
+  // Pass 1: every `->group(fn)` call, keyed by the position of its closure, so routes inside can find it.
   for (const call of file.moduleCalls) {
     if (!isRoute(call)) continue;
     const chain = links(call);
@@ -293,6 +313,7 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
     if (last.name.toLowerCase() !== "group") continue;
     const group: Group = { prefix: [], controller: null };
 
+    // Prefix and controller come from the fluent chain (`prefix()`, `controller()`) or the `group([...])` array.
     for (const link of chain) {
       const first = link.args.find((a) => a.name === undefined)?.value ?? null;
 
@@ -316,6 +337,7 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
 
   const base = file.path === "routes/api.php" ? ["api"] : [];
 
+  // Pass 2: each route registration, with the prefixes and controller of the groups whose closures enclose it.
   for (const call of file.moduleCalls) {
     if (!isRoute(call)) continue;
     const chain = links(call);
@@ -325,6 +347,7 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
     if (!(verb in VERBS) && verb !== "match" && verb !== "resource" && verb !== "apiresource") continue;
     const enclosing = (call.closures ?? (call.closureArg ? [call.closureArg] : [])).map((p) => groups.get(position(p))).filter((g): g is Group => g !== undefined);
     const prefix = [...base, ...enclosing.flatMap((g) => g.prefix), ...chain.slice(0, -1).filter((l) => l.name === "prefix").map((l) => str(l.args[0]?.value) ?? "")];
+    // The innermost group with a controller wins.
     const controller = enclosing.map((g) => g.controller).filter((c) => c !== null).at(-1) ?? null;
 
     if (verb === "resource" || verb === "apiresource") {
@@ -344,6 +367,7 @@ function readRoutes(code: PhpCode, file: FileFacts, facts: ConfigFacts): void {
     const action = arg(last.args, "action", verb === "match" ? 2 : 1);
     const handler = routeAction(action, controller);
 
+    // One entry per HTTP method (or one for `any`); a route whose action is unreadable is a hole instead.
     for (const method of methods.length > 0 ? methods : [null]) {
       const label = method === null ? path : `${method} ${path}`;
 
@@ -394,12 +418,15 @@ function resource(code: PhpCode, facts: ConfigFacts, call: CallFact, prefix: str
 
   const only = chain.find((l) => l.name === "only");
   const except = chain.find((l) => l.name === "except");
+  // `only()` keeps the listed actions, `except()` drops them.
   const kept = (action: string): boolean => (only ? strings(only.args[0]?.value).includes(action) : true) && !(except && strings(except.args[0]?.value).includes(action));
   // Laravel names the parameter by the singular of the last segment (`photos` → `{photo}`).
   const last = name.split(".").at(-1)!;
   const param = singular(last.replace(/-/g, "_"));
+  // Nested resources (`photos.comments`) put each parent's parameter in the path.
   const segments = name.split(".").map((segment, i, all) => (i < all.length - 1 ? `${segment}/{${singular(segment)}}` : segment));
 
+  // Only actions the controller declares become routes.
   for (const [action, tail, methods] of RESOURCE_ACTIONS) {
     if (api && (action === "create" || action === "edit")) continue;
 
@@ -423,6 +450,7 @@ function singular(word: string): string {
   return word;
 }
 
+/** Join URL parts into one absolute path without empty or doubled slashes. */
 function joinPath(parts: readonly string[]): string {
   const segments = parts.flatMap((p) => p.split("/")).filter((s) => s !== "");
 
@@ -432,6 +460,7 @@ function joinPath(parts: readonly string[]): string {
 /** `routes/console.php`: `Artisan::command('name', fn)` is a command; `Schedule::command|job|call(…)` the schedule. */
 function readConsole(code: PhpCode, file: FileFacts, facts: ConfigFacts, commands: ReadonlyMap<string, PhpClass>): void {
   for (const call of file.moduleCalls) {
+    // The outer calls of a chain (`->daily()`) are skipped: their head (`Schedule::command(…)`) is a call of its own.
     if (call.chain) continue;
     const holder = code.calleeClass(file.path, call.callee);
     const method = call.callee.slice(call.callee.lastIndexOf(".") + 1).toLowerCase();
@@ -452,6 +481,7 @@ function readKernel(code: PhpCode, file: FileFacts, facts: ConfigFacts, commands
   }
 }
 
+/** One scheduled item: a command by name or class, a job, or a callable; anything unreadable is a hole. */
 function schedule(facts: ConfigFacts, file: string, call: CallFact, method: string, commands: ReadonlyMap<string, PhpClass>): void {
   const first = arg(call.args, null, 0);
 

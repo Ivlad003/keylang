@@ -19,6 +19,10 @@
 // A server names the flow of each request: `withFlow(name, fn)` runs `fn` as a
 // run of its own (a run id and a clock of its own, its `run` record when `fn`
 // settles), so concurrent requests of different flows never share spans.
+//
+// Pipeline: a running test process → JSONL trace (spans per run) → trace
+// evidence (trace-evidence.ts) that `check` turns into flow verdicts. The
+// module hooks that plan and apply the wrappers live in trace-hooks.ts.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
@@ -43,12 +47,14 @@ interface Scope {
   open: Set<string>;
 }
 
+/** One call of an instrumented function, and the run it belongs to. */
 interface Span {
   spanId: string;
   ended: boolean;
   scope: Scope;
 }
 
+// The `plan` message the hooks thread sends once, after `initialize`.
 type Plan = Extract<TracePlanMessage, { kind: "plan" }>;
 
 /** What the adapter puts on `globalThis`: the wrappers' entry and the request scopes. */
@@ -82,6 +88,7 @@ type TraceEvent =
       error: string | undefined;
     };
 
+// The adapter already recording in this process (possibly another copy of this module).
 const api = (): TraceApi | undefined => globalThis.__keylangTrace;
 
 /**
@@ -107,11 +114,13 @@ const output = process.env.KEYLANG_TRACE;
 
 if (output && !api()) record(output);
 
+/** Start recording into `given`: register the hooks, install the API on `globalThis`, and arrange the `run` record at exit. */
 function record(given: string): void {
   const planPath = process.env.KEYLANG_TRACE_PLAN ? resolve(process.env.KEYLANG_TRACE_PLAN) : null;
   const specFlow = process.env.KEYLANG_TRACE_FLOW || null;
 
   if (!specFlow && !planPath) throw new Error("keylang trace: KEYLANG_TRACE is set, so KEYLANG_TRACE_FLOW is required too (or KEYLANG_TRACE_PLAN, a plan from `keylang trace-plan`)");
+  // The run's flow: an explicit KEYLANG_FLOW wins, then the spec flow, then the flow the plan names.
   const flow = process.env.KEYLANG_FLOW || specFlow || planFlow(planPath!);
   const run = runId();
   // Workers and child processes inherit the id, so the processes of one test are one run:
@@ -127,6 +136,7 @@ function record(given: string): void {
 
   if (planPath) process.env.KEYLANG_TRACE_PLAN = planPath;
 
+  // Register the module hooks on Node's hooks thread; they report back over `port2`.
   const { port1, port2 } = new MessageChannel();
   const hooks = import.meta.url.endsWith(".ts") ? "./trace-hooks.ts" : "./trace-hooks.js";
   register(hooks, { parentURL: import.meta.url, data: { root, flow: planPath ? null : specFlow, plan: planPath, port: port2 }, transferList: [port2] });
@@ -135,6 +145,7 @@ function record(given: string): void {
 
   /** Reads what the hooks thread sent so far: the plan, then the files it was applied to or left alone. */
   const planned = (): Plan | null => {
+    // Drain every message queued so far without blocking.
     for (;;) {
       // SAFETY: port2 went only to the trace hooks, which post nothing but `satisfies TracePlanMessage` values.
       const message = receiveMessageOnPort(port1)?.message as TracePlanMessage | undefined;
@@ -150,8 +161,10 @@ function record(given: string): void {
     return plan;
   };
 
+  // The port must not keep the process alive once the program is done.
   port1.unref();
 
+  // `context` holds the current span (the parent of the next one); `scopes` the current run.
   const context = new AsyncLocalStorage<Span>();
   const scopes = new AsyncLocalStorage<Scope>();
   // Span ids are unique across the processes of one run: several may share KEYLANG_TRACE_RUN.
@@ -167,6 +180,7 @@ function record(given: string): void {
   // record of its clock tells `check` the run is incomplete.
   const BUFFER = 64;
 
+  // Append the buffered lines in one write; the directory is created on demand.
   const flush = (): void => {
     if (lines.length === 0) return;
     const text = `${lines.join("\n")}\n`;
@@ -175,6 +189,7 @@ function record(given: string): void {
     appendFileSync(file, text);
   };
 
+  // Every line repeats the common fields, so each one can be read on its own.
   const write = (scope: Scope, event: TraceEvent): void => {
     lines.push(JSON.stringify({ schemaVersion: TRACE_SCHEMA, snapshotId: planned()?.snapshotId ?? null, runId: scope.runId, testId: scope.testId, flow: scope.flow, traceId: `${scope.runId}:${scope.testId}`, ...event }));
   };
@@ -225,12 +240,14 @@ function record(given: string): void {
       let result: T;
 
       try {
+        // Run the body with this span as the current one; a synchronous throw ends the span as an error.
         result = context.run(span, body);
       } catch (e) {
         finish(span, "error");
         throw e;
       }
 
+      // For an async function the span ends when its promise settles, not when it returns.
       if (isAsync && result instanceof Promise) {
         // SAFETY: `result` is a promise of type T, and `then` returns a promise of the same value.
         return result.then(
@@ -262,6 +279,7 @@ function record(given: string): void {
       let result: T;
 
       try {
+        // A fresh run scope, and no current span, so the request's spans start at a root.
         result = scopes.run(scope, () => context.exit(body));
       } catch (e) {
         done(true);
@@ -387,6 +405,7 @@ interface Instrumented {
 }
 
 function instrumented(plan: Plan, loads: Loads): Instrumented {
+  // The CommonJS module cache, keyed by real path, tells which copy of each planned file actually ran.
   const cache = createRequire(import.meta.url).cache;
   // Each function of the flow left out, with the reason: the run record names them for `check`.
   const reasons = { ...plan.unplanned };
@@ -402,5 +421,6 @@ function instrumented(plan: Plan, loads: Loads): Instrumented {
     for (const id of file.ids) reasons[id] ??= "its file was loaded past the trace hooks";
   }
 
+  // Instrumented: everything planned that no reason left out.
   return { ids: plan.planned.filter((id) => !(id in reasons)), reasons };
 }

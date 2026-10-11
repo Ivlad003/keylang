@@ -1,3 +1,6 @@
+// Ambient types for the analysis worker (web/worker/*): names that exist only
+// in the worker bundle, so TypeScript can check the worker without the DOM lib.
+
 // Specifiers the worker build resolves (scripts/build-web.mjs).
 declare module "web-tree-sitter-package" {
   export * from "web-tree-sitter";

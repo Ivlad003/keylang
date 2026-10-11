@@ -6,6 +6,11 @@
 // from the model). An ID that is neither planned
 // nor in the code is a reference to fix or an intention to declare first:
 // no code is guessed from a possible typo.
+//
+// Runs from the spec side back to code: it reads SpecIR (`planned`, flows and
+// their `test` lines) and the snapshot, and its output is a proposal (or a
+// `--apply` write) that goes through the code-proposal gate. Entry points:
+// `specToCode`, `plannedCodeTarget`, `specToCodeText`, `fileDiffText`.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
@@ -25,6 +30,7 @@ import { keepLineEndings } from "./safe-write.ts";
 import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
+/** One proposed file: its text before (null when new) and after. */
 export interface FileCandidate {
   /** POSIX, relative to the root. */
   file: string;
@@ -33,6 +39,7 @@ export interface FileCandidate {
   after: string;
 }
 
+/** The code file for a planned fn, its new test files and what the change does to `check`. */
 export interface CodeCandidate extends FileCandidate {
   id: string;
   /** New e2e test files for the `test` entries of the flows that use the ID. */
@@ -44,6 +51,7 @@ export interface CodeCandidate extends FileCandidate {
   diagnostics: Diagnostic[];
 }
 
+// File extension of a new module, by the language chosen for it.
 const EXTENSIONS = new Map([
   ["typescript", ".ts"],
   ["javascript", ".js"],
@@ -64,6 +72,7 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
 
   if ("error" in target) throw new Error(target.error);
   const config = analysis.config;
+  // Work on the file's LF form; its own endings are restored below.
   const abs = join(config.root, target.file);
   const before = existingText(abs);
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
@@ -107,6 +116,7 @@ export interface CodeTarget {
 export function plannedCodeTarget(analysis: Analysis, id: string, into?: string): CodeTarget | { error: string; field: "id" | "into" } {
   const plan = plannedDecl(analysis.docs, id);
 
+  // Not planned: either it is already code, or the ID is a typo or an undeclared intention.
   if (!plan) {
     const present = analysis.snapshot?.nodes[id];
 
@@ -127,6 +137,7 @@ export function plannedCodeTarget(analysis: Analysis, id: string, into?: string)
     if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) return { field: "id", error: `\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first` };
   }
 
+  // Decide the file and owner; a placement error is the user's `--into` to fix.
   const config = analysis.config;
   const name = id.slice(id.lastIndexOf(".") + 1);
   let placement: Placement;
@@ -139,6 +150,7 @@ export function plannedCodeTarget(analysis: Analysis, id: string, into?: string)
 
   const { file, moduleId, owner } = placement;
 
+  // The file must map back to the module the ID names, or the new fn would get another ID.
   if (moduleId !== null) {
     const placed = placeFile(config, file);
 
@@ -160,10 +172,12 @@ interface Placement {
   owner: CodeTarget["owner"];
 }
 
+/** `id` without its last segment. */
 function parentId(id: string): string {
   return id.slice(0, id.lastIndexOf("."));
 }
 
+/** The file (and class, if any) the fn goes into: an existing class, a new class, or a module function. Throws a user-facing reason. */
 function placeCode(analysis: Analysis, ownerId: string, into: string | undefined): Placement {
   const config = analysis.config;
   const nodes = analysis.snapshot?.nodes ?? {};
@@ -180,23 +194,28 @@ function placeCode(analysis: Analysis, ownerId: string, into: string | undefined
     return { file: node.file, moduleId: null, owner: { name: className, span } };
   }
 
+  // The parent is unknown and starts with an uppercase letter under a module:
+  // read it as a new class of that module, not a new module.
   const moduleId = parentId(ownerId);
   const moduleNode = nodes[moduleId];
   const newClass = node === undefined && moduleId.includes(".") && /^\p{Lu}/u.test(className) && moduleNode?.class !== true;
   // `--into` with a file of `ownerId` itself says the capital segment is a file, not a class.
   const intoOwner = into !== undefined && newClass && placedModule(config, into) === ownerId;
 
+  // A module function: in the module's file, the one `--into` names, or a new file for the module.
   if (!newClass || intoOwner) {
     const file = into ?? (node?.kind === "module" && node.file ? node.file : newModuleFile(analysis, ownerId));
 
     return { file, moduleId: ownerId, owner: null };
   }
 
+  // A method of a new class, in the enclosing module's file.
   const file = into ?? (moduleNode?.kind === "module" && moduleNode.file ? moduleNode.file : newModuleFile(analysis, moduleId));
 
   return { file, moduleId, owner: { name: className, span: null } };
 }
 
+/** The module ID a file maps to under the configured layers, or null when no layer holds it. */
 function placedModule(config: Config, file: string): string | null {
   const placed = placeFile(config, file);
 
@@ -211,6 +230,7 @@ function placedModule(config: Config, file: string): string | null {
 export function specToCodeText(candidate: CodeCandidate): string {
   let out = `${fileDiffText(candidate)}\n\nwith the candidate in place:\n`;
 
+  // A verdict a diagnostic already reports is printed once, as the diagnostic.
   for (const v of candidate.verdicts) if (!sameFinding(v, candidate.diagnostics)) out += `${formatVerdict(v)}\n`;
 
   for (const d of candidate.diagnostics) out += `${formatDiagnostic(d)}\n`;
@@ -229,6 +249,7 @@ type Introduced = { verdicts: Verdict[]; diagnostics: Diagnostic[] };
 
 /** Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too). */
 function introduced(base: Analysis, next: Analysis): Introduced {
+  // Identity of a finding: its fields joined by NUL, which none of them contains.
   const diagnosticKey = (d: Diagnostic): string => [d.code, d.file, d.span.start.line, d.span.start.col, d.message].join("\u0000");
   const verdictKey = (v: Verdict): string => [v.criterion, v.verdict, v.area, v.file, v.line, v.col, v.message].join("\u0000");
   const knownDiagnostics = new Set(base.diagnostics.map(diagnosticKey));
@@ -237,12 +258,14 @@ function introduced(base: Analysis, next: Analysis): Introduced {
   return { verdicts: next.verdicts.filter((v) => !knownVerdicts.has(verdictKey(v))), diagnostics: next.diagnostics.filter((d) => !knownDiagnostics.has(diagnosticKey(d))) };
 }
 
+// Files a `node:test` stub can be written in (TS or JS, any module flavour).
 const TEST_EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs)$/;
 
 /** The `test` entries of the flows that name `id`: flow name, test file and test name. */
 function flowTests(analysis: Analysis, id: string): { flow: string; file: string; name: string }[] {
   const out: { flow: string; file: string; name: string }[] = [];
 
+  // Only named tests: a `test <file>` without a name gives nothing to generate.
   for (const flow of flowsMentioning(analysis, id)) {
     const tests: { file: string; name: string }[] = [];
     walkFlow(flow, (item) => {
@@ -262,7 +285,9 @@ function flowsMentioning(analysis: Analysis, id: string): Flow[] {
   return analysis.spec.flows.filter((flow) => !skipped.has(flow.file) && flowMentions(analysis.spec, flow, id));
 }
 
+/** The flow declares `id` as `planned`, or one of its triggers, steps or claims names it. */
 function flowMentions(spec: SpecIR, flow: Flow, id: string): boolean {
+  // `planned` items are kept apart from flows, so they are matched by file and line range.
   if (spec.planned.some((item) => item.id === id && item.file === flow.file && flowOwns(spec, flow, item.span.start.line))) return true;
   let hit = false;
   walkFlow(flow, (item) => {
@@ -294,6 +319,7 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
   const byFile = new Map<string, { flow: string; name: string }[]>();
   const notes: string[] = [];
 
+  // Sort each named test into a new file to generate, or a note for the person.
   for (const t of flowTests(analysis, id)) {
     const label = `test ${t.file} "${t.name}"`;
     // Checked before the path is even looked at: a spec can name `../elsewhere` or a link out.
@@ -326,6 +352,7 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
       continue;
     }
 
+    // Group by file; the same test name from two flows is written once.
     const list = byFile.get(t.file) ?? [];
 
     if (!list.some((x) => x.name === t.name)) list.push({ flow: t.flow, name: t.name });
@@ -336,6 +363,7 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
   const subject = target.owner ? { imported: target.owner.name, value: `${target.owner.name}.prototype.${target.name}` } : { imported: target.name, value: target.name };
   const tests: FileCandidate[] = [];
 
+  // One file per path, in path order; PHP gets a PHPUnit class, TS/JS a `node:test` file.
   for (const [file, entries] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
     if (file.endsWith(".php")) {
       const php = phpSubject(target, code);
@@ -344,6 +372,7 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
       continue;
     }
 
+    // The import specifier from the test to the code file, always relative (`./`).
     let from = toPosix(relative(dirname(file), codeFile));
 
     if (!from.startsWith(".")) from = `./${from}`;
@@ -365,6 +394,7 @@ interface PhpSubject {
   name: string;
 }
 
+/** The PHPUnit subject of the target, qualified with the namespace the code file declares. */
 function phpSubject(target: CodeTarget, code: string): PhpSubject {
   const ns = phpNamespaceIn(code);
   const qualify = (name: string): string => (ns === null ? name : `${ns}\\${name}`);
@@ -379,6 +409,7 @@ function phpString(text: string): string {
 
 /** The namespace a PHP file declares first; null without one. */
 function phpNamespaceIn(text: string): string | null {
+  // `namespace A\B\C;` or `namespace A\B {` at the start of a line; captures the qualified name.
   return /^\s*namespace\s+([A-Za-z_\x80-\uffff][\w\x80-\uffff]*(?:\\[A-Za-z_\x80-\uffff][\w\x80-\uffff]*)*)\s*[;{]/m.exec(text)?.[1] ?? null;
 }
 
@@ -395,6 +426,8 @@ function phpFileHead(analysis: Analysis, file: string): string {
   let strict = false;
   let ns: string | null = null;
 
+  // Follow the siblings' conventions: any of them strict means strict, and the
+  // first namespace found (in path order) is the one.
   for (const path of siblings) {
     let text: string;
 
@@ -424,6 +457,8 @@ function composerNamespace(root: string, dir: string): string | null {
   }
 
   const record = (value: JsonValue | undefined): JsonObject | null => (isJsonObject(value) ? value : null);
+  // The longest PSR-4 base directory that contains `dir` wins, as Composer
+  // resolves the most specific mapping; a mapping may list several paths.
   let best: { prefix: string; base: string } | null = null;
 
   for (const section of ["autoload", "autoload-dev"]) {
@@ -441,6 +476,7 @@ function composerNamespace(root: string, dir: string): string | null {
   }
 
   if (best === null) return null;
+  // Namespace = the prefix, then the directories below the base, one segment each.
   const rest = best.base === "" ? dir : dir.slice(best.base.length).replace(/^\//, "");
   const parts = [...best.prefix.split("\\").filter((part) => part !== ""), ...(rest === "" || rest === "." ? [] : rest.split("/"))];
 
@@ -466,6 +502,7 @@ function phpTestStub(file: string, head: string, subject: PhpSubject, entries: r
   return `${head}${uses.map((use) => `use ${use};\n`).join("")}\nfinal class ${className} extends TestCase\n{\n${methods.join("\n")}}\n`;
 }
 
+/** The last segment of a qualified PHP name (`A\B\C` → `C`). */
 function lastName(qualified: string): string {
   return qualified.slice(qualified.lastIndexOf("\\") + 1);
 }
@@ -486,6 +523,8 @@ async function modelPhpTest(model: LlmClient, file: string, head: string, subjec
     maxTokens: 8192,
   }, options);
 
+  // Take the first fenced block (or the whole answer), and require a method for
+  // every declared test; the names passed PHP_IDENTIFIER, so they are safe in a regex.
   const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const missing = entries.filter((e) => !new RegExp(`\\bfunction\\s+${e.name}\\s*\\(`).test(text));
 
@@ -500,6 +539,7 @@ interface TestSubject {
   value: string;
 }
 
+/** A `node:test` file that fails until written: one test per declared name, each checking the subject exists. */
 function testStub(from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]): string {
   const cases = entries.map(
     (e) => `test(${JSON.stringify(e.name)}, () => {\n  assert.equal(typeof ${subject.value}, "function");\n  assert.fail(${JSON.stringify(`not written: drive flow \`${e.flow}\` through ${subject.value} and assert what the flow promises`)});\n});\n`,
@@ -522,6 +562,7 @@ async function modelTest(model: LlmClient, file: string, from: string, subject: 
     maxTokens: 8192,
   }, options);
 
+  // Each declared name must appear as a string literal, in double or single quotes.
   const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const missing = entries.filter((e) => !text.includes(JSON.stringify(e.name)) && !text.includes(`'${e.name}'`));
 
@@ -534,6 +575,7 @@ async function modelTest(model: LlmClient, file: string, from: string, subject: 
 function callersInFlows(analysis: Analysis, id: string): string[] {
   const out = new Set<string>();
 
+  // Walk each flow carrying the nearest enclosing trigger or step as `parent`.
   const visit = (item: Trigger | FlowItem, parent: string | null): void => {
     const own = item.kind === "trigger" || item.kind === "step" ? item.target.target : null;
 
@@ -567,6 +609,7 @@ function newModuleFile(analysis: Analysis, moduleId: string): string {
   if (prefixes.length !== 1) throw new Error(`layer \`${layer}\` has ${prefixes.length} roots (${prefixes.join(", ") || "none"}); pass --into <file>`);
 
   if (segments.length === 0) throw new Error(`\`${moduleId}\` is a layer, not a module; pass --into <file>`);
+  // Pick the language and the file-naming style from what the layer already has.
   const sources = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => languageOf(path) !== undefined);
   const layerFiles = sources.filter((path) => placeFile(config, path)?.layer === layer);
   const language = mostWritten(layerFiles, config.languages) ?? mostWritten(sources, config.languages) ?? config.languages[0] ?? "typescript";
@@ -588,6 +631,7 @@ function mostWritten(files: readonly string[], languages: readonly string[]): st
     if (language !== undefined) counts.set(language, (counts.get(language) ?? 0) + 1);
   }
 
+  // Most files first; ties by config order, then by name, so the choice is stable.
   const rank = (language: string): number => (languages.includes(language) ? languages.indexOf(language) : languages.length);
   const best = [...counts].sort(([a, x], [b, y]) => y - x || rank(a) - rank(b) || (a < b ? -1 : 1))[0];
 
@@ -607,6 +651,8 @@ function fileStem(segment: string, scopes: readonly (readonly string[])[], ambig
   const head = segment.slice(0, cut);
   const suffix = segment.slice(cut + 1);
 
+  // Scopes from nearest (the module's directory) to widest (the layer); the
+  // first that shows a style decides.
   for (const scope of scopes) {
     const stems = scope.map((path) => posix.basename(path).replace(/\.[^.]+$/, ""));
     const dotted = stems.some((stem) => stem.endsWith(`.${suffix}`) && stem.length > suffix.length + 1);
@@ -635,6 +681,7 @@ function stubFor(target: CodeTarget, id: string): string {
   const { params, result } = declared(target.signature);
   const message = JSON.stringify(`not implemented: ${id}`);
 
+  // One stub shape per language; each raises or throws so a call fails loudly.
   if (file.endsWith(".py")) {
     const receiver = owner !== null && !/^(self|cls)\b/.test(params) ? (params === "" ? "self" : `self, ${params}`) : params;
 
@@ -644,6 +691,7 @@ function stubFor(target: CodeTarget, id: string): string {
   if (file.endsWith(".rs")) return `pub fn ${name}(${params})${result ? ` -> ${result}` : ""} {\n    todo!(${message})\n}\n`;
 
   if (file.endsWith(".php")) return `${owner ? "public " : ""}function ${name}(${params})${result ? `: ${result}` : ""}\n{\n    throw new \\LogicException(${phpString(`not implemented: ${id}`)});\n}\n`;
+  // TS/JS: a `Promise<…>` result makes the stub `async`; a method has no `export function`.
   const isAsync = result !== null && result.startsWith('Promise<');
 
   return `${owner ? "" : "export "}${isAsync ? "async " : ""}${owner ? "" : "function "}${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
@@ -653,6 +701,8 @@ type DeclaredSignature = { params: string; result: string | null };
 
 /** The parameters and result of a declared signature, as written. */
 function declared(signature: string | null): DeclaredSignature {
+  // `(params)` optionally followed by `→ result` or `-> result`; the greedy
+  // `(.*)` takes everything up to the last `)` before the arrow.
   const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
 
   return { params: m?.[1]?.trim() ?? "", result: m?.[2]?.trim() ?? null };
@@ -672,14 +722,17 @@ function placeStub(before: string | null, target: CodeTarget, code: string, phpH
   const php = target.file.endsWith(".php");
   const { owner } = target;
 
+  // An existing class (not Rust, whose methods go into a new `impl` block): insert into its body.
   if (owner?.span && before !== null && !rust) return intoClass(before, owner.span, code, python);
   let block = code;
 
+  // Otherwise wrap a method in a class (or a Rust `impl`, with a unit struct when the type is new).
   if (owner) {
     const body = indent(code, python || rust || php ? "    " : "  ");
     block = python ? `class ${owner.name}:\n${body}` : rust ? `${owner.span ? "" : `pub struct ${owner.name};\n\n`}impl ${owner.name} {\n${body}}\n` : php ? `class ${owner.name}\n{\n${body}}\n` : `export class ${owner.name} {\n${body}}\n`;
   }
 
+  // An empty or new file: the block alone, with a PHP head or Python's future import as needed.
   if (before === null || before.trim() === "") {
     const { params, result } = declared(target.signature);
     const future = python && before === null && (params.includes(":") || result !== null) ?"from __future__ import annotations\n\n\n" : "";
@@ -702,6 +755,7 @@ function intoClass(text: string, span: { line: number; endLine: number; endCol: 
   const lines = text.split("\n");
   const start = span.line - 1;
   const end = span.endLine - 1;
+  // Indent like the first member in the body, else one step inside the class.
   const classIndent = leadingSpace(lines[start] ?? "");
   // Python: the class ends at its last statement; others: at the line of the closing brace.
   const body = lines.slice(start + 1, python ? end + 1 : end).find((line) => line.trim() !== "" && leadingSpace(line).length > classIndent.length);
@@ -714,10 +768,12 @@ function intoClass(text: string, span: { line: number; endLine: number; endCol: 
     return lines.join("\n");
   }
 
+  // Brace languages: find the closing `}` (the span's end column points just past it).
   const closing = lines[end] ?? "";
   const brace = span.endCol !== null && closing[span.endCol - 2] === "}" ? span.endCol - 2 : closing.lastIndexOf("}");
   const head = closing.slice(0, brace);
 
+  // `}` alone on its line: insert before it, after a blank line unless the body is empty.
   if (head.trim() === "") {
     const opens = (lines[end - 1] ?? "").trimEnd().endsWith("{");
     lines.splice(end, 0, ...(opens ? [] : [""]), ...member);
@@ -729,6 +785,7 @@ function intoClass(text: string, span: { line: number; endLine: number; endCol: 
   return lines.join("\n");
 }
 
+/** The spaces and tabs a line starts with. */
 function leadingSpace(line: string): string {
   return /^[ \t]*/.exec(line)![0];
 }
@@ -767,6 +824,8 @@ function fileExcerpt(text: string, owner: CodeTarget["owner"], firstDeclaration:
   if (lines.at(-1) === "") lines.pop();
 
   if (lines.length <= EXCERPT_LINES) return text;
+  // The window: the class from its first line, or the file's last lines;
+  // the head stops before the first declaration and before the window.
   const span = owner?.span ?? null;
   const from = span === null ? Math.max(0, lines.length - EXCERPT_LINES) : span.line - 1;
   const to = span === null ? lines.length : Math.min(span.endLine, from + EXCERPT_LINES);
@@ -813,6 +872,7 @@ async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarge
 
   if (fenced === null && /^\s*```/m.test(answer)) throw new Error(`the model's code block is not closed (the answer was cut short?); nothing written`);
   const code = dedent((fenced?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
+  // The answer must declare the planned name; `$` (valid in JS names) is escaped for the regex.
   const escaped = name.replace(/[$]/g, "\\$");
   // A TS/JS method has no keyword before its name.
   const declares = owner && (language === "TypeScript" || language === "JavaScript") ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);

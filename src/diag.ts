@@ -1,7 +1,12 @@
 // Diagnostics with stable codes, and the text of a thrown error.
+// Shared by every stage: the parser and resolver (K0xx), the dependency rules
+// (K1xx), flows (K2xx), wiring (K3xx) and the system design (K4xx) all report
+// through `diagnostic`; the CLI prints them with `formatDiagnostic` in the
+// order of `compareDiagnostics`. The codes are a public contract (docs/semantics.md).
 
 import type { Span } from "./span.ts";
 
+/** Every diagnostic code keylang emits; a code's meaning never changes once published. */
 export type Code =
   /** Reference to an ID that is not declared anywhere. */
   | "K001"
@@ -62,15 +67,18 @@ export type Code =
   /** Code a component is bound to imports a data store's driver no relation of the component names (warning). */
   | "K403";
 
+/** An error fails `keylang check`; a warning is reported but does not. */
 export type Severity = "error" | "warning";
 
 /** Why a K005 is malformed. Other codes do not carry this. */
 export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope";
 
+/** The fixed severity of a code: a short list of warnings, everything else an error. */
 export function severityOf(code: Code): Severity {
   return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" || code === "K203" || code === "K403" ? "warning" : "error";
 }
 
+/** One finding at a span of a file; the optional fields exist only for the codes that need them. */
 export interface Diagnostic {
   code: Code;
   severity: Severity;
@@ -99,13 +107,19 @@ export interface Diagnostic {
   reason?: K005Reason;
 }
 
+// The runtime list of K005 reasons, used to check the overloaded `extra` argument.
 const K005_REASONS: readonly K005Reason[] = ["arguments", "id", "link", "quote", "layer", "scope"];
 
+/**
+ * Build a diagnostic with the code's severity. The last argument is a K005's
+ * reason, or for every other code the `target` it is about.
+ */
 export function diagnostic(code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string): Diagnostic;
 export function diagnostic(code: "K005", file: string, span: Span, message: string, reason: K005Reason): Diagnostic;
 export function diagnostic(code: Code, file: string, span: Span, message: string, extra?: string): Diagnostic {
   const diag: Diagnostic = { code, severity: severityOf(code), message, file, span };
 
+  // The overloads route `extra` by code: a K005 reason or another code's target.
   if (code === "K005") {
     const reason = K005_REASONS.find((item) => item === extra);
 
@@ -115,6 +129,7 @@ export function diagnostic(code: Code, file: string, span: Span, message: string
   return diag;
 }
 
+/** Whether the diagnostic fails the check. */
 export function isError(d: Diagnostic): boolean {
   return d.severity === "error";
 }

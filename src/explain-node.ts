@@ -2,6 +2,8 @@
 // say about one node. Deterministic and offline; the LLM explanation (§5.4)
 // builds on it and falls back to it. `nodeFacts` is also what hover says a
 // node is (`lsp-features.ts`): one source for kind, signature, place, state.
+// Sits after analysis (snapshot + SpecIR); entry points are `nodeFacts`,
+// `summarizeNode` and `formatSummary`.
 
 import type { Analysis } from "./analyze.ts";
 import type { Node, Ref } from "./ir.ts";
@@ -35,6 +37,8 @@ export function nodeFacts(analysis: Analysis, id: string): NodeFacts | null {
   const node = analysis.snapshot?.nodes[id];
   const plan = plannedDeclaration(analysis.docs, id);
 
+  // Precedence: the code is the truth when it has the node; a `planned` line
+  // stands in until the code exists; a bare spec declaration comes last.
   if (node) {
     return { id, source: "code", kind: node.kind, isClass: node.kind === "module" && node.class === true, signature: node.signature ?? null, file: node.file, line: node.line ?? 1, col: node.col ?? 1, opaque: node.members === "opaque", implementsPlan: plan !== null };
   }
@@ -48,6 +52,7 @@ export function nodeFacts(analysis: Analysis, id: string): NodeFacts | null {
   return { id: decl.id, source: "spec", kind: decl.kind, isClass: false, signature: null, file: decl.file, line: decl.span.start.line, col: decl.span.start.col, opaque: declared.kind === "opaque", implementsPlan: false };
 }
 
+/** Everything `explain <id>` reports about a node: what it is, its neighbours, flows, rules, holes and fingerprint. */
 export interface NodeSummary {
   id: string;
   /** `fn`, `type`, `module`, `class`, `layer`, `planned fn`, … */
@@ -75,8 +80,10 @@ export interface NodeSummary {
   planned: boolean;
 }
 
+/** A summary, or the unknown ID with the nearest declared ID as a suggestion. */
 export type ExplainResult = { summary: NodeSummary } | { unknown: string; suggestion: string | null };
 
+/** The offline summary of `id`: from the snapshot when the code has it, else from its `planned` line. */
 export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   const facts = nodeFacts(analysis, id);
 
@@ -88,6 +95,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   const node = analysis.snapshot?.nodes[id];
 
   if (facts.source === "code" && node) {
+    // Count the constructs inside this node that stayed unresolved, by kind.
     const holes: Record<string, number> = {};
 
     for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id && leavesUnresolved(c)) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
@@ -120,6 +128,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
     return { summary: { ...head, ...tail } };
   }
 
+  // A plan without code: only what the `planned` line and the specs say.
   return {
     summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], interceptedBy: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
   };
@@ -128,6 +137,8 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
 /** The observers of an event, in config order: the fn, the observer's name, its config line and area. */
 function observersOf(analysis: Analysis, id: string): string[] {
   return (analysis.snapshot?.edges ?? [])
+    // An observer edge goes from the event to the fn it runs; the observer's
+    // name is quoted in the edge's binding text.
     .filter((e) => e.kind === "call" && e.source === id && e.via === "observer" && e.target !== null)
     .map((e) => `${e.target} (observer \`${/observer `([^`]*)`/.exec(e.binding ?? "")?.[1] ?? "?"}\`, ${e.site ?? `${e.file}:${e.line}:${e.col}`}${e.scope && e.scope !== "global" ? `, scope ${e.scope}` : ""})`);
 }
@@ -139,6 +150,7 @@ function rulesNaming(analysis: Analysis, id: string): string[] {
   const seen = new Set<Node>();
   const rules: string[] = [];
 
+  // One line per spec node, even when several of its refs name `id`.
   const add = (file: string, node: Node): void => {
     if (seen.has(node)) return;
     seen.add(node);
@@ -156,6 +168,8 @@ function rulesNaming(analysis: Analysis, id: string): string[] {
     }
   };
 
+  // Rules, rejected `layers` lines and module bindings are the spec lines
+  // that can name a scope around `id`.
   for (const rule of analysis.spec.rules) {
     if (rule.kind === "dependency") consider(rule.file, rule.source, [rule.from, ...rule.to]);
     else if (rule.kind === "entry") consider(rule.file, rule.source, rule.entries);
@@ -166,11 +180,13 @@ function rulesNaming(analysis: Analysis, id: string): string[] {
 
   for (const mod of analysis.spec.modules) consider(mod.file, mod.source, [mod.target]);
 
+  // Plain string sort: stable output, though `f:10` sorts before `f:9`.
   return rules.sort();
 }
 
 /** The allow, deny, entry item, nested layer, or module line that holds `ref`. */
 function nodeHolding(root: Node, ref: Ref): Node | null {
+  // Depth-first search for the node whose own refs include this one.
   if (root.refs.includes(ref)) return root;
 
   for (const child of root.children) {
@@ -185,6 +201,7 @@ function nodeHolding(root: Node, ref: Ref): Node | null {
 /** The summary as text: one line per fact, empty facts left out. */
 export function formatSummary(s: NodeSummary): string {
   const lines = [`${s.kind} ${s.id}${s.signature ? ` ${s.signature}` : ""}`];
+  // The second line: place, visibility and plan state, whichever are known.
   const where = [s.at, s.exported === true ? "exported" : s.exported === false ? "internal" : null, s.planned && !s.kind.startsWith("planned") ? "planned, implemented" : null, s.kind.startsWith("planned") ? "planned, not implemented" : null];
   const whereText = where.filter((x) => x !== null).join(" · ");
 
@@ -196,6 +213,8 @@ export function formatSummary(s: NodeSummary): string {
     if (items.length > 0) lines.push(`${label}: ${items.join(", ")}`);
   };
 
+  // An event has dispatchers and observers instead of calls and callers;
+  // its literal name is shown only when it differs from the ID's tail.
   if (s.event) {
     if (s.event.name !== s.id.slice(s.id.indexOf(".") + 1)) lines.push(`name: ${s.event.name}`);
     list("dispatched by", s.callers);
@@ -215,6 +234,7 @@ export function formatSummary(s: NodeSummary): string {
   list("flows", s.flows);
 
   for (const rule of s.rules) lines.push(`rule ${rule}`);
+  // Hole kinds sorted by name so the text is stable.
   const holes = Object.entries(s.holes).sort(([a], [b]) => (a < b ? -1 : 1)).map(([kind, n]) => `${n} ${kind}`);
   list("not resolved", holes);
 

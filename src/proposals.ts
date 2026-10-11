@@ -7,6 +7,12 @@
 // are the one gate of every entry point — CLI `--into`, the TUI scan, MCP
 // `apply_diff`, `keylang proposals` — and start from the write protocol of
 // `safe-write.ts`, so a path gets one reason wherever it comes from.
+//
+// Sits after the pipelines, on the editing side (CLI, TUI MERGE, MCP): it
+// stores, gates, lists, shows, accepts and rejects proposed files. Entry
+// points: `proposalProblem`, `codeProposalProblem`, `targetProblem`,
+// `writeProposal`, `listProposals`, `proposalDiff`, `acceptProposal`,
+// `rejectProposal`, `lineDiff`.
 
 import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, type Stats } from "node:fs";
 import { basename, dirname, join, posix, relative, resolve, win32 } from "node:path";
@@ -23,6 +29,7 @@ import { compareText } from "./span.ts";
 import { addDrafts, statusesIn, updateStats } from "./stats.ts";
 import { WIRE_MARKER } from "./wire-gen.ts";
 
+/** The proposal store, relative to the root: a proposal for `a/b.md` lives at `.keylang/proposals/a/b.md`. */
 export const PROPOSALS_DIR = ".keylang/proposals";
 
 /** The write protocol's first test (`writeProblem`): a plain relative POSIX path, before anything on disk is looked at. */
@@ -42,6 +49,7 @@ function unreadName(name: string): boolean {
   return name.startsWith(".") || lower === "node_modules" || lower === "target";
 }
 
+/** `statSync` that follows links, or null when the entry is missing or unreadable. */
 function statOrNull(abs: string): Stats | null {
   try {
     return statSync(abs);
@@ -68,6 +76,8 @@ export function landsIn(abs: string, dir: string): boolean {
 
   if (target === null || !target.isDirectory()) return false;
 
+  // Climb from `abs` to the filesystem root; missing entries are skipped, so a
+  // path that does not exist yet is judged by its nearest existing ancestor.
   for (let entry = abs; ; entry = dirname(entry)) {
     const stat = statOrNull(entry);
 
@@ -87,6 +97,8 @@ export function landsIn(abs: string, dir: string): boolean {
 function landsUnread(root: string, lands: string): boolean {
   const base = statOrNull(root);
 
+  // Climb the ancestors of the landing place, stopping at `root` itself (by
+  // inode, so a differently spelled root still stops the climb).
   for (let dir = dirname(lands); dir !== dirname(dir) && within(dir, root); dir = dirname(dir)) {
     const stat = statOrNull(dir);
 
@@ -111,6 +123,7 @@ const GENERATED_SPEC_DIRS: readonly [string, string][] = [
 
 /** Why the spec path `inside` the spec directory is in a reserved directory by its text alone (case aside), or null: the fast path. */
 function reservedSpecText(inside: string): string | null {
+  // The directory segments only; the file name itself is not a directory.
   const dirs = inside.split("/").slice(0, -1);
 
   if (unreadDirectory(dirs)) return "in a directory specs are not read from";
@@ -136,6 +149,8 @@ function reservedSpecLanding(specRoot: string, lands: string): string | null {
  * generated document. Nothing outside the spec directory is read.
  */
 export function proposalProblem(root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false): string | null {
+  // Checks by the path's text first (cheap, nothing read), then by where the
+  // write lands on disk, then by the target's content.
   if (!path.endsWith(".md")) return "not a Markdown spec";
 
   if (notPlain(path)) return "not a plain relative path";
@@ -155,6 +170,8 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   const specRoot = landing(resolve(root, specDir));
 
   if (specRoot === null || !within(specRoot, realpathSync(root))) return "the spec directory leads out of the repository through a link";
+  // The write protocol, kept inside the spec directory. `generated: true`
+  // because the generated-file refusal is phrased below, with the command.
   const writeOptions: WriteOptions = {};
 
   if (specDir !== "") writeOptions.under = specDir;
@@ -166,6 +183,8 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   const byLanding = reservedSpecLanding(specRoot, lands);
 
   if (byLanding !== null) return byLanding;
+  // Finally the content: a generated marker the parser or the write protocol
+  // sees, or the analysis knowing the path as generated.
   const text = existingText(lands);
   const marker = text === null ? null : parse(path, text).generated;
 
@@ -195,6 +214,8 @@ function generatedSpecProblem(marker: string | null, specDir: string): string {
  * repository is read.
  */
 export function codeProposalProblem(root: string, path: string): string | null {
+  // Same order as for specs: the path's text, the write protocol, the landing
+  // place, then the content's generated markers.
   if (languageOf(path) === undefined) return "not a source file of a language keylang reads";
 
   if (notPlain(path)) return "not a plain relative path";
@@ -237,6 +258,7 @@ export interface ProposalBasis {
  * since, or the store breaks the write policy. Each reason names its file.
  */
 export function proposalWriteProblem(root: string, path: string, basis: ProposalBasis): string | null {
+  // First the target itself, then the store entry through the write protocol's `expect`.
   const abs = resolve(root, path);
   const target = existingText(abs);
 
@@ -282,6 +304,8 @@ export function lineDiff(before: string, after: string): string {
   const b = after.replace(/\r\n/g, "\n").split("\n");
   let start = 0;
 
+  // Trim the common head, then the common tail (never overlapping the head);
+  // what is left is one replaced block.
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;
   let endB = b.length;
@@ -327,6 +351,7 @@ export function proposalTarget(name: string): string | null {
  * listed, never followed.
  */
 export function pendingTargets(root: string): string[] {
+  // Refuse to list a store that a link carries out of the repository.
   const dir = join(root, PROPOSALS_DIR);
   const lands = landing(dir);
 
@@ -344,6 +369,8 @@ export function pendingTargets(root: string): string[] {
  * leads out of the repository is a problem, and nothing there is looked at.
  */
 function storeEntry(root: string, target: string): { abs: string; link: boolean } | { problem: string } | null {
+  // Resolve the entry's directory through links, but not the entry itself, so
+  // a link in the store is seen as a link.
   const store = `${PROPOSALS_DIR}/${target}`;
   const parent = landing(dirname(join(root, store)));
   const base = landing(join(root, PROPOSALS_DIR));
@@ -406,6 +433,7 @@ export function listProposals(root: string, specDir: string): PendingProposal[] 
 /** What `keylang proposals show <target>` prints, or why not. Reads only. */
 export type ProposalDiff = { state: "none" } | { state: "refused"; reason: string } | { state: "diff"; newFile: boolean; text: string };
 
+/** The diff of the proposal for `target` against the file on disk, through the same gates as `accept`. */
 export function proposalDiff(root: string, specDir: string, target: string): ProposalDiff {
   const read = readProposal(root, specDir, target);
 
@@ -416,6 +444,7 @@ export function proposalDiff(root: string, specDir: string, target: string): Pro
   return { state: "diff", newFile: read.before === null, text: `${target}${read.before === null ? " (new file)" : ""}\n${lineDiff(read.before ?? "", read.proposal)}\n` };
 }
 
+/** What `acceptProposal` did. */
 export type AcceptResult =
   | { state: "none" }
   | { state: "refused"; reason: string }
@@ -442,6 +471,8 @@ export function acceptProposal(root: string, specDir: string, target: string): A
   if ("problem" in read) return { state: "refused", reason: read.problem };
   const abs = landing(resolve(root, target))!;
 
+  // An existing target the user made read-only is refused rather than replaced
+  // (an atomic rename would ignore its permissions).
   if (read.before !== null) {
     try {
       accessSync(abs, constants.W_OK);
@@ -463,11 +494,13 @@ export function acceptProposal(root: string, specDir: string, target: string): A
   if (problem !== null) return { state: "refused", reason: problem };
   safeWrite(root, target, read.proposal, options);
 
+  // Spec drafts carry provenance comments; count the ones the accepted text adds.
   if (spec) countDecision(root, read.before ?? "", read.proposal, "accepted");
 
   return { state: "written", newFile: read.before === null, ...lineCounts(read.before ?? "", read.proposal), kept: dropProposal(root, target, read.proposal) };
 }
 
+/** What `rejectProposal` did. */
 export type RejectResult = { state: "none" } | { state: "refused"; reason: string } | { state: "removed" };
 
 /**
@@ -482,6 +515,8 @@ export function rejectProposal(root: string, specDir: string, target: string): R
 
   if ("problem" in entry) return { state: "refused", reason: entry.problem };
 
+  // Count the rejection only for a proposal that could have been accepted; a
+  // refused or linked one is just dropped.
   if (!entry.link && target.endsWith(".md") && targetProblem(root, specDir, target) === null) {
     const abs = landing(resolve(root, target))!;
     countDecision(root, existingText(abs) ?? "", readFileSync(entry.abs, "utf8"), "rejected");
@@ -508,6 +543,7 @@ function dropProposal(root: string, target: string, text: string): string | null
 
 /** The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision. */
 function countDecision(root: string, before: string, after: string, decision: "accepted" | "rejected"): void {
+  // Only the `+` lines of the diff (the header line skipped) carry what the model proposed.
   const added = lineDiff(before, after)
     .split("\n")
     .slice(1)

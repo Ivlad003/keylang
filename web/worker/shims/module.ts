@@ -12,6 +12,7 @@ declare const KEYLANG_VERSION: string;
 /** Where the worker mounts web-tree-sitter's package.json (web/worker/analysis.ts). */
 export const WEB_TREE_SITTER = "/keylang/node_modules/web-tree-sitter/web-tree-sitter.js";
 
+/** Node's built-in module names, without the `node:` prefix. */
 export const builtinModules: readonly string[] = KEYLANG_BUILTINS;
 
 /** The one module `require` answers: keylang's own package.json. */
@@ -20,6 +21,7 @@ interface OwnPackage {
   version: string;
 }
 
+/** A `require` that answers only keylang's package.json, and a `resolve` that knows only web-tree-sitter; the origin is ignored. */
 export function createRequire(_from: string | URL): ((id: string) => OwnPackage) & { resolve: (id: string) => string } {
   const require = (id: string): OwnPackage => {
     if (id.endsWith("package.json")) return { name: "keylang", version: KEYLANG_VERSION };
@@ -28,12 +30,14 @@ export function createRequire(_from: string | URL): ((id: string) => OwnPackage)
 
   const resolve = (id: string): string => {
     if (id === "web-tree-sitter") return WEB_TREE_SITTER;
+    // The code Node sets, so callers that treat a missing module as optional keep doing so.
     throw Object.assign(new Error(`Cannot find module '${id}' in the browser`), { code: "MODULE_NOT_FOUND" });
   };
 
   return Object.assign(require, { resolve });
 }
 
+/** Whether `id` names a Node built-in, with or without the `node:` prefix. */
 export function isBuiltin(id: string): boolean {
   return builtinModules.includes(id.replace(/^node:/, ""));
 }

@@ -20,15 +20,18 @@ function isEncodingName<Options>(options: BufferEncoding | Options): options is 
   return typeof options === "string";
 }
 
+/** A number in place of a path is a file descriptor from `openSync`. */
 function isDescriptor(path: string | URL | number): path is number {
   return typeof path === "number";
 }
 
+/** Absolute path → content: bytes as mounted, or text once a read decoded it. */
 const files = new Map<string, Data>();
 
 /** The modification time a file came with (`File.lastModified`), ms; 0 when none was given. */
 const mtimes = new Map<string, number>();
 
+/** Every directory that exists: the root, and each one above a mounted file or directory. */
 const dirs = new Set<string>(["/"]);
 
 /** Each directory's entries, name → whether it is a directory: a listing reads its own, not every path. */
@@ -38,10 +41,12 @@ const decoder = new TextDecoder("utf-8");
 
 const encoder = new TextEncoder();
 
+/** The absolute POSIX path for a path or file URL; relative paths resolve against the shimmed cwd, `/`. */
 function absolute(path: string | URL): string {
   return resolve(path instanceof URL ? decodeURIComponent(path.pathname) : path);
 }
 
+/** Records `name` in its parent's listing, creating the listing on first use. */
 function entry(parent: string, name: string, directory: boolean): void {
   let own = children.get(parent);
 
@@ -49,7 +54,9 @@ function entry(parent: string, name: string, directory: boolean): void {
   own.set(name, directory);
 }
 
+/** Creates `path` and every missing directory above it, linking each into its parent's listing. */
 function addDirs(path: string): void {
+  // Climb until an existing directory: everything above it is already linked (the root always exists).
   for (let dir = path; !dirs.has(dir); dir = dirname(dir)) {
     dirs.add(dir);
     children.set(dir, children.get(dir) ?? new Map());
@@ -81,10 +88,12 @@ const ERROR_TEXT = new Map([
   ["EBADF", "bad file descriptor"],
 ]);
 
+/** An error shaped as Node's fs errors are (`code`, `syscall`, `path`), since callers branch on `code`. */
 function failure(code: string, syscall: string, path: string): Error {
   return Object.assign(new Error(`${code}: ${ERROR_TEXT.get(code) ?? code}, ${syscall} '${path}'`), { code, syscall, path, errno: -1 });
 }
 
+/** The fields of Node's `Stats` the pipeline and isomorphic-git read; modes are read-only, there are no links. */
 export class Stats {
   readonly size: number;
   readonly mtimeMs: number;
@@ -118,6 +127,7 @@ export class Stats {
   }
 }
 
+/** A listing entry for `readdirSync(…, { withFileTypes: true })`; `path` is Node's older alias of `parentPath`. */
 export class Dirent {
   readonly name: string;
   readonly parentPath: string;
@@ -150,6 +160,7 @@ function bytesOf(data: Data): Uint8Array {
 
 /** A stable number per path: `ino` lets callers tell two paths of one file apart, which here never happens. */
 function inode(path: string): number {
+  // FNV-1a, 32-bit: cheap and deterministic, so the same path keeps its number across reads.
   let hash = 0x811c9dc5;
 
   for (let i = 0; i < path.length; i++) hash = Math.imul(hash ^ path.charCodeAt(i), 0x01000193) >>> 0;
@@ -157,12 +168,14 @@ function inode(path: string): number {
   return hash;
 }
 
+/** Whether a file or directory is mounted at the path. */
 export function existsSync(path: string | URL): boolean {
   const abs = absolute(path);
 
   return files.has(abs) || dirs.has(abs);
 }
 
+/** A file's or directory's `Stats`; with `throwIfNoEntry: false` a missing path is `undefined`, as on Node. */
 export function statSync(path: string | URL, options?: { throwIfNoEntry?: boolean }): Stats | undefined {
   const abs = absolute(path);
   const data = files.get(abs);
@@ -181,6 +194,7 @@ export function accessSync(path: string | URL): void {
   if (!existsSync(path)) throw failure("ENOENT", "access", absolute(path));
 }
 
+/** The absolute path itself: with no links, every path is already real. */
 export function realpathSync(path: string | URL): string {
   const abs = absolute(path);
 
@@ -191,16 +205,19 @@ export function realpathSync(path: string | URL): string {
 
 realpathSync.native = realpathSync;
 
+/** Always EINVAL, Node's answer for a path that is not a link. */
 export function readlinkSync(path: string | URL): string {
   throw failure("EINVAL", "readlink", absolute(path));
 }
 
+/** The encoding a read asks for, or null for raw bytes. */
 function encodingOf(options: ReadOptions | undefined): BufferEncoding | null {
   if (isEncodingName(options)) return options;
 
   return options?.encoding ?? null;
 }
 
+/** A file's content as a Buffer, or as text when an encoding is given; a path or an `openSync` descriptor. */
 export function readFileSync(path: string | URL | number, options?: { encoding?: null; flag?: string } | null): Buffer;
 export function readFileSync(path: string | URL | number, options: BufferEncoding | { encoding: BufferEncoding; flag?: string }): string;
 export function readFileSync(path: string | URL | number, options?: ReadOptions): string | Buffer;
@@ -222,6 +239,7 @@ export function readFileSync(path: string | URL | number, options?: ReadOptions)
   return Buffer.from(bytesOf(data));
 }
 
+/** A directory's entries, names or `Dirent`s, optionally recursive (names then relative to `path`). */
 export function readdirSync(path: string | URL, options: { withFileTypes: true; recursive?: boolean }): Dirent[];
 export function readdirSync(path: string | URL, options?: BufferEncoding | { encoding?: BufferEncoding | null; withFileTypes?: false; recursive?: boolean } | null): string[];
 export function readdirSync(path: string | URL, options?: ReaddirOptions): (string | Dirent)[];
@@ -231,11 +249,14 @@ export function readdirSync(path: string | URL, options?: ReaddirOptions): (stri
   if (files.has(abs)) throw failure("ENOTDIR", "scandir", abs);
 
   if (!dirs.has(abs)) throw failure("ENOENT", "scandir", abs);
+
+  // Node accepts an encoding name in place of options; then there are no flags to read.
   const listing = isEncodingName(options) ? null : options;
   const withTypes = listing?.withFileTypes === true;
   const recursive = listing?.recursive === true;
   const out: (string | Dirent)[] = [];
 
+  // Depth-first, each directory's entries sorted by name, so a listing is the same whatever order files were mounted in.
   const walk = (dir: string, rel: string): void => {
     for (const [name, directory] of [...(children.get(dir) ?? [])].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
       const path = dir === "/" ? `/${name}` : `${dir}/${name}`;
@@ -253,8 +274,10 @@ export function readdirSync(path: string | URL, options?: ReaddirOptions): (stri
 // Descriptors for the readers that stream a file (trace evidence): read-only, in memory.
 const open = new Map<number, { path: string; at: number }>();
 
+/** Descriptors start at 3, after the standard streams, as on a real process. */
 let nextFd = 3;
 
+/** The open file behind a descriptor, or EBADF naming the call. */
 function descriptor(fd: number, syscall: string): { path: string; at: number } {
   const found = open.get(fd);
 
@@ -263,6 +286,7 @@ function descriptor(fd: number, syscall: string): { path: string; at: number } {
   return found;
 }
 
+/** Opens a file for reading only; any write flag fails with EROFS. */
 export function openSync(path: string | URL, flags: string | number = "r"): number {
   const abs = absolute(path);
 
@@ -275,11 +299,16 @@ export function openSync(path: string | URL, flags: string | number = "r"): numb
   return fd;
 }
 
+/**
+ * Reads up to `length` bytes into `buffer` at `offset`; from `position` when given,
+ * else from the descriptor's own position, which then advances.
+ */
 export function readSync(fd: number, buffer: Uint8Array, offset = 0, length = buffer.length - offset, position: number | null = null): number {
   const state = descriptor(fd, "read");
   const data = files.get(state.path)!;
   const bytes = bytesOf(data);
   const from = position ?? state.at;
+  // Clamp to the end of the file: past it, a read returns 0 bytes rather than failing.
   const count = Math.max(0, Math.min(length, bytes.length - from));
   buffer.set(bytes.subarray(from, from + count), offset);
 
@@ -288,11 +317,13 @@ export function readSync(fd: number, buffer: Uint8Array, offset = 0, length = bu
   return count;
 }
 
+/** Closes a descriptor; closing an unknown one is EBADF. */
 export function closeSync(fd: number): void {
   descriptor(fd, "close");
   open.delete(fd);
 }
 
+/** A write operation that always fails with EROFS: the folder is read-only. */
 function readOnly(syscall: string): (path: string | URL | number) => never {
   return (path) => {
     throw failure("EROFS", syscall, String(path));

@@ -11,11 +11,15 @@
 // its reason. Every semantic element carries `keylang:id` and
 // `keylang:verdict` in the keylang namespace. Pure: the same input gives the
 // same bytes; full BPMN semantics are out of scope (spec §7).
+// Pipeline: spec IR + snapshot → diagram (diagram.ts) → laid-out nodes →
+// BPMN XML for `keylang export bpmn`. Entry points: `renderBpmn`,
+// `startKindOf`, `xmlEscape`.
 
 import { diagramOf, type Diagram, type DiagramInput, type DiagramNode } from "./diagram.ts";
 import { EXTERNAL } from "./external-ids.ts";
 import { walkFlow, type Flow } from "./spec-ir.ts";
 
+/** The XML namespace of the `keylang:id` and `keylang:verdict` attributes. */
 export const KEYLANG_NS = "https://github.com/Ivlad003/keylang/ns/diagram";
 
 const BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL";
@@ -27,6 +31,7 @@ const LANE_HEAD = 30;
 
 const GAP = 40;
 
+// Height of a collapsed pool (a package or a continued flow), px.
 const COLLAPSED_H = 60;
 
 /** Control characters XML 1.0 does not allow anywhere: every code unit below U+0020 except tab, LF and CR. */
@@ -46,6 +51,7 @@ function ids(): (key: string) => string {
     const known = byKey.get(key);
 
     if (known !== undefined) return known;
+    // Prefix with a letter and replace characters an NCName cannot hold; number clashes.
     const base = `k_${key.replace(/[^A-Za-z0-9_.-]/g, "_")}`;
     let id = base;
 
@@ -57,6 +63,7 @@ function ids(): (key: string) => string {
   };
 }
 
+/** The BPMN start event a trigger becomes; null: a plain (none) start event. */
 type StartKind = "message" | "timer" | "signal" | null;
 
 /** The start event of an entry point's kind (ADR 0023): a request or a message waits for a message, cron for a timer, an observer or `trigger event` for a signal. */
@@ -77,6 +84,7 @@ interface FlowFacts {
   flow: Flow | null;
 }
 
+/** The trigger kinds and `continues` targets of the drawn flow; empty for other views. */
 function flowFacts(input: DiagramInput): FlowFacts {
   const triggers = new Map<string, string | null>();
   const view = input.view;
@@ -87,6 +95,8 @@ function flowFacts(input: DiagramInput): FlowFacts {
 
   if (flow) {
     const entries = new Map<string, string>((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind]));
+    // A trigger's kind: `event` for `trigger event`, else the kind it declares,
+    // else the kind the snapshot records for that entry point.
     walkFlow(flow, (item) => {
       if (item.kind === "trigger") triggers.set(`trigger:${item.span.start.line}`, item.event !== null ? "event" : (item.entry?.kind ?? entries.get(item.target.target) ?? null));
       else if (item.kind === "continues") continues.push(item.flow);
@@ -96,6 +106,7 @@ function flowFacts(input: DiagramInput): FlowFacts {
   return { triggers, continues, flow };
 }
 
+/** A rectangle in diagram coordinates, px. */
 interface Box {
   x: number;
   y: number;
@@ -103,6 +114,7 @@ interface Box {
   h: number;
 }
 
+/** An edge between two shapes inside the pool. */
 interface SequenceFlow {
   key: string;
   from: string;
@@ -111,6 +123,7 @@ interface SequenceFlow {
   condition?: string;
 }
 
+/** An edge between a shape and a collapsed pool, with both boxes for its waypoints. */
 interface MessageFlow {
   key: string;
   from: string;
@@ -125,6 +138,7 @@ function route(from: Box, to: Box): [number, number][] {
   const fy = from.y + from.h / 2;
   const ty = to.y + to.h / 2;
 
+  // Target to the right: leave from the right side, with an elbow at mid-x when the heights differ.
   if (to.x >= from.x + from.w) {
     const sx = from.x + from.w;
     const mid = Math.round((sx + to.x) / 2);
@@ -132,6 +146,7 @@ function route(from: Box, to: Box): [number, number][] {
     return fy === ty ? [[sx, fy], [to.x, ty]] : [[sx, fy], [mid, fy], [mid, ty], [to.x, ty]];
   }
 
+  // Otherwise leave from the bottom (or top) centre, with an elbow at mid-y.
   const fx = from.x + from.w / 2;
   const tx = to.x + to.w / 2;
   const down = to.y >= from.y + from.h;
@@ -156,11 +171,13 @@ export function renderBpmn(input: DiagramInput, name: string): string {
   return bpmnOf(diagram, input, name);
 }
 
+/** The BPMN XML of a laid-out diagram: semantic model first, then the BPMNDI shapes and edges. */
 function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   const id = ids();
   const facts = flowFacts(input);
   const entries = new Map<string, string>((input.snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind]));
   const nodes = new Map(diagram.nodes.map((node) => [node.id, node]));
+  // External nodes (packages) become collapsed pools; the rest live in the main pool.
   const external = (node: DiagramNode): boolean => node.kind === "external" || (node.group === EXTERNAL && node.kind !== "start");
   const inside = diagram.nodes.filter((node) => !external(node));
   const outside = diagram.nodes.filter(external);
@@ -172,11 +189,13 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   for (const node of inside) box.set(node.id, { x: node.x + dx, y: node.y, w: node.w, h: node.h });
   const laneIds = new Set(diagram.groups.map((group) => group.id));
 
+  // One lane per diagram group that has drawn members; its width is set once the pool's right edge is known.
   const lanes = diagram.groups
     .map((group) => ({ key: group.id, label: group.label, members: inside.filter((node) => node.group === group.id), box: { x: POOL_HEAD, y: group.y, w: group.w + LANE_HEAD, h: group.h } }))
     .filter((lane) => lane.members.length > 0);
 
   const loose = inside.filter((node) => node.group === undefined || !laneIds.has(node.group));
+  // The pool's right edge: past every shape and lane, at least 200px, plus a margin.
   const right = Math.max(...inside.map((node) => node.x + node.w + dx), ...lanes.map((lane) => lane.box.x + lane.box.w), 200) + 20;
 
   for (const lane of lanes) lane.box.w = right - POOL_HEAD;
@@ -188,6 +207,7 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
     lanes.push({ key: "@other", label: "—", members: loose, box: { x: POOL_HEAD, y: from, w: right - POOL_HEAD, h: Math.max(bottom - from, 60) } });
   }
 
+  // The pool encloses every shape (with a 20px margin) and every lane.
   const poolTop = Math.min(0, ...inside.map((node) => node.y - 20), ...lanes.map((lane) => lane.box.y));
   const poolBottom = Math.max(...inside.map((node) => node.y + node.h + 20), ...lanes.map((lane) => lane.box.y + lane.box.h));
   const pool: Box = { x: 0, y: poolTop, w: right, h: poolBottom - poolTop };
@@ -217,12 +237,15 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   const outsideIds = new Set(outside.map((node) => node.id));
   const collapsedBox = new Map(collapsed.map((pool) => [pool.key, pool.box]));
   const seen = new Set<string>();
+  // Edges become sequence flows, de-duplicated by (from, to). Edge index `i`
+  // keeps the flow ids stable for the same diagram.
   diagram.edges.forEach((edge, i) => {
     if (!nodes.has(edge.from) || !nodes.has(edge.to)) return;
     const fromOut = outsideIds.has(edge.from);
     const toOut = outsideIds.has(edge.to);
 
     if (fromOut || toOut) {
+      // Package to package: not part of this process.
       if (fromOut && toOut) return;
       const own = fromOut ? edge.to : edge.from;
       const pool = fromOut ? edge.from : edge.to;
@@ -251,6 +274,7 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
     if (seen.has(key)) return;
     seen.add(key);
     const from = nodes.get(edge.from)!;
+    // The branch of an exclusive gateway labelled with the gateway's condition carries it as a condition expression.
     const condition = from.kind === "gateway" && edge.label === from.label ? from.label : undefined;
     const flow: SequenceFlow = { key: `s${i}`, from: edge.from, to: edge.to };
 
@@ -260,12 +284,14 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
     sequence.push(flow);
   });
 
+  // A continued flow's pool sends a message to every start event of this one.
   for (const flow of facts.continues) {
     for (const start of inside.filter((node) => node.kind === "start")) {
       messages.push({ key: `c:${flow}:${start.id}`, from: `pool:continues:${flow}`, to: start.id, fromBox: collapsedBox.get(`continues:${flow}`)!, toBox: box.get(start.id)!, label: `continues ${flow}` });
     }
   }
 
+  // One BPMN signal per event name, shared by the throw events and any `trigger event` start.
   const signals = new Map<string, string>();
 
   for (const node of inside) if (node.kind === "event" && !signals.has(node.label)) signals.set(node.label, id(`signal:${node.label}`));
@@ -273,6 +299,7 @@ function bpmnOf(diagram: Diagram, input: DiagramInput, name: string): string {
   // `trigger event <id>` starts on the signal its event throws: the same signal as an `emits event <id>` of another flow.
   for (const node of inside) if (node.kind === "start" && facts.triggers.get(node.id) === "event" && !signals.has(node.label)) signals.set(node.label, id(`signal:${node.label}`));
 
+  // Semantic part: signals, the collaboration (pools and message flows), then the process with lanes, nodes and sequence flows.
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
   out.push(`<bpmn:definitions xmlns:bpmn="${BPMN_NS}" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:keylang="${KEYLANG_NS}" id="${id("@definitions")}" targetNamespace="${KEYLANG_NS}" exporter="keylang" exporterVersion="1">`);
@@ -367,6 +394,7 @@ function flowNode(node: DiagramNode, element: string, attrs: string, entryKind: 
     case "gateway":
       return [`    <bpmn:exclusiveGateway id="${element}"${named}${attrs} />`];
     case "parallel": {
+      // A converging gateway: the join half of a `parallel`, or one with more than one incoming edge.
       const join = node.id.endsWith(":join") || diagram.edges.filter((edge) => edge.to === node.id).length > 1;
 
       return [`    <bpmn:parallelGateway id="${element}" gatewayDirection="${join ? "Converging" : "Diverging"}"${attrs} />`];
@@ -375,6 +403,7 @@ function flowNode(node: DiagramNode, element: string, attrs: string, entryKind: 
     case "event":
       return [`    <bpmn:intermediateThrowEvent id="${element}"${named}${attrs}>`, `      <bpmn:signalEventDefinition id="${id(`${node.id}:def`)}" signalRef="${signals.get(node.label)!}" />`, "    </bpmn:intermediateThrowEvent>"];
     case "timer": {
+      // `every X` is a recurring timer cycle; `after X` a one-off duration.
       const [word, ...rest] = node.label.split(" ");
       const value = xmlEscape(rest.join(" "));
       const timer = word === "every" ? `<bpmn:timeCycle xsi:type="bpmn:tFormalExpression">${value}</bpmn:timeCycle>` : `<bpmn:timeDuration xsi:type="bpmn:tFormalExpression">${value}</bpmn:timeDuration>`;

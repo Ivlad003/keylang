@@ -4,6 +4,10 @@
 // CLI, the F6 report and `--out`; one JSON shape for `--json`, MCP and
 // `/api/tour`. A view (ADR 0014): `--out` writes a generated file that
 // `check` never reads, and refuses a place `check` would read as a spec.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over source →
+// FileFacts → snapshot plus the hand-written specs; entry point: `runTour`.
+// The tour itself is assembled in `tour.ts`.
 
 import { isAbsolute, join } from "node:path";
 import { analyze, specPathProblem, type Analysis } from "../analyze.ts";
@@ -40,6 +44,9 @@ export async function runTour(request: TourRequest, context: OperationContext): 
   if (snapshot === null) return empty("tour", "failed", 2, "tour: no code to read (`languages` in keylang.json is empty)");
   const out = request.out;
 
+  // Validate `--out` before any work: it must be a safe place inside the
+  // root, and a `.md` inside the spec directory is refused because `check`
+  // would then parse the tour as a spec.
   if (out !== undefined) {
     const problem = targetProblem(request.root, out) ?? (out.endsWith(".md") && specPathProblem(analyzed.config, join(request.root, out)) === null ? "check would read it as a spec; write the tour beside the specs (keylang/tour.md) or outside the spec directory" : null);
 
@@ -61,6 +68,9 @@ export async function runTour(request: TourRequest, context: OperationContext): 
   const messages = text.trimEnd().split("\n").map((line) => ({ level: "info" as const, text: line }));
 
   if (out === undefined) return { ...empty("tour", "completed", 0), payload: { ...tour, text, out: null }, messages };
+  // Writing to `--out`: never overwrite a file without the generated marker
+  // (someone wrote it by hand), and skip the write when the text is already
+  // current (line endings normalised) so an unchanged tour touches no file.
   const abs = landing(join(request.root, out));
   const current = abs === null ? null : existingText(abs);
 
@@ -69,6 +79,8 @@ export async function runTour(request: TourRequest, context: OperationContext): 
 
   if (current !== null && current.replace(/\r\n/g, "\n") === file) return { ...empty("tour", "completed", 0), payload: { ...tour, text, out }, messages: [{ level: "info", text: `${out} is current` }] };
 
+  // The commit gate comes last; `expect: current` makes the write fail if
+  // the file changed since it was read.
   try {
     await context.beforeCommit?.();
 

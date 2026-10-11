@@ -2,11 +2,16 @@
 // cursor is, the configuration and model it runs with, and the way to start
 // an operation. The forms reach the session only through this, so their
 // module depends on no editor, panel or transport.
+// Layer: TUI. The editor session implements this; `forms/*.ts` consume it.
 
 import type { ContextPack } from "../../agent-context.ts";
 import type { OperationRequest } from "../../operations.ts";
 import type { Buffer, State } from "../state.ts";
 
+/**
+ * The session as the operation forms see it: read-only queries about the
+ * open buffer and cursor, plus the two ways to start an operation.
+ */
 export interface FormHost {
   readonly state: State;
   /** The spec directory of the saved keylang.json, as configured (`keylang` when it cannot be read). */

@@ -7,6 +7,9 @@
 // `w` changes things in an order where a failure leaves a consistent state:
 // the file first (a failed write changes nothing), then the proposal (what is
 // left of it), then the session state, and the metrics last and best-effort.
+//
+// Layer: TUI. `app.ts` owns one `MergeSession`; the hunks come from `merge.ts`,
+// the proposal rules from `../proposals.ts`, all file I/O goes through `disk.ts`.
 
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -50,6 +53,7 @@ export interface ProposalEntry {
 /** A proposal file is keylang's own: a link there is replaced, never written through. */
 const PROPOSAL_FILE = { link: "replace" } as const;
 
+/** MERGE of one proposal or `Ctrl+G` result: listing, opening, the keys, writing and undo. */
 export class MergeSession {
   private readonly host: MergeHost;
 
@@ -68,6 +72,7 @@ export class MergeSession {
     return this.files().filter((path) => this.problem(path) === null);
   }
 
+  /** Every regular file under the proposals store, relative and POSIX, sorted so the list is stable. */
   private files(): string[] {
     const dir = join(this.state.root, PROPOSALS_DIR);
 
@@ -95,6 +100,7 @@ export class MergeSession {
     if (!existsSync(dir)) return [];
     let links: string[];
 
+    // Links are collected separately: they are listed with a problem and never read.
     try {
       links = readdirSync(dir, { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isSymbolicLink())
@@ -114,6 +120,7 @@ export class MergeSession {
     const problem = this.problem(path);
 
     if (problem !== null) return { path, kind, newFile: false, hunks: null, problem };
+    // Diff against the file on disk; a spec with unsaved edits in its buffer cannot be merged yet.
     const proposal = readText(this.proposalAbs(path));
     const disk = readText(resolve(this.state.root, path));
     const newFile = disk === null;
@@ -147,6 +154,7 @@ export class MergeSession {
    */
   problem(path: string): string | null {
     try {
+      // Code proposals and spec proposals have different limits; any I/O error becomes the reason.
       if (!path.endsWith(".md")) return codeProposalProblem(this.state.root, path);
 
       return proposalProblem(this.state.root, this.specDir(), path, (p) => this.state.analysis?.docs.some((doc) => doc.path === p && doc.generated !== null) === true);
@@ -160,6 +168,7 @@ export class MergeSession {
     return code ? this.state.root : resolve(this.state.root, this.specDir());
   }
 
+  /** The proposal file of `path` in the store. */
   private proposalAbs(path: string): string {
     return join(this.state.root, PROPOSALS_DIR, path);
   }
@@ -175,6 +184,7 @@ export class MergeSession {
     const state = this.state;
     const proposals = this.scan();
     state.proposals = proposals;
+    // Which proposal: the one asked for, else the current file's, else the first.
     const path = wanted !== undefined ? proposals.find((file) => file === wanted) : (proposals.find((file) => file === state.current) ?? proposals[0]);
 
     if (!path && wanted !== undefined) {
@@ -233,6 +243,7 @@ export class MergeSession {
     const state = this.state;
     const hunks = diffLines(base, proposed);
 
+    // An identical proposal is consumed at once: there is nothing left to decide.
     if (hunks.length === 0) {
       state.message = "the proposal matches the file; nothing to merge";
 
@@ -242,6 +253,7 @@ export class MergeSession {
       return;
     }
 
+    // Remember the mode to return to; the top starts a few rows above the first hunk.
     const from = state.mode === "code" || state.mode === "merge" ? "view" : state.mode;
     state.merge = { path, origin, from, base, disk, proposal, hunks, decisions: hunks.map(() => "pending"), history: [], current: 0, top: Math.max(0, hunks[0]!.baseStart - 3) };
     state.mode = "merge";
@@ -264,6 +276,7 @@ export class MergeSession {
 
   // ---------- keys ----------
 
+  /** The keys of MERGE: decide (a/r), undo a decision (u), move between hunks, write (w), leave. */
   key(event: KeyEvent): void {
     const merge = this.state.merge;
 
@@ -280,6 +293,7 @@ export class MergeSession {
     };
 
     const nextPending = (): void => {
+      // The next undecided hunk after the current one, else the first undecided anywhere.
       const after = merge.decisions.findIndex((decision, index) => index > merge.current && decision === "pending");
       const any = merge.decisions.findIndex((decision) => decision === "pending");
 
@@ -332,6 +346,7 @@ export class MergeSession {
     }
   }
 
+  /** Leaves MERGE with a message, back to the mode it was opened from. */
   private leave(merge: MergeState, message: string): void {
     this.state.merge = null;
     // The counts follow the store: an agent may have written or removed proposals during the merge.
@@ -355,6 +370,7 @@ export class MergeSession {
     const merge = this.state.merge!;
 
     if (merge.origin === "text-to-spec") return this.writeBuffer(merge);
+    // Nothing decided means nothing to write; the proposal stays for later.
     const count = (decision: Decision): number => merge.decisions.filter((d) => d === decision).length;
     const accepted = count("accepted");
     const pending = count("pending");
@@ -369,6 +385,7 @@ export class MergeSession {
     const code = merge.origin === "code";
     const abs = resolve(state.root, merge.path);
 
+    // Concurrency checks: the file on disk, its buffer and the proposal must be what the merge began with.
     if (readText(abs) !== merge.disk) return this.leave(merge, `${merge.path} changed on disk during the merge; nothing written — press m to compare again`);
     const buffer = code ? null : this.host.load(merge.path);
 
@@ -399,6 +416,8 @@ export class MergeSession {
     }
 
     // 2. The proposal: consumed, or reduced to its pending hunks.
+    // Applying accepted and pending hunks to the base gives a proposal that, against the
+    // file just written, holds only the pending hunks; rejected ones are dropped for good.
     const rest = pending === 0 ? null : applyHunks(merge.base, merge.hunks, merge.decisions.map((d) => (d === "rejected" ? "rejected" : "accepted"))).join("\n");
     let note = pending === 0 ? "" : `; ${pending} pending hunk(s) stay in the proposal`;
 
@@ -442,6 +461,7 @@ export class MergeSession {
     const accepted = merge.decisions.filter((decision) => decision === "accepted").length;
     const base = merge.base.join("\n");
 
+    // The buffer must still hold the text the merge was computed from.
     if (buffer.text !== base) return this.leave(merge, `${merge.path} changed during the merge; nothing applied — press Ctrl+G again`);
 
     if (accepted === 0) return this.leave(merge, "merge: nothing accepted; the buffer is unchanged");
@@ -471,6 +491,7 @@ export class MergeSession {
     const abs = resolve(state.root, last.path);
     const buffer = last.code ? null : this.host.load(last.path);
 
+    // Undo applies only while neither the buffer nor the disk changed after the merge.
     if ((buffer && buffer.text !== last.after) || (last.disk !== null && readText(abs) !== last.disk.after)) {
       state.lastMerge = null;
       state.message = `${last.path} changed after the merge; u no longer applies${buffer ? " (Ctrl+Z in edit mode undoes edits)" : ""}`;
@@ -478,6 +499,7 @@ export class MergeSession {
       return;
     }
 
+    // Put the disk back: remove a file the merge created, or restore its earlier text.
     if (last.disk) {
       const boundary = this.boundary(last.code === true);
 
@@ -492,6 +514,7 @@ export class MergeSession {
 
     let note = "";
 
+    // Restore the proposal only if it is still what the merge left there.
     if (last.proposal) {
       if (readText(last.proposal.abs) === last.proposal.after) {
         writeInside(state.root, last.proposal.abs, last.proposal.before, PROPOSAL_FILE);
@@ -513,6 +536,7 @@ function proposalKind(path: string): ProposalEntry["kind"] {
   return path.endsWith(".md") ? "spec" : "code";
 }
 
+/** The message of a thrown value. */
 export function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }

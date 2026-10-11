@@ -1,3 +1,5 @@
+// Web page (web/src), used by the diagram editor (editor.ts). Entry points:
+// `writeClipboard`, `askPasteText`, `isBundle` and `mapLayers`.
 // The clipboard side of copy and paste between tabs and repositories
 // (business-flows/25). Everything travels as one `text/plain`: the Markdown
 // bundle of `keylang flow export` with the copied shapes in its
@@ -21,11 +23,13 @@ export const BUNDLE_HEADER = "<!-- keylang:bundle format=";
 
 /** Whether a pasted text is a keylang bundle: its header comment on a line of its own. */
 export function isBundle(text: string): boolean {
+  // Normalise Windows line ends first, so a bundle pasted from any OS splits into the same lines.
   return text.replace(/\r\n/g, "\n").split("\n").some((line) => line.startsWith(BUNDLE_HEADER));
 }
 
 /** A modal over the page: a titled box with a body and buttons; `close()` removes it. */
 function modal(id: string, title: string) {
+  // One dialog per id: an earlier one still open is replaced, not stacked.
   document.getElementById(id)?.remove();
   const overlay = make("div", { className: "bundle-overlay" });
   overlay.id = id;
@@ -48,6 +52,7 @@ function modal(id: string, title: string) {
  */
 export async function writeClipboard(text: string): Promise<"clipboard" | "dialog"> {
   try {
+    // No Clipboard API (an insecure context) takes the same fallback as a refused write.
     if (!navigator.clipboard?.writeText) throw new Error("no clipboard");
     await navigator.clipboard.writeText(text);
 
@@ -70,6 +75,7 @@ export function showCopyDialog(text: string): void {
   const close = button("Закрити", () => dialog.close());
   close.id = "bundle-copy-close";
   dialog.actions.append(close);
+  // Selected at once, so one Ctrl+C copies the whole bundle.
   area.focus();
   area.select();
 }
@@ -105,6 +111,7 @@ export function askPasteText(): Promise<string | null> {
 export function mapLayers(preview: BundleImport, askModel: (current: Record<string, string>) => Promise<BundleImport>): Promise<Record<string, string> | null> {
   return new Promise((resolve) => {
     const dialog = modal("bundle-dialog", `Вставка пакета з ${preview.header.repo}@${preview.header.commit.slice(0, 12)}`);
+    // `targets` are this repository's layers (the options); `sources` the bundle's layer descriptions, shown as hints.
     const targets = preview.targetLayers ?? [];
     const sources = new Map((preview.sourceLayers ?? []).map((l) => [l.name, l.description]));
     dialog.body.append(
@@ -116,6 +123,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
     const selects = new Map<string, HTMLSelectElement>();
     const how = new Map<string, HTMLTableCellElement>();
 
+    // Applies an import's layer choices to the selects; a choice naming no layer here leaves the select as it is.
     const fill = (answer: BundleImport): void => {
       for (const choice of answer.layers ?? []) {
         const select = selects.get(choice.from);
@@ -127,6 +135,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
       }
     };
 
+    // One row per bundle layer the copied shapes use; a manual change marks the row as chosen by the person.
     for (const layer of preview.used ?? []) {
       const select = make("select");
       select.id = `bundle-layer-${layer}`;
@@ -152,6 +161,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
     showNotes(preview.notes ?? []);
     dialog.body.append(notes);
     fill(preview);
+    // The mapping as the selects stand now: bundle layer → layer here.
     const current = (): Record<string, string> => Object.fromEntries([...selects].map(([from, select]) => [from, select.value]));
 
     const done = (value: Record<string, string> | null): void => {
@@ -159,6 +169,7 @@ export function mapLayers(preview: BundleImport, askModel: (current: Record<stri
       resolve(value);
     };
 
+    // Asking the model locks the button while it thinks; its choices only prefill the selects, the person still decides.
     const ask = button("запитати модель", () => {
       ask.disabled = true;
       ask.textContent = "модель думає…";

@@ -1,3 +1,4 @@
+// Web page (web/src), the explorer mode; entry point `Explorer`.
 // The entry explorer of the diagram page (business-flows/22): the call tree
 // of an entry point (or any fn, or an event) for reading old code before a
 // flow is written. Down — what it calls; up — who calls it, as far as the
@@ -25,8 +26,10 @@ export const VIA_BADGE = new Map([
   ["dispatch", { text: "dispatch", title: "publishes the event" }],
 ]);
 
+/** Down: callees (or an event's subscribers); up: callers (or its publishers). */
 type Direction = "down" | "up";
 
+/** One row of a call tree, with its lazily loaded answer and its open, loading and ticked state. */
 interface TreeNode {
   id: string;
   /** The edge into this row; null for the root. */
@@ -41,6 +44,7 @@ interface TreeNode {
   error: string | null;
 }
 
+/** What the explorer needs from the page. */
 export interface ExplorerHost {
   /** The repository root for `vscode://` links. */
   root(): string | undefined;
@@ -49,23 +53,28 @@ export interface ExplorerHost {
   status(text: string): void;
 }
 
+/** A fresh, closed, unticked row. */
 function node(id: string, ref: CallRef | null, direction: Direction, parent: TreeNode | null): TreeNode {
   return { id, ref, direction, parent, open: false, loading: false, checked: false, calls: null, children: [], error: null };
 }
 
+/** A request failure as text; a 403 gets the hint about the access token. */
 function explain(cause: unknown): string {
   if (cause instanceof ApiError && cause.status === 403) return "No access: open the URL printed by `keylang web` (it carries the access token).";
 
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+// Orders call sites by file, then line, then column: the order the code reads in.
 const byPosition = (a: { at: { file: string | null; line: number; col: number } }, b: { at: { file: string | null; line: number; col: number } }): number =>
   (a.at.file ?? "").localeCompare(b.at.file ?? "") || a.at.line - b.at.line || a.at.col - b.at.col;
 
+/** The explorer panel: two call trees of one ID (down and up), the facts about it, and the «Зберегти як флоу» form. */
 export class Explorer {
   private readonly container: HTMLElement;
   private readonly api: Api;
   private readonly host: ExplorerHost;
+  /** One `/api/calls` answer per ID, shared by every row of that ID in both trees; `refresh` clears it. */
   private readonly cache = new Map<string, Promise<Calls>>();
   private id = "";
   private down: TreeNode | null = null;
@@ -88,6 +97,7 @@ export class Explorer {
     if (this.id === "") this.renderEmpty();
   }
 
+  /** The ID the explorer is rooted at, "" when none. */
   current(): string {
     return this.id;
   }
@@ -108,6 +118,7 @@ export class Explorer {
     try {
       const calls = await this.load(id);
 
+      // Another ID was opened while this one loaded: drop this answer.
       if (this.id !== id) return;
       this.down = this.rootOf(calls, "down");
       this.up = this.rootOf(calls, "up");
@@ -124,6 +135,7 @@ export class Explorer {
     void this.show(this.id);
   }
 
+  /** The calls of an ID, from the cache or one request; a failed request leaves the cache so the next try asks again. */
   private load(id: string): Promise<Calls> {
     let found = this.cache.get(id);
 
@@ -136,6 +148,7 @@ export class Explorer {
     return found;
   }
 
+  /** The root row of one tree: already loaded and open; the downward root starts ticked, as the flow's trigger. */
   private rootOf(calls: Calls, direction: Direction): TreeNode {
     const root = node(calls.id, null, direction, null);
     root.calls = calls;
@@ -146,6 +159,7 @@ export class Explorer {
     return root;
   }
 
+  /** The child rows from a loaded answer: callees going down, callers going up. */
   private childrenOf(parent: TreeNode): TreeNode[] {
     const refs = parent.direction === "down" ? (parent.calls?.callees ?? []) : (parent.calls?.callers ?? []);
 
@@ -159,6 +173,7 @@ export class Explorer {
     return false;
   }
 
+  /** Whether a row can expand: not the root, not a package, not a cycle, and with something below it by the counts. */
   private canOpen(row: TreeNode): boolean {
     const ref = row.ref;
 
@@ -167,6 +182,7 @@ export class Explorer {
     return row.direction === "down" ? ref.calls + ref.holes > 0 : ref.callers > 0;
   }
 
+  /** Opens or closes a row; the first open loads its calls, drawing a loading glyph meanwhile. */
   private async toggle(row: TreeNode): Promise<void> {
     if (!this.canOpen(row)) return;
 
@@ -223,6 +239,7 @@ export class Explorer {
       });
   }
 
+  /** Posts the ticked downward tree as a flow proposal named from the field, and shows where it went. */
   private async save(): Promise<void> {
     const root = this.down;
 
@@ -243,6 +260,7 @@ export class Explorer {
     }
   }
 
+  /** The prompt to pick an entry point, with why the list has no events, if it has none. */
   private renderEmpty(): void {
     const body: Node[] = [make("h2", { text: "Дослідник точок входу" }), make("p", { className: "empty", text: "Оберіть точку входу (чи подію) ліворуч: дерево викликів розгортається по кліку — вниз (що вона викликає) і вгору (хто викликає, аж до точок входу). Позначені гілки «Зберегти як флоу» пише однією пропозицією." })];
 
@@ -253,6 +271,7 @@ export class Explorer {
     this.container.replaceChildren(...body);
   }
 
+  /** Draws the whole panel for a newly opened ID: the header with its facts and reachability, the save form and both trees. */
   private renderRoot(calls: Calls): void {
     const isEvent = calls.node?.kind === "event";
     const head = make("header", { className: "explore-head" });
@@ -277,6 +296,7 @@ export class Explorer {
     if (calls.reason) head.append(make("p", { className: "reason", text: calls.reason }));
     const reached = make("div", { className: "reached" });
     reached.id = "reached-from";
+    // Reachability: entry points that reach this ID, without itself; none and not an entry point means an orphan.
     const own = calls.reachedFrom.filter((entry) => entry.id !== calls.id);
 
     if (calls.entries.length > 0) reached.append(make("span", { className: "badge entry", text: "точка входу" }));
@@ -294,10 +314,12 @@ export class Explorer {
     const name = make("input");
     name.id = "flow-name";
     name.type = "text";
+    // Default flow name: the ID's last segment, with characters a file name should not have replaced by `_`.
     name.value = calls.id.slice(calls.id.lastIndexOf(".") + 1).replace(/[^A-Za-z0-9_-]/g, "_");
     name.setAttribute("aria-label", "Назва флоу");
     const saveButton = button("Зберегти як флоу", () => void this.save(), { title: "a proposal for <dir>/flows/<name>.md: the root as the trigger, the ticked rows as steps" });
     saveButton.id = "save-flow";
+    // A flow's trigger must be a fn, so an event or a type cannot be saved.
     const canSave = calls.node?.kind === "fn";
     saveButton.disabled = !canSave;
     const result = make("div", { className: "save-result", text: canSave ? "Позначте гілки дерева «Викликає»: вони стануть кроками." : "Флоу починається з fn: оберіть fn, щоб зберегти." });
@@ -313,6 +335,7 @@ export class Explorer {
     this.renderTrees(isEvent);
   }
 
+  /** Redraws both trees from their state; for an event the headings name subscribers and publishers instead. */
   private renderTrees(isEvent = this.down?.calls?.node?.kind === "event"): void {
     if (!this.trees || !this.down || !this.up) return;
     const down = make("ul", { className: "tree down" });
@@ -329,6 +352,7 @@ export class Explorer {
     );
   }
 
+  /** One row and, when open, its children: a toggle, a tick box (downward only), the name and its badges. */
   private rowOf(row: TreeNode): HTMLLIElement {
     const li = make("li", { className: `call${row.ref?.external ? " external" : ""}` });
     li.dataset["id"] = row.id;
@@ -336,6 +360,7 @@ export class Explorer {
     const line = make("div", { className: "row" });
     const cycle = row.ref !== null && this.cycles(row);
     const openable = row.ref === null ? false : this.canOpen(row);
+    // The glyph tells the row's state: root, cycle, leaf, loading, open or closed.
     const glyph = row.ref === null ? "●" : cycle ? "↻" : !openable ? "·" : row.loading ? "…" : row.open ? "▾" : "▸";
     const toggle = button(glyph, () => void this.toggle(row), { className: "toggle", title: cycle ? "already above: a cycle" : openable ? (row.open ? "close" : "open") : "nothing to open" });
     toggle.disabled = !openable;
@@ -346,6 +371,7 @@ export class Explorer {
       const pick = make("input", { className: "pick" });
       pick.type = "checkbox";
       pick.checked = row.checked;
+      // Only a fn of this repository can be a step; the root is the trigger and is not toggled here.
       const fn = ref === null || (ref.kind === "fn" && !ref.external);
       pick.disabled = ref === null || !fn;
       pick.title = ref === null ? "the trigger" : fn ? "a step of the flow" : "not a fn of the repository: no step";
@@ -357,6 +383,7 @@ export class Explorer {
     name.addEventListener("click", () => void this.toggle(row));
     line.append(name);
 
+    // Badges of the edge into the row: how the call goes (via, closure), package, event, entry points, repeat count, location.
     if (ref) {
       if (ref.via) {
         const badge = VIA_BADGE.get(ref.via) ?? { text: ref.via, title: `via ${ref.via}` };
@@ -381,6 +408,7 @@ export class Explorer {
       const children = make("ul", { className: "children" });
 
       if (row.error) children.append(make("li", { className: "error", text: row.error }));
+      // Unresolved calls are holes in what the row calls, so only the downward tree shows them.
       const holes = row.direction === "down" ? (row.calls?.holes ?? []) : [];
 
       const items: ({ at: CallHole["at"] } & ({ hole: CallHole } | { child: TreeNode }))[] = [
@@ -400,6 +428,7 @@ export class Explorer {
     return li;
   }
 
+  /** A call keylang did not resolve, as a row with its reason and location. */
   private holeOf(hole: CallHole): HTMLLIElement {
     const li = make("li", { className: "hole", title: `${hole.kind}: ${hole.text}` });
     li.append(make("span", { className: "glyph", text: "?" }), make("span", { className: "blind", text: "тут keylang сліпий — " }), make("span", { className: "reason", text: hole.reason }));

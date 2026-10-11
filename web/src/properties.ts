@@ -1,3 +1,4 @@
+// Web page (web/src), part of the diagram editor; entry point `Properties`.
 // The properties panel of the diagram editor (business-flows/23c), on the
 // right of the canvas: the selected shape's ID (with suggestions from
 // `/api/views` and `GET /api/ids?prefix=`), kind, a start event's trigger, a
@@ -32,6 +33,7 @@ function isChoice<Value extends string>(choices: readonly Value[], value: string
   return choices.some((choice) => choice === value);
 }
 
+/** Whether a select's value names a connection kind of the editor. */
 function isLinkKind(value: string): value is LinkKind {
   return Object.hasOwn(LINK_NAMES, value);
 }
@@ -41,19 +43,23 @@ function hasKind(value: unknown): value is Shape | Link {
   return value !== null && typeof value === "object" && "kind" in value;
 }
 
+/** A vertex's value as a shape. */
 function isShapeOf(cell: Cell, value: unknown): value is Shape {
   return hasKind(value) && cell.isVertex();
 }
 
+/** An edge's value as a connection. */
 function isLinkOf(cell: Cell, value: unknown): value is Link {
   return hasKind(value) && cell.isEdge();
 }
 
+// A parallel gateway either splits the flow into branches or joins them back.
 const ROLES = ["split", "join"] as const;
 
 /** Kinds whose shape names a keylang entity, so it has an ID. */
 const NAMED: ReadonlySet<ShapeKind> = new Set(["lane", "layer", "module", "fn", "type", "start", "task", "event", "external"]);
 
+/** The editor's right-hand panel: the fields of the selected shape or connection, each change sent through `PanelEditor`. */
 export class Properties {
   private readonly root: HTMLElement;
   private readonly api: Api;
@@ -61,6 +67,7 @@ export class Properties {
   private readonly views: () => Views | null;
   private readonly ids: HTMLDataListElement;
   private cell: Cell | null = null;
+  /** The number of the latest ID lookup: an older lookup's answer is dropped. */
   private lookup = 0;
 
   constructor(root: HTMLElement, api: Api, editor: PanelEditor, views: () => Views | null) {
@@ -68,6 +75,7 @@ export class Properties {
     this.api = api;
     this.editor = editor;
     this.views = views;
+    // One shared datalist feeds the ID field's suggestions; it is re-attached on every redraw.
     this.ids = make("datalist");
     this.ids.id = "editor-ids";
     this.show(null);
@@ -90,6 +98,7 @@ export class Properties {
     return this.cell;
   }
 
+  /** A labelled row: the name, the input, and an optional note under it. */
   private field(label: string, input: HTMLElement, note?: string): HTMLElement {
     const row = make("label", { className: "prop" }, make("span", { className: "prop-name", text: label }), input);
 
@@ -98,6 +107,7 @@ export class Properties {
     return row;
   }
 
+  /** Shows a refusal in the panel's error line, or hides the line for null. */
   private error(text: string | null): void {
     const box = this.root.querySelector<HTMLElement>(".prop-error");
 
@@ -107,6 +117,7 @@ export class Properties {
     }
   }
 
+  /** The fields of a shape; which ones appear depends on its kind, and in «з коду» most are read-only. */
   private shapeFields(cell: Cell, shape: Shape): Node[] {
     const code = this.editor.mode() === "code";
     // «з коду» changes only notes; a note's text is layout.
@@ -115,6 +126,7 @@ export class Properties {
 
     if (locked) out.push(make("p", { className: "prop-hint", text: "«з коду»: тут змінюються лише розкладка й примітки; зміст — у «чернетці»." }));
 
+    // Applies one change; on success the panel redraws from the updated shape, on refusal it shows why.
     const apply = (patch: Parameters<PanelEditor["updateShape"]>[1]): void => {
       const refused = this.editor.updateShape(cell, patch);
       this.error(refused);
@@ -122,6 +134,7 @@ export class Properties {
       if (!refused) this.show(cell);
     };
 
+    // A named kind edits its ID, with suggestions; other kinds (except the label-less ones) edit a free label instead.
     if (NAMED.has(shape.kind)) {
       const id = make("input");
       id.id = "prop-id";
@@ -168,6 +181,7 @@ export class Properties {
       tech.addEventListener("change", () => apply({ tech: tech.value.trim() }));
       out.push(this.field("технологія", tech, "postgres, redis, kafka… звіряються з кодом"));
     } else if (shape.kind !== "lane" && shape.kind !== "group") {
+      // Any other shape but a lane or group may change its kind among `SHAPE_CHOICES`.
       const kind = make("select");
       kind.id = "prop-kind";
       kind.disabled = locked;
@@ -219,6 +233,7 @@ export class Properties {
       out.push(this.field("роль", role));
     }
 
+    // Code entities (not lanes or layers) carry a signature, editable only while planned (the code has the real one), and tests.
     if (NAMED.has(shape.kind) && shape.kind !== "lane" && shape.kind !== "layer") {
       const planned = shape.id.startsWith("planned:");
       const signature = make("input");
@@ -243,6 +258,7 @@ export class Properties {
           .map((line) => line.trim())
           .filter((line) => line !== "");
 
+        // Every non-empty line must be a test reference; one bad line refuses the whole change.
         const bad = lines.find((line) => !TEST_LINE.test(line));
 
         if (bad !== undefined) return this.error(`не рядок тесту: ${bad} — потрібно test <файл> "<назва>"`);
@@ -261,6 +277,7 @@ export class Properties {
       out.push(this.field(shape.kind === "note" ? "текст" : "опис", description));
     }
 
+    // Colour is layout, not spec, so it stays editable in «з коду» too.
     if (shape.kind !== "group" && shape.kind !== "lane") {
       const colour = make("input");
       colour.type = "color";
@@ -270,11 +287,13 @@ export class Properties {
       out.push(this.field("колір", colour, "розкладка: keylang/diagrams/"));
     }
 
+    // Read-only facts about the shape: its proposal's fate, why its route is unproven, its verdict.
     if (shape.status !== null) out.push(make("p", { className: "prop-hint", text: shape.status === "rejected" ? `не прийнято: пропозицію для ${shape.proposed} не злито — фігура лишається на діаграмі, у специфікації її немає` : `очікує злиття: ${shape.proposed} (MERGE чи keylang proposals accept)` }));
 
     if (shape.reason) out.push(make("h3", { text: "чому маршрут не доведено" }), make("p", { className: "prop-reason", text: shape.reason }));
 
     if (shape.verdict) out.push(make("p", { className: "prop-key", text: `вердикт: ${shape.verdict}` }));
+    // The error line `error()` fills; hidden until a change is refused.
     const error = make("p", { className: "prop-error" });
     error.id = "prop-error";
     error.hidden = true;
@@ -284,6 +303,7 @@ export class Properties {
     return out;
   }
 
+  /** The fields of a connection: its meaning (kind) and label; read-only in «з коду». */
   private linkFields(cell: Cell, link: Link): Node[] {
     const locked = this.editor.mode() === "code";
     const out: Node[] = [make("h2", { text: "з'єднання" }), make("p", { className: "prop-key", text: link.key })];
@@ -304,6 +324,7 @@ export class Properties {
       const refused = this.editor.updateLink(cell, patch);
       this.error(refused);
 
+      // A refused kind change puts the select back to the connection's real kind.
       if (!refused) this.show(cell);
       else kind.value = link.kind;
     };
@@ -330,9 +351,11 @@ export class Properties {
   /** Suggestions for the ID field: the views' IDs and layers at once, then the snapshot's under the prefix. */
   private suggest(prefix: string): void {
     const views = this.views();
+    // IDs the page already holds (layers, entry points, flow IDs) are suggested at once, without a request.
     const known = new Set<string>([...(views?.layers ?? []), ...(views?.entries ?? []).map((e) => e.id), ...(views?.flowList ?? []).flatMap((f) => f.ids ?? [])]);
 
     const fill = (ids: Iterable<string>): void => {
+      // Unique, matching the prefix, sorted, and capped at 100 so the datalist stays light.
       const options = [...new Set(ids)]
         .filter((id) => id.startsWith(prefix))
         .sort()
@@ -348,6 +371,7 @@ export class Properties {
     };
 
     fill(known);
+    // Debounce the snapshot lookup by 150 ms; only the latest keystroke's answer fills the list.
     const ticket = ++this.lookup;
     window.setTimeout(() => {
       if (ticket !== this.lookup) return;

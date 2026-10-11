@@ -3,6 +3,9 @@
 // a brief batch (`explain --missing|--stale` without `--llm`) with its
 // dry-run size. One result for the CLI and the TUI; the batch itself asks
 // the model through the `explain-batch` operation (`operations.ts`).
+// Entry points: `staleInventory`, `briefPlan` and their `…Text` printers.
+// Terms: answer (short/full explanation), brief (one line of the explained
+// map), closure baseline (what makes a saved explanation fresh or stale).
 
 import type { Analysis } from "./analyze.ts";
 import { isCliAgent } from "./config.ts";
@@ -91,11 +94,14 @@ export interface BriefPlan {
   gone: string[];
 }
 
+/** Where `id` is declared: its file in the snapshot, else its `planned` line; null for a node without a file. */
 function nodePlace(analysis: Analysis, id: string): NodePlace | null {
   const node = analysis.snapshot?.nodes[id];
 
   if (node?.file) return { file: node.file, line: node.line ?? 1, col: node.col ?? 1 };
 
+  // In the snapshot but without a file (a layer, a package): no place, and a
+  // `planned` line must not stand in for code that exists.
   if (node) return null;
   const planned = plannedDeclaration(analysis.docs, id);
 
@@ -107,6 +113,9 @@ export function staleInventory(analysis: Analysis): StaleInventory {
   const entries: StaleExplanation[] = [];
   let saved = 0;
 
+  // Answers first, then briefs, each in the order the explanation store lists
+  // IDs. An ID with no current baseline is gone (nothing to compare against);
+  // otherwise it is listed only when its saved baseline differs.
   for (const kind of ["answer", "brief"] as const) {
     for (const id of explainedIds(analysis.config, kind === "brief" ? "briefs" : "answers")) {
       const e = readExplanation(analysis.config, id, kind === "brief" ? "brief" : "short");
@@ -145,6 +154,8 @@ export function staleInventoryText(inventory: StaleInventory): string {
 export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }): BriefPlan {
   const snapshot = analysis.snapshot;
   const briefs = loadBriefs(analysis.config);
+  // The full candidate list is kept for its count; the limit cuts it before
+  // the estimate so the dry run sizes what would really be asked.
   const all = planBriefs(analysis, options.batch, briefs);
   const planned = options.limit === null ? all : all.slice(0, options.limit);
   const plan = planned.map((entry): PlannedBriefEntry => ({ ...entry, reason: briefs.has(entry.id) ? "stale" : "missing", place: nodePlace(analysis, entry.id) }));
@@ -152,6 +163,8 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
   const waves: { level: BriefLevel; ids: string[] }[] = [];
   let wave: number | null = null;
 
+  // The plan is already ordered by wave; group consecutive entries of one
+  // wave, opening a new group whenever the wave number changes.
   for (const entry of plan) {
     counts[entry.level]++;
 
@@ -163,6 +176,8 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
   let documented = 0;
   let fresh = 0;
 
+  // Why the other nodes are not planned: a doc comment already describes the
+  // node, or its saved brief still matches its closure. Packages never get one.
   for (const [id, node] of Object.entries(snapshot?.nodes ?? {})) {
     if (node.layer === EXTERNAL) continue;
 
@@ -188,6 +203,7 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
 
 /** The CLI's stdout of a plan: the dry-run counts and estimate, or the nodes one per line. */
 export function briefPlanText(plan: BriefPlan): string {
+  // Without an estimate the plan is listed node by node; with one, only the totals.
   if (plan.estimate === null) return plan.plan.map((entry) => `${entry.id} (${entry.level})\n`).join("");
   const { counts, estimate } = plan;
 

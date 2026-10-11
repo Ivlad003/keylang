@@ -8,6 +8,10 @@
 // map-check, map) in a worker of their own, with no such fallback: a worker
 // that cannot start or dies is a failed result with code 2, and the next
 // request starts a new one.
+//
+// Layer: TUI, between the session (`app.ts`, `terminal.ts`) and the shared
+// pipeline: `analysis-worker.ts` runs source -> FileFacts -> graph -> map, and
+// `operation-worker.ts` runs `runOperation`.
 
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
@@ -17,12 +21,14 @@ import { generateMap, type MapResult } from "../map.ts";
 import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationProgress, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
 
+/** One answer of the snapshot worker for request `id`: a map result or an error text. */
 interface Reply {
   id: number;
   result?: MapResult;
   error?: string;
 }
 
+/** The long-lived worker that builds the snapshot and map for `analyze`. */
 export class SnapshotWorker {
   private worker: Worker | null = null;
   private failed = false;
@@ -31,11 +37,13 @@ export class SnapshotWorker {
 
   /** `generateMap` for `analyze({ generate })`; the fact cache is only read. */
   readonly generate = (config: Config, options: { overlay: ReadonlyMap<string, string> }): Promise<MapResult> => {
+    // No worker (it failed to start or died): generate on this thread instead.
     const worker = this.start();
 
     if (!worker) return generateMap(config, { overlay: options.overlay });
     const id = ++this.next;
 
+    // Keep the worker referenced while this request waits, so the process waits for it.
     return new Promise<MapResult>((resolve, reject) => {
       this.waiting.set(id, { resolve, reject });
       worker.ref();
@@ -43,11 +51,13 @@ export class SnapshotWorker {
     });
   };
 
+  /** Terminates the worker; the next `generate` starts a new one. */
   close(): void {
     void this.worker?.terminate();
     this.worker = null;
   }
 
+  /** The worker, started on first use; null once it has failed, so generation stays on this thread. */
   private start(): Worker | null {
     if (this.worker || this.failed) return this.worker;
     // Development runs the TypeScript sources; the package runs dist/*.js. Both
@@ -57,6 +67,7 @@ export class SnapshotWorker {
     try {
       const worker = new Worker(url);
       worker.unref();
+      // Settle the waiting request; with nothing left, let the process exit around an idle worker.
       worker.on("message", (reply: Reply) => {
         const pending = this.waiting.get(reply.id);
 
@@ -69,6 +80,7 @@ export class SnapshotWorker {
         else pending.reject(new Error(reply.error ?? "snapshot worker failed"));
       });
       worker.on("error", (error) => this.fail(error));
+      // An unexpected exit fails every waiting request and turns the fallback on.
       worker.on("exit", (code) => {
         if (this.worker === worker && code !== 0) this.fail(new Error(`snapshot worker exited with code ${code}`));
       });
@@ -82,6 +94,7 @@ export class SnapshotWorker {
     }
   }
 
+  /** Marks the worker as failed for good and rejects every waiting request. */
   private fail(error: Error): void {
     this.failed = true;
     this.worker = null;
@@ -91,6 +104,7 @@ export class SnapshotWorker {
   }
 }
 
+/** A request sent to the operation worker and not settled yet. */
 interface Pending {
   kind: OperationRequest["kind"];
   resolve: (result: OperationResult) => void;
@@ -135,6 +149,7 @@ export class OperationWorker {
 
   /** An `OperationRunner`: the request goes to the worker as cloneable data; progress and the signal stay here. */
   readonly run = (request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> => {
+    // A closed session or an already aborted signal never reaches the worker.
     if (this.closed) return Promise.resolve(resultWithout(request.kind, "failed", 2, "the session is closed"));
 
     if (context.signal?.aborted) return Promise.resolve(resultWithout(request.kind, "cancelled", null));
@@ -148,6 +163,7 @@ export class OperationWorker {
 
     const operationId = ++this.next;
 
+    // Register before posting, so a reply can never arrive for an unknown ID.
     return new Promise<OperationResult>((resolve) => {
       const signal = context.signal;
       const onAbort = (): void => this.cancel(operationId);
@@ -209,6 +225,8 @@ export class OperationWorker {
 
     // A closed session shows no status line: a base read in flight is dropped.
     for (const baseId of Array.from(this.bases.keys())) this.settleBase(baseId, null);
+    // Without a commit in progress the worker can simply go; otherwise keep it
+    // alive for the committing requests and cancel the rest now.
     const committing = Array.from(this.pending).filter(([, pending]) => pending.committing);
 
     if (committing.length === 0) return this.stop((kind) => resultWithout(kind, "cancelled", null));
@@ -236,6 +254,7 @@ export class OperationWorker {
       return;
     }
 
+    // Terminating the worker also ends any other operation on it, which fails with code 2.
     this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
     this.stop((kind) => resultWithout(kind, "failed", 2, "the operation worker was stopped to cancel another operation"));
   }
@@ -254,6 +273,7 @@ export class OperationWorker {
       // Settled meanwhile (cancelled before the commit, worker replaced): that worker is gone.
       if (this.pending.get(operationId) !== pending || this.worker !== worker) return;
 
+      // Aborted while the session was being asked: cancel instead of committing.
       if (pending.signal?.aborted) return this.post({ type: "cancel", operationId });
       pending.committing = true;
       const call: Extract<OperationCall, { type: "commit" }> = { type: "commit", operationId };
@@ -262,6 +282,8 @@ export class OperationWorker {
       this.post(call);
     };
 
+    // `beforeCommit` may answer synchronously or with a promise; a throw or a
+    // rejection cancels the commit.
     let told: Promise<CommitGate> | CommitGate;
 
     try {
@@ -274,6 +296,7 @@ export class OperationWorker {
     else answer(told);
   }
 
+  /** Posts a call to the current worker, if any. */
   private post(call: OperationCall): void {
     try {
       this.worker?.postMessage(call);
@@ -282,6 +305,7 @@ export class OperationWorker {
     }
   }
 
+  /** The current worker, or a new one wired to settle requests; throws when it cannot start. */
   private start(): Worker {
     if (this.worker) return this.worker;
     const worker = new Worker(this.entry, this.workerData === undefined ? {} : { workerData: this.workerData });
@@ -293,11 +317,13 @@ export class OperationWorker {
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
 
+      // Dispatch the reply by type: progress, the commit handshake, the result, or an error.
       if (reply.type === "progress") pending.onProgress?.(progressOf(reply));
       else if (reply.type === "commit") this.commit(worker, reply.operationId, reply.plan);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
       else this.settle(reply.operationId, resultWithout(pending.kind, "failed", 2, reply.error));
     });
+    // A crash or an exit of the current worker fails everything still pending.
     worker.on("error", (error) => {
       if (this.worker === worker) this.stop((kind) => resultWithout(kind, "failed", 2, `the operation worker failed: ${error.message}`));
     });
@@ -321,6 +347,7 @@ export class OperationWorker {
     for (const baseId of Array.from(this.bases.keys())) this.settleBase(baseId, null);
   }
 
+  /** Resolves a base read once; unreferences the worker when nothing else waits. */
   private settleBase(baseId: number, base: FeatureBase | null): void {
     const resolve = this.bases.get(baseId);
 
@@ -331,6 +358,7 @@ export class OperationWorker {
     resolve(base);
   }
 
+  /** Resolves a request once with `result`, releasing its signal; a second settle is a no-op. */
   private settle(operationId: number, result: OperationResult): void {
     const pending = this.pending.get(operationId);
 

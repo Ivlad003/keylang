@@ -2,6 +2,9 @@
 // spec documents, and their assessment. Generated map files are replaced by the
 // map rendered from the fresh snapshot, so IDs resolve against current code,
 // not a stale committed map. Nothing is written but, when asked, the fact cache.
+// Pipeline: the glue of both halves — source → FileFacts → graph/snapshot
+// (via `generateMap`) and Markdown → IR (via `parse`) → `assess`. Entry points:
+// `analyze`, `findRoot`, `oldSnapshotFor`, `specPathProblem`, `readingAid`, `within`.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -21,6 +24,7 @@ import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
 import { loadTraces } from "./trace-evidence.ts";
 
+/** What to analyse and how: the root, which specs, unsaved buffers and which optional parts to skip. */
 export interface AnalysisRequest {
   /** Repository root (directory of `keylang.json`). Absolute. */
   root: string;
@@ -56,6 +60,7 @@ export interface AnalysisRequest {
   assessed?: (file: string) => boolean;
 }
 
+/** One analysis: the assessment plus the config, map, snapshot and parsed documents it came from. */
 export interface Analysis extends Assessment {
   config: Config;
   map: MapResult | null;
@@ -70,6 +75,7 @@ export interface Analysis extends Assessment {
   packages: readonly DeclaredPackage[];
 }
 
+/** Run config → snapshot → parse specs → assess for one repository; reads files, writes only the fact cache when asked. */
 export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const { root } = request;
   const config = loadConfig(root);
@@ -79,6 +85,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const save = request.persistFacts !== true && request.saveFacts === true && overlay.size === 0 && keepsFactCache(root);
   const options = { persist: request.persistFacts === true || (save ? ("changed" as const) : false), overlay };
   const generate = request.generate ?? generateMap;
+  // No snapshot without configured languages or when the specs are checked on their own.
   const map = config.languages.length > 0 && request.withoutCode !== true ? await generate(config, options) : null;
 
   if (save && map?.factCache) saveFactCache(root, map.factCache);
@@ -96,6 +103,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const mapDir = join(specDir, "map");
   const docs: Document[] = [];
 
+  // Parse each spec, preferring the unsaved buffer over the file on disk.
   for (const abs of files) {
     const text = overlay.get(abs) ?? readFileSync(abs, "utf8");
     const doc = parse(display(abs), text);
@@ -105,6 +113,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     docs.push(doc);
   }
 
+  // Add the freshly rendered map files, unless a hand-written document already has that path.
   if (map) {
     for (const [name, text] of map.files) {
       const abs = join(mapDir, name);
@@ -114,12 +123,14 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     }
   }
 
+  // Sorted by path so diagnostics and IDs come out in the same order on every run.
   docs.sort((a, b) => compareText(a.path, b.path));
   // Reports and traces are evidence about code; specs checked on their own have none.
   const evidence = snapshot !== null && request.withoutEvidence !== true;
   const testFiles = evidence ? evidenceFiles(config, "tests") : null;
   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
   const staticMode = resolveStatic(request.static, config.check.static);
+  // Declared packages: the map's when there is one, else read straight from the root manifests.
   const packages = request.withoutCode === true ? [] : (map?.graph.packages ?? readManifests(config, []).packages);
 
   // The old stack of a migration (business-flows/27), loaded only when keylang.json names one.
@@ -163,6 +174,8 @@ export async function oldSnapshotFor(root: string, from: string): Promise<OldSna
   const abs = isAbsolute(from) ? from : resolve(root, from);
 
   try {
+    // Cache by path: a directory is analysed once per process; a file is re-read
+    // when its mtime or size changes. The promise is cached so concurrent checks share it.
     const stat = statSync(abs);
     const stamp = stat.isDirectory() ? "dir" : `${stat.mtimeMs}:${stat.size}`;
     let known = oldIds.get(abs);
@@ -202,6 +215,7 @@ export async function oldSnapshotFor(root: string, from: string): Promise<OldSna
 const renderedMap = new Map<string, { hash: string; doc: Document }>();
 
 function parseRenderedMap(path: string, text: string): Document {
+  // Reuse the previous parse while the rendered text is byte-identical.
   const hash = createHash("sha256").update(text).digest("hex");
   const known = renderedMap.get(path);
 
@@ -216,6 +230,7 @@ function parseRenderedMap(path: string, text: string): Document {
 export function findRoot(start: string): string {
   let dir = start;
 
+  // Stop at the filesystem root, where `..` resolves to itself.
   for (;;) {
     if (existsSync(join(dir, CONFIG_FILE))) return dir;
     const parent = join(dir, "..");
@@ -229,6 +244,7 @@ export function findRoot(start: string): string {
 function repositoryFile(root: string, path: string): boolean {
   const abs = resolve(root, path);
 
+  // A flow's test path must not escape the repository (`../`, absolute paths).
   if (!within(abs, root)) return false;
 
   try {
@@ -251,6 +267,7 @@ export function readingAid(specDir: string, abs: string): boolean {
 export function specPathProblem(config: Config, abs: string): string | null {
   const specDir = join(config.root, config.dir);
 
+  // The first reason that applies, in the order a person would check them.
   const reason =
     !abs.endsWith(".md") ? "not a `.md` file"
     : !within(abs, specDir) ? `outside the spec directory \`${config.dir}/\``
@@ -261,6 +278,7 @@ export function specPathProblem(config: Config, abs: string): string | null {
   return reason === null ? null : `\`keylang check\` does not read this file as a spec: ${reason}`;
 }
 
+/** Whether `abs` is `dir` or lies inside it (path-based, links are not followed). */
 export function within(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
 

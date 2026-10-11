@@ -1,5 +1,11 @@
 // Exports: a finished report saved to one file, and a C4 diagram of the saved
 // code (`export c4`).
+//
+// Place in the pipeline: operations (see `operations.ts`) at the output end.
+// `runExport` writes a report already computed (check, parse, trace plan,
+// explained edge) byte-for-byte as the CLI prints it; `runExportC4` renders
+// the snapshot and saved briefs as C4. Other entry points: `exportText`,
+// `exportTargetProblem`, `c4OutProblem`.
 
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
@@ -51,6 +57,8 @@ export function exportTargetProblem(root: string, path: string, dir: string = sa
   const target = landing(join(root, path));
 
   if (target === null) return "leads through a loop of links";
+  // Compare the real target (links resolved) with the paths generators own,
+  // so a link cannot smuggle an export into the map or the proposals.
   const rel = toPosix(relative(realpathSync(root), target));
   // `posix.join`: a spec directory `.` owns `map/`, not `./map/`.
   const owned = [posix.join(dir, "map"), posix.join(dir, EXPLAINED_MAP_DIR), PROPOSALS_DIR].map((prefix) => `${prefix}/`);
@@ -109,6 +117,8 @@ export async function runExport(request: ExportRequest, context: OperationContex
   }
 
   if (context.signal?.aborted) return { ...empty("export", "cancelled", null), payload };
+  // Re-check after the gate: the target must still pass the policy and hold
+  // the bytes the form showed (`expect`).
   let problem: string | null;
 
   try {
@@ -174,6 +184,7 @@ export async function runExportC4(request: ExportC4Request, context: OperationCo
   const { root } = request;
 
   if (!isAbsolute(root)) return empty("export-c4", "failed", 2, "export c4: root must be an absolute path");
+  // Validate the format, level and layer before any analysis.
   const format = C4_FORMATS.find((item) => item === request.format);
 
   if (format === undefined) return empty("export-c4", "failed", 2, `export c4: unknown --format \`${request.format}\`; expected ${C4_FORMATS.join(", ")}`);
@@ -211,6 +222,7 @@ export async function runExportC4(request: ExportC4Request, context: OperationCo
     return explained !== null && !explained.stale ? explained.text : null;
   };
 
+  // The renderer takes the brief lookup as a function, so it stays pure.
   let text: string;
   const c4: C4Request = { format, level };
 
@@ -238,6 +250,7 @@ export async function runExportC4(request: ExportC4Request, context: OperationCo
     return { ...empty("export-c4", "failed", 2, `${out}: ${errorText(error)}`), payload };
   }
 
+  // Overwrite only a diagram this command wrote; then pass the commit gate.
   if (current !== null && !isC4Diagram(current)) return { ...empty("export-c4", "failed", 2, `${out}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written`), payload };
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;

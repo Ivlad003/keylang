@@ -6,6 +6,9 @@
 // them (unsaved buffers included), code only when the file still has the
 // bytes its snapshot hashed. Packs are cached per analysis, a few per buffer
 // state, and go when the analysis does.
+// Layer: TUI and MCP (`context`), on top of an Analysis (spec IR + snapshot).
+// Entry points: `contextPack` (cursor-driven, cached), `contextForIds`,
+// `contextText`, `snapshotSource`.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -16,8 +19,10 @@ import { formatDocument } from "./fmt.ts";
 import { sectionNodes, walk, type Document, type Section } from "./ir.ts";
 import { parse } from "./parser.ts";
 
+/** What an item of a context pack holds. */
 export type ContextKind = "buffer" | "node" | "neighbor" | "flow" | "rule" | "code" | "test";
 
+/** One entry of a context pack, with its text and token estimate. */
 export interface ContextItem {
   /** Stable within a pack: `x` removes by key. */
   key: string;
@@ -31,6 +36,7 @@ export interface ContextItem {
   incomplete?: true;
 }
 
+/** The items an agent is given, their token total and the key the pack is cached by. */
 export interface ContextPack {
   items: ContextItem[];
   tokens: number;
@@ -38,6 +44,7 @@ export interface ContextPack {
   key: string;
 }
 
+/** The editor state a pack is built for: the buffer, the cursor line and the person's additions and removals. */
 export interface ContextInput {
   path: string;
   text: string;
@@ -71,12 +78,16 @@ const cache = new WeakMap<Analysis, Map<string, ContextPack>>();
 /** Buffer states kept per analysis: typing between two analyses makes a new one each key press. */
 const PACKS_PER_ANALYSIS = 16;
 
+// One digest of the hand-written specs per analysis, computed lazily (see `specDigest`).
 const specDigests = new WeakMap<Analysis, string>();
 
+/** The context pack for the cursor line of a buffer, cached per analysis and buffer state. */
 export function contextPack(analysis: Analysis, input: ContextInput): ContextPack {
   const doc = parse(input.path, input.text);
   const onLine: string[] = [];
 
+  // Re-parse the buffer as it is now and collect the IDs on the cursor line:
+  // every reference there, and a `planned` declaration's own ID.
   for (const section of doc.sections) {
     for (const top of sectionNodes(section)) {
       walk(top, (node) => {
@@ -91,6 +102,8 @@ export function contextPack(analysis: Analysis, input: ContextInput): ContextPac
 
   const ids = [...new Set([...onLine, ...input.added])];
 
+  // The cache key covers everything the pack depends on; NUL separates the parts
+  // so no two different inputs concatenate to the same string.
   const key = createHash("sha256")
     .update([analysis.snapshot?.snapshotId ?? "", specDigest(analysis), input.path, input.text, ids.join(","), [...input.removed].sort().join(",")].join("\u0000"))
     .digest("hex");
@@ -119,16 +132,18 @@ export function contextPack(analysis: Analysis, input: ContextInput): ContextPac
   const pack = { items, tokens: items.reduce((sum, i) => sum + i.tokens, 0), key };
   packs.set(key, pack);
 
+  // Map iteration order is insertion order, so the first key is the least recently used.
   while (packs.size > PACKS_PER_ANALYSIS) packs.delete(packs.keys().next().value!);
 
   return pack;
 }
 
+/** A pack of `items`, keyed by a hash of `keySource`. */
 function packOf(items: ContextItem[], keySource: string): ContextPack {
   return { items, tokens: items.reduce((sum, item) => sum + item.tokens, 0), key: createHash("sha256").update(keySource).digest("hex") };
 }
 
-/** Nodes, neighbors, code, flows, rules and tests for `ids`. `add` is the TUI pack's adder; a fresh list is built when `items` is empty and `removed` is empty. */
+/** Nodes, neighbors, code, flows, rules and tests for `ids`. `add` is the TUI pack's adder; appends to `items`, skipping keys already there or in `removed`. */
 function addIdItems(analysis: Analysis, ids: readonly string[], removed: ReadonlySet<string>, items: ContextItem[]): void {
   const add = (item: Omit<ContextItem, "tokens">): void => {
     if (removed.has(item.key) || items.some((i) => i.key === item.key)) return;
@@ -138,6 +153,7 @@ function addIdItems(analysis: Analysis, ids: readonly string[], removed: Readonl
   const nodes = analysis.snapshot?.nodes ?? {};
   const idList = [...ids];
 
+  // Per ID: its summary, its callers and callees as neighbours, and its source lines.
   for (const id of idList) {
     const result = summarizeNode(analysis, id);
 
@@ -156,6 +172,7 @@ function addIdItems(analysis: Analysis, ids: readonly string[], removed: Readonl
     if (incomplete) nodeItem.incomplete = true;
     add(nodeItem);
 
+    // Neighbours are one line each: kind, ID and signature, not their code.
     for (const other of [...s.calls, ...s.callers]) add({ key: `neighbor:${other}`, kind: "neighbor", label: other, text: `${nodes[other]?.kind ?? "fn"} ${other}${nodes[other]?.signature ? ` ${nodes[other]!.signature}` : ""}` });
 
     if (source !== null && node?.file && node.line !== null) {
@@ -164,6 +181,8 @@ function addIdItems(analysis: Analysis, ids: readonly string[], removed: Readonl
     }
   }
 
+  // Then every hand-written spec section (not the generated map) that names one
+  // of the IDs, with the tests its flow lists.
   for (const d of analysis.docs) {
     if (d.generated !== null) continue;
 
@@ -212,6 +231,7 @@ function specDigest(analysis: Analysis): string {
 /** The text of a source file when it still has the bytes the snapshot hashed; null otherwise. */
 export function snapshotSource(analysis: Analysis, file: string): string | null {
   const abs = join(analysis.config.root, file);
+  // Only serve code whose hash still matches the snapshot: otherwise line numbers would point at the wrong code.
   const expected = analysis.snapshot?.manifest.files.find((f) => f.path === file)?.sha256;
 
   if (expected === undefined || !existsSync(abs)) return null;

@@ -40,6 +40,11 @@
 // way (a variable, a concatenation) stays unknown. Components `outside` the
 // architecture give their `di.xml` preferences only (not plugins, observers,
 // arguments or entry points): what class a value of their interface is.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse);
+// the facts go to `bindings.ts` and `entries.ts` on the graph. Entry points:
+// `magento` and the per-file parsers (`parseDi`, `parseEvents`, `parseRoutes`,
+// `parseWebapi`, `parseCrontab`, `parseConsumers`, `parseGraphql`), plus `parseXml`.
 
 import { posix } from "node:path";
 import { SaxesParser } from "saxes";
@@ -66,6 +71,7 @@ const GLOBAL_FILES = ["webapi.xml", "crontab.xml", "queue_consumer.xml", "schema
 /** The class whose `commands` argument lists the console commands. */
 const COMMAND_LIST = "Magento\\Framework\\Console\\CommandList";
 
+/** Namespace prefix of Magento's HTTP action interfaces, which give a controller its HTTP method. */
 const ACTION = "Magento\\Framework\\App\\Action\\";
 
 export const magento: FrameworkAdapter = {
@@ -84,6 +90,7 @@ export const magento: FrameworkAdapter = {
     add(APP_DI, null);
 
     // Named in `frameworks` or detected: every registered component's config is read.
+    // Per component: each config file in `etc/`, then the area-specific files in each `etc/<area>/`.
     for (const root of componentRoots(context, REGISTRATION)) {
       const etc = root === "" ? "etc" : `${root}/etc`;
 
@@ -105,9 +112,11 @@ export const magento: FrameworkAdapter = {
       for (const area of context.dirs(etc)) declare(`${etc}/${area}/di.xml`);
     }
 
+    // Sorted by path (code units) so the config file order is stable.
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse(path, text) {
+    // Dispatch by file name; any other listed file is a `di.xml`.
     switch (posix.basename(path)) {
       case "events.xml":
         return parseEvents(path, text);
@@ -135,6 +144,7 @@ export const magento: FrameworkAdapter = {
       if (name !== undefined) out.push({ name, dir: posix.dirname(path) === "." ? "" : posix.dirname(path) });
     }
 
+    // By name, then directory: a module name can appear in more than one place (vendor and app/code).
     return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
   },
   dispatchers: ["Magento\\Framework\\Event\\ManagerInterface", "Magento\\Framework\\Event\\Manager"],
@@ -175,6 +185,7 @@ function scopeOf(path: string): string {
   const parts = path.split("/");
   const etc = parts.lastIndexOf("etc");
 
+  // Only `…/etc/<area>/<file>` (the `etc` is third from the end) is area-scoped.
   return etc !== -1 && etc === parts.length - 3 ? parts[etc + 1]! : "global";
 }
 
@@ -191,6 +202,7 @@ function noFacts(path: string, scope: string, error: ConfigFacts["error"] = null
   return { path, scope, bindings: [], arguments: [], aliases: [], intercepts: [], observers: [], classEntries: [], routes: [], error };
 }
 
+/** A `TypeName` from a class name as the config writes it. */
 function type(name: string): TypeName {
   return { name: className(name) };
 }
@@ -212,9 +224,11 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
   let root: XmlElement | null = null;
   let start = { line: 1, col: 1 };
   let error: { line: number; reason: string } | null = null;
+  // Remember where each start tag begins: saxes reports the position after the name, so step back over `<name`.
   parser.on("opentagstart", (tag) => {
     start = { line: parser.line, col: Math.max(1, parser.column - tag.name.length - 1) };
   });
+  // Build the element tree with a stack: the first top-level element is the root.
   parser.on("opentag", (tag) => {
     const element: XmlElement = { name: tag.name, attributes: tag.attributes, line: start.line, col: start.col, text: "", children: [] };
     const parent = stack.at(-1);
@@ -231,6 +245,7 @@ export function parseXml(path: string, text: string): { root: XmlElement | null;
   parser.on("closetag", () => {
     stack.pop();
   });
+  // Keep the first error only; saxes may report several after the first fault.
   parser.on("error", (e) => {
     error ??= { line: parser.line, reason: `\`${path}\` is no well-formed XML: ${e.message.replace(/^\d+:\d+: /, "")}` };
   });
@@ -256,6 +271,7 @@ function fromXml(path: string, text: string, read: (root: XmlElement, facts: Mag
   return facts;
 }
 
+/** The direct children of an element with a given tag name, in document order. */
 function childrenNamed(element: XmlElement, name: string): XmlElement[] {
   return element.children.filter((child) => child.name === name);
 }
@@ -268,6 +284,7 @@ function flag(value: string | undefined): boolean {
 /** The facts of one `di.xml`. */
 export function parseDi(path: string, text: string): ConfigFacts {
   return fromXml(path, text, (root, facts) => {
+    // Each top-level `preference`, `virtualType` or `type` of di.xml; a virtualType also carries plugins and arguments.
     for (const top of root.children) {
       const at = { line: top.line, col: top.col };
 
@@ -295,6 +312,7 @@ export function parseDi(path: string, text: string): ConfigFacts {
         });
       }
 
+      // Object arguments are constructor bindings; `CommandList`'s `commands` items are console commands.
       for (const argument of childrenNamed(top, "arguments").flatMap((a) => childrenNamed(a, "argument"))) {
         if (!argument.attributes.name) continue;
 
@@ -340,6 +358,7 @@ export function parseRoutes(path: string, text: string): ConfigFacts {
     for (const router of childrenNamed(root, "router")) {
       for (const route of childrenNamed(router, "route")) {
         const id = route.attributes.id?.trim() ?? "";
+        // A route without `frontName` is served under its id.
         const frontName = route.attributes.frontName?.trim() || id;
 
         if (!frontName) continue;
@@ -406,6 +425,7 @@ export function parseConsumers(path: string, text: string): ConfigFacts {
       const queue = consumer.attributes.queue?.trim();
       const label = queue && queue !== name ? `${name} (queue ${queue})` : name;
       const handler = consumer.attributes.handler?.trim();
+      // `handler="C::m"` names the method; without it, the consumer instance's `process` runs.
       const [cls, method] = handler ? handler.split("::") : [consumer.attributes.consumerInstance?.trim(), "process"];
 
       if (!cls) continue;
@@ -414,8 +434,10 @@ export function parseConsumers(path: string, text: string): ConfigFacts {
   });
 }
 
+/** A GraphQL name, matched sticky at `lastIndex`. */
 const IDENT = /[_A-Za-z][_0-9A-Za-z]*/y;
 
+/** `@resolver(class: "…")` matched sticky at `lastIndex`; group 1 is the class as an SDL string (backslashes escaped). */
 const RESOLVER = /@resolver\s*\(\s*class\s*:\s*"((?:[^"\\]|\\.)*)"/y;
 
 /**
@@ -435,6 +457,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
   let field: string | null = null;
   let i = 0;
 
+  // Advance the cursor to `to`, keeping the 1-based line and column of `i` in step.
   const moveTo = (to: number): void => {
     for (; i < to; i++) {
       if (text[i] === "\n") {
@@ -444,15 +467,19 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
     }
   };
 
+  // One token per iteration. State: brace and paren depth, the current type
+  // (after `type`/`interface`/`input` at depth 0) and the latest field name at depth 1.
   while (i < text.length) {
     const ch = text[i]!;
 
+    // A comment runs to the end of the line.
     if (ch === "#") {
       const end = text.indexOf("\n", i);
       moveTo(end === -1 ? text.length : end);
       continue;
     }
 
+    // A string or `"""` block string (descriptions): skip it whole, honouring escapes.
     if (ch === '"') {
       const block = text.startsWith('"""', i);
       let j = i + (block ? 3 : 1);
@@ -462,6 +489,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
       continue;
     }
 
+    // A directive: a resolver on a field directly inside a type's braces (not inside its arguments) is an entry.
     if (ch === "@") {
       RESOLVER.lastIndex = i;
       const found = RESOLVER.exec(text);
@@ -476,6 +504,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
       continue;
     }
 
+    // A name: at depth 0 it may introduce or name a type; at depth 1 it is a field when `(` or `:` follows.
     if (/[_A-Za-z]/.test(ch)) {
       IDENT.lastIndex = i;
       const word = IDENT.exec(text)![0];
@@ -496,6 +525,7 @@ export function parseGraphql(path: string, text: string): ConfigFacts {
       continue;
     }
 
+    // Punctuation adjusts the depth; leaving a type's braces forgets the type and field.
     if (ch === "{") braces++;
     else if (ch === "}") {
       braces = Math.max(0, braces - 1);

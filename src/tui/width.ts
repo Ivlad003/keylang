@@ -6,6 +6,11 @@
 // terminal can disagree about it. The table is the usual East Asian
 // Wide/Fullwidth ranges plus emoji blocks; a terminal may disagree on rare
 // characters, which only shifts that one line.
+//
+// Part of the TUI layer: every screen measures, cuts, pads and wraps text
+// through these helpers. Entry points: `stringWidth`, `padWidth`,
+// `sliceCells`, `wrapRuns`/`wrapCells`, and `layoutLine` with its
+// binary-search queries `scrollToFit` and `clusterAtCell`.
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -23,6 +28,7 @@ export function* clusters(text: string): Generator<string> {
   for (const { segment } of segmenter.segment(text)) yield segment;
 }
 
+/** Inclusive code-point ranges drawn two cells wide: Hangul Jamo leads, CJK, Hangul syllables, fullwidth forms and the emoji blocks. */
 const WIDE: readonly (readonly [number, number])[] = [
   [0x1100, 0x115f],
   [0x2e80, 0x303e],
@@ -45,6 +51,7 @@ const WIDE: readonly (readonly [number, number])[] = [
 const IGNORABLE = /^\p{Default_Ignorable_Code_Point}$/u;
 
 function codePointWidth(cp: number): 0 | 1 | 2 {
+  // C0 and C1 control characters move the cursor or do nothing; they are never drawn.
   if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0;
 
   // Hangul vowels and finals (jungseong, jongseong) join the leading consonant before them.
@@ -52,18 +59,22 @@ function codePointWidth(cp: number): 0 | 1 | 2 {
 
   if (cp >= 0xa0 && IGNORABLE.test(String.fromCodePoint(cp))) return 0;
 
+  // A linear scan is enough: the table is short and most text is ASCII, which falls through every range.
   for (const [lo, hi] of WIDE) if (cp >= lo && cp <= hi) return 2;
 
   return 1;
 }
 
+/** A single combining mark (accents, enclosing marks): drawn on the cell of the character before it. */
 const COMBINING = /^\p{M}$/u;
 
 /** Emoji shown as a picture by default (✅, 🚀), and a pictograph made one by VS16 (❤️). */
 const EMOJI_PRESENTATION = /\p{Emoji_Presentation}/u;
 
+/** A cluster that starts with a pictograph, which VS16 can turn into a two-cell emoji. */
 const PICTOGRAPHIC = /^\p{Extended_Pictographic}/u;
 
+/** A flag: exactly two regional indicator letters. */
 const REGIONAL = /^\p{Regional_Indicator}{2}$/u;
 
 /** COMBINING ENCLOSING KEYCAP: a keycap (`1` VS16 U+20E3) is drawn as an emoji picture. */
@@ -75,8 +86,10 @@ const KEYCAP = "\u20e3";
  * of its first visible code point.
  */
 export function graphemeWidth(cluster: string): 0 | 1 | 2 {
+  // Emoji clusters first: their parts measured one by one would give the wrong width.
   if (EMOJI_PRESENTATION.test(cluster) || REGIONAL.test(cluster) || cluster.includes(KEYCAP) || (cluster.includes("\ufe0f") && PICTOGRAPHIC.test(cluster))) return 2;
 
+  // Otherwise the first code point that is not a combining mark decides; marks ride on it.
   for (const ch of cluster) {
     if (COMBINING.test(ch)) continue;
     const width = codePointWidth(ch.codePointAt(0)!);
@@ -87,6 +100,7 @@ export function graphemeWidth(cluster: string): 0 | 1 | 2 {
   return 0;
 }
 
+/** Total terminal cells of `text`, summed over its grapheme clusters. */
 export function stringWidth(text: string): number {
   let width = 0;
 
@@ -100,6 +114,7 @@ export function fitWidth(text: string, width: number): string {
   let used = 0;
   let out = "";
 
+  // Take whole clusters while they fit; a wide cluster that would straddle the edge is left out.
   for (const cluster of graphemes(text)) {
     const w = graphemeWidth(cluster);
 
@@ -117,6 +132,8 @@ export function padWidth(text: string, width: number): string {
   const w = stringWidth(text);
 
   if (w <= width) return text + " ".repeat(width - w);
+
+  // Too long: keep one cell for the ellipsis, then pad again since a wide cluster may leave a gap.
   const cut = fitWidth(text, width - 1);
 
   return cut + "…" + " ".repeat(width - 1 - stringWidth(cut));
@@ -138,6 +155,9 @@ export function sliceCells(text: string, left: number, width: number): string {
   let cut = false;
   let marked = left <= 0;
 
+  // Walk clusters with `used` as the cell where the next one starts. Clusters
+  // wholly left of the window are skipped; the first one in view triggers the
+  // left marker; the first one that no longer fits ends the walk.
   for (const cluster of graphemes(text)) {
     const w = graphemeWidth(cluster);
     const at = used;
@@ -163,6 +183,7 @@ export function sliceCells(text: string, left: number, width: number): string {
     room -= w;
   }
 
+  // Something was hidden on the right: give its last cell to the marker.
   if (cut) out = `${fitWidth(out, width - 1)}…`;
 
   return out;
@@ -187,6 +208,7 @@ export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang:
   let row: StyledText<S>[] = [];
   let used = 0;
 
+  // Close the current row and open the next one with the hanging indent.
   const flush = (): void => {
     rows.push(row);
     row = hang > 0 ? [{ text: " ".repeat(hang), style: blank }] : [];
@@ -194,7 +216,9 @@ export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang:
   };
 
   for (const run of runs) {
+    // Split after every space so each piece is a word plus its trailing spaces.
     for (let word of run.text.split(/(?<= )/u)) {
+      // Move the word down when it does not fit, unless the row is still empty (nothing would be gained).
       if (used + stringWidth(word.trimEnd()) > width && used > hang) flush();
 
       // Wider than the room after the hang: a row's worth at a time, at least one cluster each.
@@ -220,6 +244,7 @@ export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang:
 /** `text` word-wrapped to rows of at most `width` cells (`wrapRuns`); the spaces at a break are left out. */
 export function wrapCells(text: string, width: number): string[] {
   if (width <= 0) return [text];
+  // Wrap as a single unstyled run, then drop the trailing spaces each break left at a row's end.
   const rows = wrapRuns([{ text, style: null }], width, 0, null).map((row) => row.map((run) => run.text).join(""));
 
   return rows.map((row, index) => (index < rows.length - 1 ? row.trimEnd() : row));
@@ -243,6 +268,7 @@ export interface LineLayout {
   readonly units: Uint32Array;
 }
 
+/** Segments `line` once and builds the `LineLayout` prefix sums for it. */
 export function layoutLine(line: string): LineLayout {
   const clusters = graphemes(line);
   const cells = new Uint32Array(clusters.length + 1);
@@ -264,6 +290,8 @@ export function scrollToFit(layout: LineLayout, left: number, col: number, width
   let lo = Math.min(left, col);
   let hi = col;
 
+  // Binary search over `cells`: it is non-decreasing, so the width of
+  // `[mid, col)` shrinks as `mid` grows.
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
 
@@ -297,6 +325,7 @@ export function clusterAt(line: string, codePoints: number): number {
   let seen = 0;
   let index = 0;
 
+  // Count code points cluster by cluster until the column falls inside one.
   for (const cluster of graphemes(line)) {
     seen += [...cluster].length;
 

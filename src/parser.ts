@@ -2,12 +2,23 @@
 // subset of Markdown (headings, bullet lists indented by 2 spaces, paragraphs,
 // fenced code), so a hand-written parser gives exact spans for every token
 // without mapping back from a CommonMark AST. See `docs/grammar.md`.
+//
+// Place in the pipeline: the first step of Markdown → Text IR → SpecIR →
+// resolve/rules. Every keylang command that reads specs (`parse`, `fmt`,
+// `check`, the LSP, the TUI) goes through `parse`. Lines are fed one by one
+// to a `Parser` that keeps a stack of open list items (one per indent
+// level), a buffer of prose, and an open code fence or HTML block; each item
+// line is tokenised by `lex` and turned into a `Node` by its keyword.
+// Other entry points: `keywordsAt` and `roleAt` (completion and hover),
+// `isId`, `isSegment`, `scheduleText`. Positions: offsets in UTF-16 units,
+// columns in code points, spans half-open.
 
 import { diagnostic, type Code, type K005Reason } from "./diag.ts";
 import type { Document, Item, Link, Node, NodeKind, Ref, Section, SectionKind, Token, TokenKind } from "./ir.ts";
 import { kindLabel } from "./ir.ts";
 import type { Pos, Span, Spanned } from "./span.ts";
 
+/** Parses one Markdown file into the Text IR: sections, their items, and the parse diagnostics. Never throws. */
 export function parse(path: string, src: string): Document {
   const p = new Parser(path);
   let offset = 0;
@@ -42,6 +53,7 @@ function splitInclusive(src: string): string[] {
   return out;
 }
 
+/** One source line: its 1-based number, the offset of its first character, and its text without the line ending. */
 class Line {
   readonly no: number;
   readonly start: number;
@@ -53,15 +65,18 @@ class Line {
     this.text = text;
   }
 
+  /** The position of a UTF-16 index into the line's text: absolute offset, 1-based line, 1-based code-point column. */
   pos(b: number): Pos {
     return { offset: this.start + b, line: this.no, col: codePoints(this.text.slice(0, b)) + 1 };
   }
 
+  /** The span between two UTF-16 indexes of the line. */
   span(a: number, b: number): Span {
     return { start: this.pos(a), end: this.pos(b) };
   }
 }
 
+/** The number of Unicode code points in `s` (a surrogate pair counts once). */
 function codePoints(s: string): number {
   let n = 0;
 
@@ -99,6 +114,7 @@ type Ctx =
   | "unknown"
   | `leaf:${NodeKind}`;
 
+/** The position an item under `parent` stands in: section top, under a node of a nesting kind, or a leaf (nothing may nest). */
 function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
   switch (parent) {
     case undefined:
@@ -146,6 +162,7 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
   }
 }
 
+/** The declaration kinds `planned` may name. */
 const PLANNED_KINDS: ReadonlySet<string> = new Set(["fn", "module", "type", "event"]);
 
 /** `trigger event <id>` (ADR 0023 п. 1): the flow of an event's subscribers; the ID is an event, not an entry point's fn. */
@@ -156,6 +173,7 @@ export const TRIGGER_KINDS = ["route", "cron", "consumer", "webhook"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
+/** Whether a word names one of the entry-point kinds of `trigger <kind> <id>`. */
 export function isTriggerKind(word: string): word is TriggerKind {
   return TRIGGER_KINDS.some((kind) => kind === word);
 }
@@ -179,6 +197,7 @@ const CRON_MACRO = /^@(yearly|annually|monthly|weekly|daily|midnight|hourly)$/;
 /** One field of a cron expression: digits, names, `*`, `/`, `,`, `-`, `?`, `L`, `W`, `#`. */
 const CRON_FIELD = /^[0-9A-Za-z*/,?#-]+$/;
 
+/** Whether `text` is a duration such as `15m`. */
 export function isDuration(text: string): boolean {
   return DURATION.test(text);
 }
@@ -191,6 +210,8 @@ export function isDuration(text: string): boolean {
 export function scheduleText(words: readonly string[]): string | null {
   const [one] = words;
 
+  // One word: a duration, a macro, or a quoted cron expression (split and
+  // checked again).
   if (words.length === 1 && one !== undefined) {
     if (DURATION.test(one) || CRON_MACRO.test(one)) return one;
 
@@ -199,11 +220,14 @@ export function scheduleText(words: readonly string[]): string | null {
     return null;
   }
 
+  // Five or six bare words: a cron expression, each field from the cron
+  // alphabet.
   if ((words.length === 5 || words.length === 6) && words.every((word) => CRON_FIELD.test(word))) return words.join(" ");
 
   return null;
 }
 
+/** The rule keywords, allowed at the top of a map and of `# rules`. */
 const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
 /** What a component of `# system` is (system-design Р2): the first word of its line. */
@@ -211,6 +235,7 @@ export const COMPONENT_KINDS = ["client", "cdn", "dns", "lb", "gateway", "servic
 
 export type ComponentKind = (typeof COMPONENT_KINDS)[number];
 
+/** Whether a word is a component kind of `# system`. */
 export function isComponentKind(word: string): word is ComponentKind {
   return COMPONENT_KINDS.some((kind) => kind === word);
 }
@@ -221,6 +246,7 @@ export const DATA_STORES: ReadonlySet<string> = new Set(["db", "cache", "storage
 /** How a component talks to another (Р4): `<verb> <component> [caption…]`. */
 export const RELATION_VERBS = ["calls", "reads", "writes", "publishes", "consumes", "replicates", "uses"] as const;
 
+/** Whether a word is a relation verb of a `# system` component. */
 export function isRelationVerb(word: string): word is (typeof RELATION_VERBS)[number] {
   return RELATION_VERBS.some((verb) => verb === word);
 }
@@ -231,10 +257,12 @@ export const COLUMN_FLAGS: ReadonlySet<string> = new Set(["pk", "unique", "null"
 /** Free-text lines of an interview at the top of `# system` (Р7). */
 const INTERVIEW = ["requirement", "nfr", "estimate", "tradeoff"] as const;
 
+/** Whether a word is an interview line kind of `# system`. */
 function isInterviewKind(word: string): word is (typeof INTERVIEW)[number] {
   return INTERVIEW.some((kind) => kind === word);
 }
 
+/** Whether a position is inside `# system`, where keywords map to system node kinds. */
 function isSystemCtx(ctx: Ctx): boolean {
   return ctx === "system-top" || ctx === "zone" || ctx === "component" || ctx === "table" || ctx === "sequence";
 }
@@ -244,6 +272,7 @@ export function keywordsAt(section: SectionKind, parent: NodeKind | undefined): 
   return keywordsOf(ctxOf(section, parent));
 }
 
+/** The keywords allowed in a position; K004 rejects any other. */
 function keywordsOf(ctx: Ctx): readonly string[] {
   switch (ctx) {
     case "map-top":
@@ -316,6 +345,7 @@ const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: stri
   { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
 ];
 
+/** How a hint names a section. */
 const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`", migration: "`# migration`", system: "`# system`" };
 
 /**
@@ -325,11 +355,14 @@ const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# ru
  * section and several by their sections only (`; \`test\` goes in \`# flow\``).
  */
 function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
+  // No hint when the word is fine here or a keyword nowhere.
   if (keywordsOf(ctx).includes(word)) return "";
   const places = PLACES.filter((place) => keywordsOf(place.ctx).includes(word));
   const [first] = places;
 
   if (first === undefined) return "";
+  // Prefer the places of this section; otherwise one foreign place with its
+  // section, or only the sections when there are several.
   const here = places.filter((place) => place.sections.includes(section));
   let shown: string[];
 
@@ -341,6 +374,7 @@ function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
   return `; \`${word}\` goes ${listed}`;
 }
 
+/** The roles of the rule keywords, shared by a map and `# rules`. */
 const RULE_ROLES = [
   ["layers", "a layer order: a dependency may only point down, to a layer on the left"],
   ["allow", "a rule: the first ID may depend on the rest"],
@@ -350,6 +384,7 @@ const RULE_ROLES = [
   ["no-cycles", "a rule: no import cycle anywhere"],
 ] as const;
 
+/** The hover texts reused by several positions. */
 const TEST_ROLE = "a test that must pass in the `check.tests` report";
 
 const COMPONENT_ROLE = "a component of the system: its kind, name and technology; `check` reads the code a nested `code` line names";
@@ -461,11 +496,14 @@ const ROLES = new Map<Ctx, ReadonlyMap<NodeKind, string>>([
 
 /** The role of an item of `kind` under `parent` (or at the top of `section`), or `null` when it has none there. */
 export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind: NodeKind): string | null {
+  // A bare ref line has a role only in two places: an entry point under
+  // `entry`, a free layer under `layers`.
   if (kind === "ref") return parent === "entry" ? "an entry point: what it reaches counts as used" : "a layer outside the order: a dependency into it is free unless denied";
 
   return ROLES.get(ctxOf(section, parent))?.get(kind) ?? null;
 }
 
+/** The node kind a keyword makes in a position; `unknown` for a word that is no keyword there. */
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
   if (ctx === "migration-top") return kw === "map" ? "migrate" : kw === "dropped" ? "dropped" : "unknown";
 
@@ -518,6 +556,7 @@ function keywordKind(ctx: Ctx, kw: string): NodeKind {
   }
 }
 
+/** What an item needs to know about its parent: kind, ID, the target it refers to, and its keyword's value. */
 interface Parent {
   kind: NodeKind;
   id: string | null;
@@ -526,6 +565,7 @@ interface Parent {
   label: string | null;
 }
 
+/** The state machine that turns lines into sections, nodes, prose and code, with diagnostics. */
 class Parser {
   readonly doc: Document;
   private readonly path: string;
@@ -546,6 +586,7 @@ class Parser {
     this.doc = { path, generated: null, sections: [], diagnostics: [] };
   }
 
+  /** Records a parse diagnostic; only K005 carries a reason. */
   private err(code: Exclude<Code, "K005">, span: Span, msg: string): void;
   private err(code: "K005", span: Span, msg: string, reason: K005Reason): void;
   private err(code: Code, span: Span, msg: string, reason?: K005Reason): void {
@@ -553,6 +594,7 @@ class Parser {
     else if (code !== "K005") this.doc.diagnostics.push(diagnostic(code, this.path, span, msg));
   }
 
+  /** The current section; a file without a heading starts with an implicit map section. */
   private section(): Section {
     if (this.doc.sections.length === 0) {
       this.doc.sections.push({ kind: "map", heading: null, name: null, items: [] });
@@ -561,10 +603,12 @@ class Parser {
     return this.doc.sections[this.doc.sections.length - 1]!;
   }
 
+  /** The kind of the current section (`map` before any heading). */
   private sectionKind(): SectionKind {
     return this.doc.sections.at(-1)?.kind ?? "map";
   }
 
+  /** Moves buffered prose lines into the current section as one prose item. */
   private flushProse(): void {
     if (this.prose.length > 0) {
       this.section().items.push({ type: "prose", lines: this.prose });
@@ -580,6 +624,7 @@ class Parser {
     this.stack[depth]!.description.push({ value: text.slice(start, end), span: l.span(start, end) });
   }
 
+  /** Pops open items deeper than `depth`, attaching each to its parent (or to the section at depth 0). */
   private closeList(depth: number): void {
     while (this.stack.length > depth) {
       const node = this.stack.pop()!;
@@ -590,6 +635,7 @@ class Parser {
     }
   }
 
+  /** Closes whatever is still open at the end of the file and returns the document. */
   finish(): Document {
     if (this.fence) {
       this.section().items.push({ type: "code", lines: this.fence.lines });
@@ -602,9 +648,16 @@ class Parser {
     return this.doc;
   }
 
+  /**
+   * Feeds one line to the state machine. Order matters: an open fence takes
+   * every line until it closes, an open HTML block takes lines until it ends,
+   * then blank lines, the generated marker, headings, fences, bullets,
+   * descriptions and prose are told apart.
+   */
   line(l: Line): void {
     const text = l.text;
 
+    // Inside a code fence: keep the line as is until the closing fence.
     if (this.fence) {
       this.fence.lines.push(text.trimEnd());
 
@@ -616,6 +669,7 @@ class Parser {
       return;
     }
 
+    // Inside an HTML block: its lines are descriptions of an item or prose.
     if (this.html) {
       const lead = leadingWhitespace(text);
       const desc = this.html.desc;
@@ -639,12 +693,14 @@ class Parser {
       return;
     }
 
+    // A blank line ends a paragraph of prose; it does not close list items.
     if (text.trim() === "") {
       this.flushProse();
 
       return;
     }
 
+    // The generated marker counts only as the first non-blank line.
     if (!this.seenContent && text.startsWith("<!--") && text.includes("keylang:generated")) {
       this.seenContent = true;
       this.doc.generated = text.trimEnd();
@@ -670,6 +726,8 @@ class Parser {
     const html = htmlBlockStart(rest);
 
     if (html && !html.end(text)) {
+      // Under an item and within its content column (plus up to 3 spaces),
+      // the block's lines describe that item; at the top level it is prose.
       const underItem = indent >= 2 && this.stack.length > 0;
       const depth = underItem ? Math.min(Math.floor((indent - 2) / 2), this.stack.length - 1) : 0;
       const contentCol = depth * 2 + 2;
@@ -690,6 +748,8 @@ class Parser {
       }
     }
 
+    // Dispatch the line: a `#` heading at column 0, a fence opener, a list
+    // item, a description of an open item, or prose (which closes the list).
     if (indent === 0 && (rest === "#" || rest.startsWith("# ") || rest.startsWith("#\t"))) {
       this.heading(l);
     } else if (opensFence(text, this.stack.length > 0)) {
@@ -717,6 +777,8 @@ class Parser {
     this.flushProse();
     this.closeList(0);
     // The words end before an optional closing sequence of `#` (CommonMark), which fmt does not keep.
+    // Lex the heading's words with the same tokenizer as items; a trailing
+    // `<!-- … -->` becomes the section's comment.
     const { tokens, comment } = lex(new Line(l.no, l.start, l.text.slice(0, headingEnd(l.text))), 1, []);
     const title = renderTokens(tokens);
     const full = l.span(0, l.text.trimEnd().length);
@@ -724,6 +786,8 @@ class Parser {
     let kind: SectionKind = "map";
     let known = true;
 
+    // The first word is the section kind; anything else is K006 and the
+    // section is read as a map.
     if (first === "map" || first === "rules" || first === "flow" || first === "wiring" || first === "migration" || first === "system") kind = first;
     else known = false;
     let name: Spanned<string> | null = null;
@@ -753,6 +817,7 @@ class Parser {
     this.doc.sections.push(comment ? { kind, heading, name, comment, items: [] } : { kind, heading, name, items: [] });
   }
 
+  /** Opens a list item: checks its indentation, closes deeper items, lexes the line and interprets it under its parent. */
   private item(l: Line, wsLen: number, indent: number): void {
     this.flushProse();
     const bulletSpan = l.span(wsLen, wsLen + 1);
@@ -761,6 +826,8 @@ class Parser {
       this.err("K003", bulletSpan, `indentation must be a multiple of 2 spaces, found ${indent}`);
     }
 
+    // Depth is indent / 2; an item may go at most one level deeper than the
+    // open stack, so a jump is reported and clamped.
     let depth = Math.floor(indent / 2);
 
     if (depth > this.stack.length) {
@@ -775,6 +842,7 @@ class Parser {
     this.closeList(depth);
     this.section();
 
+    // Where the item's content starts: after the bullet and its spaces.
     const afterBullet = l.text.slice(wsLen + 1);
     const head = wsLen + 1 + (afterBullet.length - afterBullet.trimStart().length);
 
@@ -819,6 +887,7 @@ class Parser {
     this.stack.push(node);
   }
 
+  /** Gives a lexed item its kind and fields from its first word, or reads it as a bare item when that word is no keyword here. */
   private interpret(n: Node, l: Line, ctx: Ctx, parent: Parent | undefined): void {
     const first = n.tokens[0];
 
@@ -841,6 +910,8 @@ class Parser {
     const rest = n.tokens.slice(1);
     const parentId = parent?.id ?? null;
 
+    // One case per keyword: each reads its own argument shape and reports
+    // K005 with a reason when the shape is wrong.
     switch (n.kind) {
       case "layer":
         this.decl(n, rest, null, false);
@@ -858,6 +929,7 @@ class Parser {
         this.refList(n, rest, n.kind === "allow" || n.kind === "deny" ? 2 : 1);
         break;
       case "exports": {
+        // Exported names are members of the rule module's target.
         const base = parent?.target ?? null;
 
         for (const t of rest) {
@@ -950,6 +1022,7 @@ class Parser {
       }
 
       case "emits": {
+        // An optional `event` word after `emits`.
         const r = rest[0]?.text === "event" ? rest.slice(1) : rest;
         const t = r[0];
         const link = t?.kind === "link" ? parseLink(t) : null;
@@ -977,6 +1050,7 @@ class Parser {
         break;
       case "when":
         if (ctx === "wire-dep") {
+          // In a wiring dependency: `when <condition> → <id>`.
           const arrow = rest.findIndex((t) => t.text === "→" || t.text === "->");
 
           if (arrow > 0) {
@@ -992,6 +1066,7 @@ class Parser {
         break;
       case "then": {
         const t = rest[0];
+        // A single dotted ID is a reference; anything else is prose.
         const id = t?.kind === "link" ? parseLink(t).text : t?.kind === "word" ? t.text : "";
 
         if (rest.length === 1 && id.includes(".") && isId(id)) {
@@ -1007,6 +1082,8 @@ class Parser {
         const kindTok = rest[0];
         const idTok = rest[1];
 
+        // `planned <kind> <id> [signature…]`; the error reason says whether
+        // the ID or the shape was wrong.
         if (!kindTok || !idTok || !PLANNED_KINDS.has(kindTok.text) || !isId(idTok.text)) {
           const badId = kindTok !== undefined && idTok !== undefined && PLANNED_KINDS.has(kindTok.text) && !isId(idTok.text);
           this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
@@ -1033,6 +1110,7 @@ class Parser {
         break;
       case "sequence":
       case "table":
+        // A table may only sit under a data store component.
         if (n.kind === "table" && parent?.kind === "component" && parent.label !== null && !DATA_STORES.has(parent.label)) {
           this.err("K005", first.span, `\`table\` goes under a data store (${[...DATA_STORES].join(", ")}), not under \`${parent.label}\``, "arguments");
         }
@@ -1078,6 +1156,7 @@ class Parser {
       case "test": {
         const file = rest[0];
 
+        // `test <file> ["<name>"]`: the file, then at most one quoted name.
         if (file && file.kind === "word") {
           n.text = spanned(file);
           const tail = rest.slice(1);
@@ -1109,6 +1188,10 @@ class Parser {
     // A keyword of another position says where it goes when the line here is wrong.
     const hint = (): string => (tokens[0]?.kind === "word" ? placeHint(tokens[0].text, ctx, this.sectionKind()) : "");
 
+    // What a bare line means depends on where it stands: an implicit layer
+    // or module name, a module dependency, an entry or free layer, a table
+    // column, a sequence message; anywhere else it is an unknown keyword or
+    // a child of a leaf (K004).
     switch (ctx) {
       case "map-top":
         n.kind = "layer";
@@ -1186,6 +1269,7 @@ class Parser {
     let name = "";
     let link: Link | null = null;
 
+    // The name is a plain word or the text of a code link.
     if (t.kind === "word") name = t.text;
     else if (t.kind === "link") {
       link = parseLink(t);
@@ -1200,6 +1284,8 @@ class Parser {
       return;
     }
 
+    // A layer's ID is its name; any other declaration's ID extends its
+    // parent's ID (none when the parent has none).
     const nameSpan = link ? linkTextSpan(t) : t.span;
     n.name = { value: nfc(name), span: nameSpan };
     n.id = n.kind === "layer" ? n.name.value : parentId === null ? null : `${parentId}.${n.name.value}`;
@@ -1208,6 +1294,8 @@ class Parser {
     const first = tail[0];
     const last = tail.at(-1);
 
+    // Words after the name: a signature for fn/type/event, an error for a
+    // layer or a module.
     if (first && last) {
       if (sig) {
         n.text = { value: renderTokens(tail), span: { start: first.span.start, end: last.span.end } };
@@ -1248,6 +1336,8 @@ class Parser {
    * write it. Without a line kind the hint assumes `fn`.
    */
   private plannedModifier(n: Node, rest: Token[]): boolean {
+    // Only `planned <id>` or `planned <kind> <id>` after the keyword is this
+    // mistake; anything else is left to the normal reading.
     const [word, ...tail] = rest;
 
     if (word?.text !== "planned") return false;
@@ -1275,6 +1365,8 @@ class Parser {
   private typedTrigger(n: Node, rest: Token[]): boolean {
     const [kind, id] = rest;
 
+    // A two-word line whose first word has no dot: that word must be a
+    // trigger kind or `event`.
     if (rest.length !== 2 || !kind || !id || kind.kind !== "word" || kind.text.includes(".")) return false;
 
     if (!isTriggerKind(kind.text) && kind.text !== TRIGGER_EVENT) {
@@ -1289,6 +1381,7 @@ class Parser {
     return true;
   }
 
+  /** Reads exactly one reference from the arguments; none or several are K005. */
   private oneRef(n: Node, rest: Token[]): void {
     if (rest.length === 1) {
       const r = this.makeRef(rest[0]!);
@@ -1301,6 +1394,7 @@ class Parser {
     }
   }
 
+  /** Reads a comma- or space-separated list of references, at least `min` of them. */
   private refList(n: Node, rest: Token[], min: number): void {
     let count = 0;
 
@@ -1319,6 +1413,8 @@ class Parser {
 
   /** `layers a < b < c` */
   private layers(n: Node, rest: Token[]): void {
+    // Even positions are references, odd ones must be `<`; a valid list has
+    // an odd number of tokens.
     rest.forEach((t, i) => {
       if (i % 2 === 1) {
         if (t.text !== "<") this.err("K005", t.span, `expected \`<\`, found \`${t.text}\``, "arguments");
@@ -1366,6 +1462,8 @@ class Parser {
     n.name = { value: nfc(name.text), span: name.span };
     n.text = spanned(type);
 
+    // Flags in any order; `fk` consumes the next token as its
+    // `<table>.<column>` target.
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i]!;
 
@@ -1413,6 +1511,7 @@ class Parser {
    * checked against its snapshot (`migration.from`, business-flows/27).
    */
   private migrationRow(n: Node, l: Line, rest: Token[]): void {
+    // `map <old> → [planned] <new>` with nothing after the new ID.
     const [old, arrow, ...tail] = rest;
     const planned = tail[0]?.text === "planned" ? tail[0] : null;
     const target = planned ? tail[1] : tail[0];
@@ -1431,6 +1530,7 @@ class Parser {
     this.freeText(n, l, rest);
   }
 
+  /** Sets the node's text to the arguments as canonical words; no arguments is K005. */
   private freeText(n: Node, l: Line, rest: Token[]): void {
     const a = rest[0];
     const b = rest.at(-1);
@@ -1446,10 +1546,12 @@ class Parser {
   }
 }
 
+/** A token as a spanned string. */
 function spanned(t: Token): Spanned<string> {
   return { value: t.text, span: t.span };
 }
 
+/** The leading whitespace of a line, measured two ways: keylang's indent and CommonMark's columns. */
 interface Lead {
   raw: string;
   /** Keylang indent: a tab counts as two spaces (§3). */
@@ -1459,6 +1561,7 @@ interface Lead {
   hasTab: boolean;
 }
 
+/** Measures a line's leading spaces and tabs. */
 function leadingWhitespace(text: string): Lead {
   const raw = /^[ \t]*/.exec(text)![0];
   let indent = 0;
@@ -1477,6 +1580,7 @@ function leadingWhitespace(text: string): Lead {
   return { raw, indent, columns, hasTab: raw.includes("\t") };
 }
 
+/** A fence opener: its character, its length, its indent in columns and in spaces. */
 interface FenceOpen {
   char: "`" | "~";
   len: number;
@@ -1492,6 +1596,7 @@ function openFence(text: string): FenceOpen | null {
   const ch = rest[0];
 
   if (ch !== "`" && ch !== "~") return null;
+  // At least three backticks or tildes in a row.
   let len = 0;
 
   while (rest[len] === ch) len++;
@@ -1514,6 +1619,7 @@ function opensFence(text: string, listOpen: boolean): boolean {
   return open !== null && (open.columns < 4 || listOpen);
 }
 
+/** Whether a line closes an open fence: the same character, at least as many, nothing but whitespace after. */
 function closesFence(text: string, open: { char: string; len: number; columns: number }): boolean {
   const lead = leadingWhitespace(text);
 
@@ -1563,6 +1669,8 @@ const HTML_TYPE1_END = /<\/(?:pre|script|style|textarea)>/i;
 
 /** Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line. */
 function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null {
+  // Types 1 to 5 of CommonMark: raw-text tags, comments, processing
+  // instructions, CDATA, declarations; each with its own end marker.
   if (/^<(?:pre|script|style|textarea)(?:[ \t]|>|$)/i.test(rest)) {
     return { end: (line) => HTML_TYPE1_END.test(line) };
   }
@@ -1585,12 +1693,15 @@ function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null
  * the `#` is part of a word.
  */
 function headingEnd(text: string): number {
+  // A closing run of `#` must be preceded by whitespace; trailing
+  // whitespace is ignored first.
   const content = text.replace(/[ \t]+$/, "");
   const closing = /[ \t]+#+$/.exec(content);
 
   return closing ? closing.index : content.length;
 }
 
+/** Whether the text after the indent starts a list item: `-`, `*` or `+` followed by a space or the end of the line. */
 function isBullet(rest: string): boolean {
   const c0 = rest[0];
   const c1 = rest[1];
@@ -1617,7 +1728,6 @@ export function isId(s: string): boolean {
   return s.split(".").every(isSegment);
 }
 
-/** The text of a link token `[text](…)`, i.e. from just after `[`. */
 /** The span of the text inside `[…]`, the same span a link reference uses. */
 export function linkTextSpan(t: Token): Span {
   const text = parseLink(t).text;
@@ -1626,6 +1736,11 @@ export function linkTextSpan(t: Token): Span {
   return { start: { offset: offset + 1, line, col: col + 1 }, end: { offset: offset + 1 + text.length, line, col: col + 1 + codePoints(text) } };
 }
 
+/**
+ * The parts of a link token `[text](target)`: the text, the decoded path,
+ * the target as written (decoded path plus fragment), and the line of a
+ * `#L12` or `#L12-L20` fragment.
+ */
 function parseLink(t: Token): Link {
   const close = t.text.indexOf("](");
   const closeAt = close === -1 ? t.text.length : close;
@@ -1671,6 +1786,7 @@ function lex(l: Line, start: number, errs: [Span, string][]): LexedLine {
   const tokens: Token[] = [];
   let comment: Spanned<string> | null = null;
 
+  // A word runs to the next space, tab or comma.
   const wordEnd = (from: number): number => {
     for (let k = from; k < s.length; k++) {
       const c = s[k];
@@ -1681,6 +1797,8 @@ function lex(l: Line, start: number, errs: [Span, string][]): LexedLine {
     return s.length;
   };
 
+  // Scan left to right: skip whitespace; a `<!--` comment ends the head; a
+  // comma, a link, a quoted string or a plain word is one token each.
   while (i < s.length) {
     const c = s[i]!;
 
@@ -1745,6 +1863,9 @@ function linkEnd(s: string, i: number): number | null {
   const close = s.indexOf("]", i);
 
   if (close <= i + 1 || s[close + 1] !== "(") return null;
+  // Scan the destination, tracking parenthesis depth; whitespace ends it
+  // (no link), an escaped paren is skipped, and the `)` at depth 0 closes it.
+  // An empty destination `[x]()` is no link.
   let depth = 0;
 
   for (let k = close + 2; k < s.length; k++) {
@@ -1769,6 +1890,8 @@ function linkEnd(s: string, i: number): number | null {
  * `[id](href)` counted as its ID, so linking a reference changes nothing.
  */
 export function renderMeaning(node: Node): string {
+  // Link tokens that are references, by their start offset, with the ID to
+  // render in their place.
   const linked = new Map(node.refs.flatMap((ref) => (ref.link ? [[ref.link.span.start.offset, ref.link.text] as const] : [])));
 
   return renderTokens(node.tokens.map((t) => (t.kind === "link" && linked.has(t.span.start.offset) ? { ...t, text: linked.get(t.span.start.offset)! } : t)));

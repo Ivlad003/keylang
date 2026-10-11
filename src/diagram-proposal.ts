@@ -24,6 +24,10 @@
 //
 // What the drawing says that keylang cannot write — a removed connection, a
 // connection between two shapes of the code, a call — is named in `notes`.
+//
+// Pipeline: web editor canvas (JSON) → `parseEditorModel` → compared with
+// `diagramOf` → new spec texts (Markdown) → proposals. Entry points:
+// `parseEditorModel`, `diagramChanges`.
 
 import { withLayers } from "./config.ts";
 import { flowFromDrawio, flowSection, type DrawioCell, type DrawioModel } from "./drawio.ts";
@@ -54,6 +58,7 @@ export interface EditorNode {
   h: number;
 }
 
+/** One connection of the canvas, between two shape keys. */
 export interface EditorEdge {
   key: string;
   kind: string;
@@ -63,6 +68,7 @@ export interface EditorEdge {
   points?: { x: number; y: number }[];
 }
 
+/** One lane of the canvas: a layer (or a drawn `planned:` one) and its box. */
 export interface EditorLane {
   key: string;
   id: string;
@@ -73,6 +79,7 @@ export interface EditorLane {
   h: number;
 }
 
+/** The whole canvas of one view. */
 export interface EditorModel {
   view: string;
   mode?: string;
@@ -84,6 +91,7 @@ export interface EditorModel {
 /** At most this many shapes and connections in one model. */
 export const MAX_MODEL_ITEMS = 5000;
 
+// A JSON number that is not NaN or infinite.
 const finite = (value: JsonValue | undefined): value is number => isJsonNumber(value) && Number.isFinite(value);
 
 type Box = Pick<EditorNode, "x" | "y" | "w" | "h">;
@@ -109,6 +117,7 @@ export function parseEditorModel(value: JsonValue | undefined): EditorModel | st
 
   if (isJsonString(value.mode)) out.mode = value.mode;
 
+  // Validate every shape; the first bad one fails the request with its index and what it needs.
   for (const [i, node] of nodes.entries()) {
     if (!isJsonObject(node) || !isJsonString(node.key) || !isJsonString(node.id) || !isJsonString(node.kind) || !isJsonString(node.label)) return `model.nodes[${i}]: needs key, id, kind and label`;
     const box = boxOf(node);
@@ -139,6 +148,7 @@ export function parseEditorModel(value: JsonValue | undefined): EditorModel | st
     out.edges.push(parsed);
   }
 
+  // Lanes need a key, an ID and a full box; the label defaults to the ID.
   for (const [i, lane] of lanes.entries()) {
     const box = isJsonObject(lane) ? boxOf(lane) : null;
 
@@ -155,6 +165,7 @@ export interface BaseDiagram {
   edges: readonly { from: string; to: string; kind: string }[];
 }
 
+/** Everything `diagramChanges` compares and reads: the canvas, the drawn diagram, the specs and a file reader. */
 export interface ChangeInput {
   model: EditorModel;
   /** The view's diagram; empty for the empty canvas. */
@@ -180,6 +191,7 @@ export interface ChangedTarget {
   shapes: string[];
 }
 
+/** The proposal: the changed spec texts, a keylang.json to print, and notes on what could not be written. */
 export interface DiagramChanges {
   targets: ChangedTarget[];
   /** keylang.json with the new lanes as layers: printed, never written. */
@@ -187,8 +199,10 @@ export interface DiagramChanges {
   notes: string[];
 }
 
+// An ID without its `planned:` prefix.
 const strip = (id: string): string => id.replace(/^planned:/, "");
 
+// Lines that order flow items; structural shapes that a rule line may connect.
 const FLOW_EDGES: ReadonlySet<string> = new Set(["sequence", "emits"]);
 
 const STRUCTURE: ReadonlySet<string> = new Set(["lane", "layer", "module", "fn", "type"]);
@@ -218,6 +232,7 @@ class Targets {
   }
 
   current(target: string): string | null {
+    // Read each target from disk once; later edits build on the latest text.
     const known = this.texts.get(target);
 
     if (known) return known.text;
@@ -236,6 +251,7 @@ class Targets {
   }
 
   changed(): ChangedTarget[] {
+    // Only targets whose text actually changed, sorted by path for a stable proposal.
     return [...this.texts]
       .flatMap(([target, entry]) => (entry.text !== null && entry.text !== entry.before ? [{ target, before: entry.before, text: entry.text, shapes: [...entry.shapes].sort(compareText) }] : []))
       .sort((a, b) => compareText(a.target, b.target));
@@ -244,6 +260,7 @@ class Targets {
 
 /** The section of a flow in the text of its file replaced, the rest byte for byte (CRLF kept). */
 function replaceSection(own: string, section: { text: string; firstLine: number }, edited: string): string {
+  // Swap the section's lines for the edited ones on LF text; restore CRLF when the file used it.
   const lines = own.replace(/\r\n/g, "\n").split("\n");
   const count = section.text.split("\n").length;
   const out = [...lines.slice(0, section.firstLine - 1), ...edited.split("\n"), ...lines.slice(section.firstLine - 1 + count)].join("\n");
@@ -258,6 +275,7 @@ function appendToList(section: string, added: readonly string[]): string {
   const tail = /\n*$/.exec(section)![0];
   let last = -1;
 
+  // Find the last list line of the section.
   for (let i = lines.length - 1; i >= 0; i--) {
     if (/^\s*- /.test(lines[i]!)) {
       last = i;
@@ -303,6 +321,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   const known = (id: string): boolean => snapshot?.nodes[id] !== undefined;
   const triggerFlows = new Map<string, Flow>();
 
+  // The first flow (in spec order) that each trigger starts.
   for (const flow of spec.flows) for (const trigger of flow.triggers) if (!triggerFlows.has(trigger.target.target)) triggerFlows.set(trigger.target.target, flow);
   const entryKinds = new Map((snapshot?.entries ?? []).map((entry) => [entry.id, entry.kind]));
   const flowEdges = model.edges.filter((edge) => FLOW_EDGES.has(edge.kind) && byKey.has(edge.from) && byKey.has(edge.to));
@@ -313,6 +332,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   if (input.flow !== null && mainFlow === null) notes.push(`flow \`${input.flow}\` is not in the specs any more: its changes are not proposed`);
   // A new trigger is a new flow, unless an existing flow starts there (then only `continues` lines go to it).
   const newStarts = model.nodes.filter((node) => node.kind === "start" && !isCode(node.key) && strip(node.id) !== "");
+  // For each new start shape: the existing flow it starts, or a fresh unique flow name.
   const startFlow = new Map<string, string>();
   const usedNames = new Set(spec.flows.map((flow) => flow.name));
 
@@ -335,6 +355,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   const owner = new Map<string, string>();
 
   const reach = (from: string[], flow: string): void => {
+    // Breadth-first along sequence/emits lines; a start shape or a code shape ends the walk (they own themselves).
     const queue = [...from];
 
     while (queue.length > 0) {
@@ -366,6 +387,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
     reach([start.key], name);
   }
 
+  // A canvas shape as a draw.io cell, so the draw.io importer (`flowFromDrawio`) can do the editing.
   const cellOf = (node: EditorNode): DrawioCell => {
     const attrs: DrawioCell["attrs"] = { keylang_kind: STRUCTURE.has(node.kind) && node.kind !== "lane" && node.kind !== "layer" ? "task" : node.kind, keylang_id: strip(node.id) };
 
@@ -392,6 +414,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
     const members = model.nodes.filter((node) => owner.get(node.key) === flow);
     const inside = new Set(members.map((node) => node.key));
     const cells: DrawioCell[] = members.map(cellOf);
+    // Only lines inside the flow; a new `when` without a labelled branch gets its condition on its first line out.
     const branched = new Set<string>();
 
     for (const edge of flowEdges) {
@@ -507,6 +530,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   const rulesFile = `${input.specDir === "" ? "" : `${input.specDir}/`}rules.md`;
   const laneIds = new Map(model.lanes.map((lane) => [lane.key, lane.id]));
 
+  // A rule's end: a lane's layer, or a structural shape with an ID.
   const endId = (key: string): string | null => {
     const lane = laneIds.get(key);
 
@@ -518,6 +542,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
 
   const written = new Set<string>();
 
+  // Rules the specs already have, so the same line is not proposed twice.
   for (const rule of spec.rules) if (rule.kind === "dependency") for (const to of rule.to) written.add(`${rule.effect} ${rule.from.target} ${to.target}`);
   const ruleLines: string[] = [];
   const ruleEdges: string[] = [];
@@ -547,6 +572,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
   const order = spec.rules.find((rule) => rule.kind === "layers");
 
   if (order !== undefined && order.kind === "layers") {
+    // Lanes top to bottom: a lane's place among them decides its place in the order.
     const lanes = [...model.lanes].sort((a, b) => a.y - b.y || compareText(a.key, b.key));
     const layerLines: string[] = [];
 
@@ -579,6 +605,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
     else notes.push(done.error);
   }
 
+  // A drawn call cannot be proposed: calls come from the code.
   for (const edge of model.edges) {
     if (edge.kind === "call" && !(isCode(edge.from) && isCode(edge.to)) && (owner.has(edge.from) || owner.has(edge.to))) notes.push(`call \`${edge.key}\`: a call is what the code does; draw a step instead`);
   }
@@ -588,6 +615,7 @@ export function diagramChanges(input: ChangeInput): DiagramChanges {
 
 /** A glob for a new layer like the others' (`src/<layer>/**` when they are `src/<their name>/**`), else `src/<layer>/**`. */
 function globFor(layer: string, layers: Readonly<Record<string, readonly string[]>>): string {
+  // Mirror the first existing layer whose glob is `<prefix>/<name>/**` or `<name>/**`.
   for (const [name, globs] of Object.entries(layers)) {
     for (const glob of globs) {
       const at = glob.indexOf(`/${name}/`);

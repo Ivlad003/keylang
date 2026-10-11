@@ -1,6 +1,11 @@
 // Minimal glob matching for `keylang.json` (no dependency, no experimental
 // Node API). Supports `**`, `*`, `?` and `{a,b}`; `[` is a literal (Next.js
 // `app/[id]/page.tsx`). Paths are POSIX-relative.
+//
+// Used on the code side (source → FileFacts → graph → map) to place files in
+// layers and modules from `keylang.json`, and by rules that name paths.
+// Entry points: `globToRegExp`, `matchesGlob`, `firstMatchingGlob`,
+// `globDirectory`, `globPrefix`.
 
 /** Compiled globs: a map matches every file against every layer glob, so each compiles once per process. */
 const compiled = new Map<string, RegExp>();
@@ -15,6 +20,7 @@ export function globToRegExp(glob: string): RegExp {
   if (re === undefined) {
     re = new RegExp(`^${source(glob)}$`);
 
+    // Crude bound: drop the whole cache rather than track recency.
     if (compiled.size >= COMPILED_LIMIT) compiled.clear();
     compiled.set(glob, re);
   }
@@ -26,6 +32,7 @@ export function globToRegExp(glob: string): RegExp {
 function source(glob: string): string {
   let re = "";
 
+  // Translate one character at a time; wildcards never cross a `/` except `**`.
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
 
@@ -47,6 +54,7 @@ function source(glob: string): string {
     } else if (c === "{") {
       const close = closingBrace(glob, i);
 
+      // An unclosed `{` is a literal brace, not an error.
       if (close === -1) {
         re += "\\{";
       } else {
@@ -61,6 +69,7 @@ function source(glob: string): string {
   return re;
 }
 
+/** Index of the `}` that closes the `{` at `open`, counting nested braces; -1 when unclosed. */
 function closingBrace(glob: string, open: number): number {
   let depth = 0;
 
@@ -92,10 +101,12 @@ function splitAlternatives(body: string): string[] {
   return out;
 }
 
+/** Escape regex metacharacters; `[` is among them, so a bracket in a path stays literal. */
 function escape(s: string): string {
   return s.replace(/[.+^$()|[\]\\{}]/g, "\\$&");
 }
 
+/** True when the whole POSIX-relative `path` matches `glob`. */
 export function matchesGlob(path: string, glob: string): boolean {
   return globToRegExp(glob).test(path);
 }
@@ -117,6 +128,7 @@ export function globDirectory(globs: readonly string[]): string | null {
   let dir: string | null = null;
 
   for (const glob of globs) {
+    // Matches `D/**` or `D/**/<one segment>` where D is plain path segments without wildcards or brackets.
     const m = /^((?:[^*?{}[\]/]+\/)*[^*?{}[\]/]+)\/\*\*(?:\/[^/]*)?$/.exec(glob);
 
     if (!m || (dir !== null && dir !== m[1])) return null;
@@ -132,6 +144,7 @@ export function globPrefix(glob: string): string {
   const fixed: string[] = [];
 
   for (const p of parts) {
+    // Stop at the first segment holding a wildcard or brace alternative.
     if (/[*?{]/.test(p)) break;
     fixed.push(p);
   }

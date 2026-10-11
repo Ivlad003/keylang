@@ -1,6 +1,8 @@
 // Colours of the TUI (256-colour palette) and the per-line highlight of raw
 // keylang Markdown: keywords, declared names and references coloured by the
 // layer their ID starts with, code links, comments, headings, code fences.
+// Layer: TUI drawing. `view.ts` applies `highlight` to the editor lines; the
+// styles here are shared by every panel. Highlight reads the Markdown IR, never re-parses.
 
 import type { Document, Node } from "../ir.ts";
 import { sectionNodes, walk } from "../ir.ts";
@@ -8,6 +10,7 @@ import type { Span } from "../span.ts";
 import type { Style } from "./screen.ts";
 import type { Mark } from "./evidence.ts";
 
+/** The named styles of every TUI surface: editor text, panels, status line, popups, merge diff. */
 export const THEME = {
   text: { fg: 252 },
   prose: { fg: 250 },
@@ -33,6 +36,7 @@ export const THEME = {
   hint: { fg: 180 },
 } satisfies Record<string, Style>;
 
+/** The style of each evidence mark in the gutter and in reports. */
 export const MARK_STYLE: Record<Mark, Style> = {
   ok: { fg: 71, bold: true },
   fail: { fg: 196, bold: true },
@@ -42,12 +46,14 @@ export const MARK_STYLE: Record<Mark, Style> = {
   question: { fg: 75, bold: true },
 };
 
+/** Colours given to layers in config order; they cycle after ten. */
 const LAYER_COLORS = [39, 78, 214, 141, 203, 44, 179, 111, 168, 150];
 
 /** Colour of an ID by the layer it starts with, in the order of `keylang.json`. */
 export function idStyle(id: string, layers: readonly string[]): Style {
   const head = id.split(".")[0] ?? "";
 
+  // External packages are grey; an unknown head (not a configured layer) gets one fixed colour.
   if (head === "external") return { fg: 245 };
   const at = layers.indexOf(head);
 
@@ -66,6 +72,7 @@ export function highlight(doc: Document | null, text: string, layers: readonly s
   const out = new Map<number, Run[]>();
   const lines = text.split("\n");
 
+  // Collect runs per line, dropping empty ones.
   const add = (line: number, run: Run): void => {
     if (run.end <= run.start) return;
     let list = out.get(line);
@@ -74,11 +81,15 @@ export function highlight(doc: Document | null, text: string, layers: readonly s
     list.push(run);
   };
 
+  // IR spans are 1-based in `col`; runs are 0-based. A span that crosses lines
+  // is coloured only on its first line, to its end.
   const addSpan = (span: Span, style: Style): void => {
     if (span.start.line === span.end.line) add(span.start.line, { start: span.start.col - 1, end: span.end.col - 1, style });
     else add(span.start.line, { start: span.start.col - 1, end: [...(lines[span.start.line - 1] ?? "")].length, style });
   };
 
+  // Pass 1, line-based: code fences (the fence lines and everything between),
+  // headings, HTML comments, and prose (any non-list, non-blank line).
   let fence = false;
   lines.forEach((content, index) => {
     const line = index + 1;
@@ -93,6 +104,8 @@ export function highlight(doc: Document | null, text: string, layers: readonly s
     else if (!/^\s*-\s/.test(content) && content.trim() !== "") add(line, { start: 0, end: width, style: THEME.prose });
   });
 
+  // Pass 2, from the IR: keywords, names, links, references and comments of
+  // every node. These come later, so they override the line styles.
   if (!doc) return out;
 
   const visit = (node: Node): void => {
@@ -102,6 +115,7 @@ export function highlight(doc: Document | null, text: string, layers: readonly s
 
     if (node.link) addSpan(node.link.span, THEME.link);
 
+    // A name that also has a code link is underlined, overriding the plain name run above.
     if (node.name && node.link && node.id) addSpan(node.name.span, { ...idStyle(node.id, layers), bold: true, underline: true });
 
     for (const ref of node.refs) addSpan(ref.span, idStyle(ref.target, layers));

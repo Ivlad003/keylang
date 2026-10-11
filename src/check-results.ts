@@ -2,14 +2,19 @@
 // list, a diagnostic joined with the verdict it explains. Shared by the CLI,
 // the MCP server and the TUI (the check operation and the findings panel), so
 // an agent sees exactly what CI sees.
+// Pipeline: diagnostics (diag.ts) + rule/flow verdicts (verdict.ts) →
+// CheckResult list, human lines and summary counts → check-format.ts.
+// Entry points: `checkResults`, `checkReport`, `checkExitCode`.
 
 import { createHash } from "node:crypto";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic, type K005Reason } from "./diag.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
+// Where a verdict's evidence came from: syntax, a test report or a trace.
 type Provenance = NonNullable<Verdict["evidence"]>["provenance"];
 
+/** One row of `check --format json`: a diagnostic or a verdict, located in the spec and bound to a snapshot. */
 export interface CheckResult {
   criterion: string;
   area: string;
@@ -35,6 +40,9 @@ export interface CheckResult {
 
 /** Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance. */
 export function checkResults(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckResult[] {
+  // Every diagnostic becomes a result. If a verdict reports the same finding, the
+  // diagnostic takes over that verdict's criterion, area, hash and evidence, so
+  // the pair shows up once with the verdict's identity.
   const fromDiags = diags.map((diag): CheckResult => {
     const owner = verdicts.find((verdict) => sameFinding(verdict, [diag]));
 
@@ -48,6 +56,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       line: diag.span.start.line,
       col: diag.span.start.col,
       code: diag.code,
+      // Without a spec line to hash, the code and message still give a stable id.
       specHash: owner?.specHash ?? diag.specHash ?? createHash("sha256").update(`${diag.code}\0${diag.message}`).digest("hex"),
       ...(owner?.evidence ?? { provenance: "syntactic" }),
     };
@@ -57,6 +66,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
     return result;
   });
 
+  // Verdicts already represented by a diagnostic above are dropped to avoid duplicates.
   const fromVerdicts = verdicts.flatMap((verdict): CheckResult[] => {
     if (sameFinding(verdict, diags)) return [];
 
@@ -106,22 +116,27 @@ export interface CheckCounts {
 /** Evidence channels whose `ok` the human lines keep. */
 const CHANNELS: ReadonlySet<string> = new Set(["ID", "static", "tests", "trace", "migration"]);
 
+/** The results, human lines and summary counts of one check run. */
 export function checkReport(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckReport {
   const own = verdicts.filter((verdict) => !sameFinding(verdict, diags));
   // One hole leaves every rule whose area holds it unverified: the summary counts it once.
   const fromHoles = verdicts.filter((verdict) => verdict.verdict === "unverified" && verdict.hole !== undefined);
   const holes = new Set(fromHoles.map((verdict) => verdict.hole)).size;
 
+  // Failures count error diagnostics plus failed verdicts that no diagnostic
+  // already reports; unverified and ok count every verdict.
   const counts: CheckCounts = {
     fail: diags.filter(isError).length + own.filter((verdict) => verdict.verdict === "fail").length,
     unverified: verdicts.filter((verdict) => verdict.verdict === "unverified").length,
     ok: verdicts.filter((verdict) => verdict.verdict === "ok").length,
   };
 
+  // Show the hole tally only when holes are shared, i.e. it says something new.
   if (fromHoles.length > holes) counts.holes = { unverified: fromHoles.length, holes };
 
   return {
     results: checkResults(verdicts, snapshotId, diags),
+    // Human output hides plain `ok` verdicts except for evidence channels, where an ok is news.
     lines: [...diags.map(formatDiagnostic), ...own.flatMap((verdict) => (verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion) ? [formatVerdict(verdict)] : []))],
     counts,
   };

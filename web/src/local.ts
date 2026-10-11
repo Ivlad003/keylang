@@ -1,3 +1,5 @@
+// Web page (web/src), the in-browser mode; entry point `openLocal`, which
+// resolves with a `Transport` the rest of the page uses like the HTTP one.
 // `app.html`: the diagram page over a folder the person opens in the tab — by
 // dropping it or choosing it — analysed by keylang's own pipeline in a Worker
 // (web/worker/analysis.ts). The files are read here, sent to the worker once,
@@ -19,8 +21,10 @@ const MAX_GIT = 512 * 1024 * 1024;
 /** Files larger than this are no source keylang reads. */
 const MAX_FILE = 4 * 1024 * 1024;
 
+// File extensions of binary formats (images, archives, compiled code, fonts, media, databases): never source to read.
 const BINARY = /\.(png|jpe?g|gif|webp|ico|bmp|tiff?|psd|pdf|zip|gz|tgz|bz2|xz|7z|rar|jar|war|class|pyc|so|dylib|dll|exe|bin|wasm|woff2?|ttf|otf|eot|mp[34]|mov|avi|webm|ogg|wav|flac|sqlite|db)$/i;
 
+/** A file of the folder with its path, which still includes the folder's own name as the first segment. */
 interface Picked {
   path: string;
   file: File;
@@ -35,6 +39,7 @@ const inGit = (path: string): boolean => path.split("/")[1] === ".git";
 function pick(path: string, file: File): Picked | null {
   const parts = path.split("/");
 
+  // Only the directory segments are checked: a file that happens to be named `node_modules` is kept.
   if (parts.slice(0, -1).some((part) => SKIPPED_DIRS.has(part))) return null;
 
   // Packfiles and objects are binary and large: `.git` is limited as a whole, not file by file.
@@ -56,12 +61,14 @@ function withinGitLimit(picked: Picked[]): GitLimited {
   return { files: picked.filter((p) => !inGit(p.path)), note: `.git is ${Math.round(size / 1048576)} MB, over ${MAX_GIT / 1048576} MB: «Зміни» is off` };
 }
 
+// Type guards for the File and Directory Entries API, which types a dropped item only as `FileSystemEntry`.
 const isFileEntry = (entry: FileSystemEntry): entry is FileSystemFileEntry => entry.isFile;
 
 const isDirectoryEntry = (entry: FileSystemEntry): entry is FileSystemDirectoryEntry => entry.isDirectory;
 
 /** The files under a dropped directory entry, by their path below it. */
 async function walkEntry(entry: FileSystemEntry, prefix: string, out: Picked[]): Promise<void> {
+  // A file: wrap its callback API in a promise and keep it unless it lies in a skipped directory.
   if (isFileEntry(entry)) {
     const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
     const picked = pick(`${prefix}${entry.name}`, file);
@@ -71,6 +78,7 @@ async function walkEntry(entry: FileSystemEntry, prefix: string, out: Picked[]):
     return;
   }
 
+  // A skipped directory is not even listed, which saves walking `node_modules`.
   if (!isDirectoryEntry(entry) || SKIPPED_DIRS.has(entry.name)) return;
   const reader = entry.createReader();
 
@@ -92,6 +100,7 @@ interface RootedFiles {
 
 /** The picked files below the folder's own name: `repo/src/a.ts` → `src/a.ts`. */
 function underRoot(picked: Picked[]): RootedFiles {
+  // The first file's top segment names the folder; a file outside it (none, in practice) is dropped.
   const name = picked[0]?.path.split("/")[0] ?? "repository";
 
   return { name, files: picked.flatMap((p) => (p.path.startsWith(`${name}/`) ? [{ ...p, path: p.path.slice(name.length + 1) }] : [])) };
@@ -106,6 +115,7 @@ class LocalTransport implements Transport {
 
   constructor(worker: Worker) {
     this.worker = worker;
+    // Route each reply to the request with its id; other worker messages belong to the loading phase.
     worker.addEventListener("message", (event: MessageEvent<FromWorker>) => {
       const message = event.data;
 
@@ -116,6 +126,7 @@ class LocalTransport implements Transport {
   }
 
   send(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams): Promise<Reply> {
+    // The browser analysis cannot write the folder, so every write is refused as the server refuses a viewer.
     if (method !== "GET") return Promise.resolve({ status: 403, type: "application/json", text: JSON.stringify({ error: "read-only: the analysis in the browser writes nothing" }) });
     const id = this.next++;
 
@@ -127,6 +138,7 @@ class LocalTransport implements Transport {
   }
 }
 
+// The drop zone's styles, injected by `openLocal`.
 const STYLE = `
 #open-repo { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(245, 247, 248, 0.97); font: 14px system-ui, sans-serif; color: #263238; }
 #open-repo .drop { width: min(560px, calc(100vw - 32px)); padding: 32px 24px; border: 2px dashed #90a4ae; border-radius: 10px; background: #ffffff; text-align: center; }
@@ -151,6 +163,7 @@ export function openLocal(): Promise<Transport> {
   input.type = "file";
   input.id = "open-repo-input";
   input.multiple = true;
+  // `webkitdirectory` makes the file input pick a whole folder, with each file's path in `webkitRelativePath`.
   input.setAttribute("webkitdirectory", "");
   const progress = make("div", { className: "progress" });
 
@@ -177,6 +190,7 @@ export function openLocal(): Promise<Transport> {
       progress.className = error ? "progress error" : "progress";
     };
 
+    // Reads the picked files, hands them to a fresh Worker, and waits for its `ready`; one analysis at a time.
     const analyse = async (all: Picked[]): Promise<void> => {
       if (busy) return;
       const { files: picked, note } = withinGitLimit(all);
@@ -187,11 +201,13 @@ export function openLocal(): Promise<Transport> {
       report(`reading ${files.length} files of ${name}…`);
 
       try {
+        // Readable files go as bytes; the rest only as stat data, so git can still tell they exist and whether they changed.
         const read = files.filter((p) => p.read);
         const data = await Promise.all(read.map(async (p) => ({ path: p.path, data: await p.file.arrayBuffer(), mtime: p.file.lastModified })));
         const unread: UnreadFile[] = files.flatMap((p) => (p.read ? [] : [{ path: p.path, size: p.file.size, mtime: p.file.lastModified, binary: BINARY.test(p.path) }]));
         const worker = new Worker(new URL("assets/analysis.js", location.href));
 
+        // The loading phase: progress goes to the drop zone, and `failed` or a start error rejects.
         const ready = await new Promise<FromWorker & { type: "ready" }>((done, fail) => {
           worker.addEventListener("error", (event) => fail(new Error(event.message || "the analysis worker failed to start")));
           worker.addEventListener("message", (event: MessageEvent<FromWorker>) => {
@@ -202,20 +218,24 @@ export function openLocal(): Promise<Transport> {
             else if (message.type === "ready") done(message);
           });
           const load: ToWorker = { type: "load", name, files: data, unread };
+          // Transfer the buffers instead of copying them: a repository can be hundreds of MB.
           worker.postMessage(load, data.map((d) => d.data));
         });
 
+        // Ready: the drop zone goes, and the page continues over the worker's transport.
         overlay.remove();
         document.title = `keylang · ${name}`;
         document.body.dataset["repository"] = name;
         resolve(new LocalTransport(worker));
         document.getElementById("status")!.textContent = `${name}: ${ready.files} files, ${ready.nodes} IDs (${ready.languages.join(", ") || "no languages"})${note ? ` · ${note}` : ""} — pick a view on the left`;
       } catch (error) {
+        // Free the zone for another folder; the failed worker is dropped (not terminated).
         busy = false;
         report(`${error instanceof Error ? error.message : String(error)}\nopen another folder, or reload the page`, true);
       }
     };
 
+    // Chosen through the file input: the browser has already listed the folder.
     input.addEventListener("change", () => {
       const picked = [...(input.files ?? [])].flatMap((file) => pick(file.webkitRelativePath || file.name, file) ?? []);
       void analyse(picked);
@@ -225,6 +245,7 @@ export function openLocal(): Promise<Transport> {
       drop.classList.add("over");
     });
     drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    // Dropped: take the first directory among the items and walk it ourselves.
     drop.addEventListener("drop", (event) => {
       event.preventDefault();
       drop.classList.remove("over");

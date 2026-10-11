@@ -3,6 +3,7 @@
 // module level by code the read-only pipeline never calls; a call says why it
 // cannot run here instead of doing something else.
 
+/** A stand-in that throws, naming what is missing, whenever it is called. */
 function unavailable(what: string): () => never {
   return () => {
     throw new Error(`${what} is not available in the browser`);
@@ -25,6 +26,7 @@ export const execSync = unavailable("execSync");
 export class ChildProcess {}
 
 // node:os
+// Fixed, harmless values: code that reads them at load time gets a path, never a real one.
 export const homedir = (): string => "/home/keylang";
 
 export const tmpdir = (): string => "/tmp";

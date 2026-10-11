@@ -1,6 +1,10 @@
 // Reports of the operations that read the specs against the code: feature
 // readiness, check, an explained edge, parse, a trace plan, the C4 diagram,
 // and the export of a finished report.
+// Also the list of entry points (`keylang entries`).
+//
+// Layer: TUI reports, joined into one table by `records.ts`; the payloads come
+// from the shared operations (`operations.ts`), the same the CLI prints.
 
 import { relative, resolve } from "node:path";
 import { toPosix } from "../../config.ts";
@@ -13,6 +17,7 @@ import { FINDING_GLYPH, findingRow } from "../findings.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, outcomeRow, shortId, textRows, WARNING, type Report, type ReportRow } from "./rows.ts";
 
+/** The operation kinds `CHECK_REPORTS` describes. */
 type CheckKind = "feature" | "check" | "explain-edge" | "export" | "parse" | "trace-plan" | "entries" | "export-c4";
 
 /** One gap or hint of a feature report, as the readiness screen lists it. */
@@ -24,6 +29,7 @@ export interface FeatureItem {
 
 /** The gaps and hints of a feature report up the ladder, a stage's gaps before its hints: the rows Tab and the arrows select. */
 export function featureItems(report: FeatureReport): FeatureItem[] {
+  // Walk the ladder in order so the rows read from the earliest stage that still needs work.
   return STAGES.flatMap((stage) => [
     ...report.gaps.filter((gap) => gap.stage === stage).map((item) => ({ item, hint: false })),
     ...report.hints.filter((hint) => hint.stage === stage).map((item) => ({ item, hint: true })),
@@ -40,6 +46,7 @@ function infoSummary(items: readonly FeatureInfo[]): string {
   if (items.length === 0) return "—";
   const counts = new Map<string, number>();
 
+  // Count the verdicts; the map keeps the order each verdict was first seen.
   for (const item of items) counts.set(item.verdict, (counts.get(item.verdict) ?? 0) + 1);
 
   return [...counts].map(([verdict, count]) => `${verdict} ${count}`).join(", ");
@@ -65,6 +72,7 @@ function edgeItems(payload: ExplainEdgePayload): { file: string; line: number; c
     return payload.edges.map(({ direction, edge }) => ({ file: edge.file ?? "", line: edge.line, col: edge.col, text: `${direction === "forward" ? "→" : "←"} ${edgeLine(edge)}` }));
   }
 
+  // Without edges, the unresolved constructs are the evidence of why absence is not proven.
   return payload.holes.map((hole) => ({ file: hole.file, line: hole.line, col: hole.col, text: holeLine(hole) }));
 }
 
@@ -73,6 +81,7 @@ function c4Label(request: ExportC4Request): string {
   return ["export c4", `--format ${request.format}`, `--level ${request.level}`, ...(request.layer !== undefined ? [`--layer ${request.layer}`] : []), ...(request.out !== undefined ? [`--out ${request.out}`] : [])].join(" ");
 }
 
+/** The F6 reports of the reading operations: feature, check, explain-edge, export, parse, trace-plan, entries, export-c4. */
 export const CHECK_REPORTS = {
   feature: {
     label: (request) => `feature ${request.slug}`,
@@ -91,6 +100,7 @@ export const CHECK_REPORTS = {
 
       const items = featureItems(report);
 
+      // One group per stage that has items; `index` is the item's place in the flat Tab list.
       for (const stage of STAGES) {
         const here = items.flatMap((entry, index) => (entry.item.stage === stage ? [{ ...entry, index }] : []));
 
@@ -152,9 +162,11 @@ export const CHECK_REPORTS = {
       if (options.withoutCode) rows.push({ text: "  specs outside the spec directory: checked on their own, without the code", style: MUTED });
 
       for (const path of payload.notSpecs) rows.push({ text: `  ${path}: the explained map and saved explanations are not specs; skipped`, style: MUTED });
+      // Every result is a selectable row; passing ones are muted so failures stand out.
       payload.results.forEach((item, index) => {
         rows.push({ text: `${FINDING_GLYPH[item.verdict]} ${findingRow(item)}`, style: index === view.selected ? THEME.selected : item.verdict === "ok" ? MUTED : THEME.panel, gap: index });
       });
+      // Unresolved constructs are only counted here; `explain-edge` lists them.
       const unresolved = payload.coverage.filter(leavesUnresolved).length;
 
       if (unresolved > 0) rows.push({ text: `coverage: ${unresolved} unresolved construct(s) in the code`, style: MUTED });
@@ -196,6 +208,7 @@ export const CHECK_REPORTS = {
         rows.push({ text: `  not proven absent: ${payload.holes.length} unresolved construct(s) in ${payload.from} could form one`, style: WARNING });
       }
 
+      // Each item may be followed by an ambiguity note; only forward/backward edges (not holes) have candidates.
       const items = edgeItems(payload);
       items.forEach((item, index) => {
         rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index });

@@ -3,6 +3,9 @@
 // webhooks and queues of the current snapshot, read-only. One text for the
 // CLI and the F6 report, one JSON shape for `--json` and MCP. A view (ADR
 // 0014); no integration is ever contacted.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over source →
+// FileFacts → snapshot; entry point: `runIntegrations`.
 
 import { isAbsolute } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
@@ -20,6 +23,8 @@ import type { IntegrationsRequest, OperationContext, OperationEnvelope } from ".
 export async function runIntegrations(request: IntegrationsRequest, context: OperationContext): Promise<OperationEnvelope<"integrations">> {
   if (!isAbsolute(request.root)) return empty("integrations", "failed", 2, "integrations: root must be an absolute path");
 
+  // Each await is a point where the caller may have cancelled; check before
+  // doing more work.
   if (context.signal?.aborted) return empty("integrations", "cancelled", null);
   context.onProgress?.({ text: "reading a fresh snapshot of the saved code" });
   let analyzed: Analysis;
@@ -36,6 +41,9 @@ export async function runIntegrations(request: IntegrationsRequest, context: Ope
   if (snapshot === null) return empty("integrations", "failed", 2, "integrations: no code to read (`languages` in keylang.json is empty)");
   context.onProgress?.({ text: "matching calls against resources/integrations.json" });
 
+  // Match the snapshot's calls against the shipped catalogue of client and
+  // webhook signatures; flows that already name a trigger are passed so the
+  // report can tell specified integrations from unspecified ones.
   try {
     const report = await findIntegrations(analyzed.config, snapshot, loadIntegrations(), specifiedTriggers(analyzed.spec.flows));
 

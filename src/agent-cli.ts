@@ -9,6 +9,12 @@
 //
 // The effective agent: `KEYLANG_AGENT` > agents.json "use" > keylang.json
 // `agent`. This module never imports `llm.ts` (no-cycles): `llm.ts` wraps it.
+//
+// Layer: the model boundary used by explain, draft and discovery (via llm.ts).
+// Sections: settings (agents.json, effective agent), binaries (PATH, presets,
+// versions), invocation (pure: the argv/env/stdin per preset), answer parsing,
+// running (process groups, timeouts, cancel). Entry points: `resolveAgent`,
+// `cliClient`, `probeAgentClis`, `invocation`, `parseResultLine`.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -18,10 +24,12 @@ import { StringDecoder } from "node:string_decoder";
 import { AGENT_CLI_PRESETS, AGENT_FORMS, isAgent } from "./config.ts";
 import { isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 
+// An environment as a plain map; tests pass their own instead of process.env.
 type Env = Readonly<Record<string, string | undefined>>;
 
 type Preset = (typeof AGENT_CLI_PRESETS)[number];
 
+/** Whether `name` is one of the built-in agent CLI presets. */
 function isPreset(name: string): name is Preset {
   return AGENT_CLI_PRESETS.some((preset) => preset === name);
 }
@@ -44,6 +52,7 @@ export interface EffectiveAgent {
   source: AgentSource | null;
 }
 
+/** One request to the model: the system text and the user prompt. */
 export interface CliRequest {
   system: string;
   prompt: string;
@@ -58,6 +67,7 @@ export interface CliCallOptions {
   onModel?: (model: string) => void;
 }
 
+/** A ready-to-call agent CLI: its name, model and binary, and the call itself. */
 export interface CliClient {
   /** `cli:claude:opus`. */
   agent: string;
@@ -76,11 +86,13 @@ export class CliCancelled extends Error {
   }
 }
 
+// The only placeholders a user's command may contain.
 const PLACEHOLDERS = new Set(["{prompt_file}", "{model}"]);
 
 /** Linux `MAX_ARG_STRLEN` is 128 KiB per argument: Cursor's prompt is one. */
 const CURSOR_PROMPT_LIMIT = 120 * 1024;
 
+// Bounds on a run: stdout size, kept stderr tail, SIGTERM→SIGKILL grace, and `--version` timeout.
 const OUTPUT_LIMIT = 16 * 1024 * 1024;
 
 const STDERR_TAIL = 4096;
@@ -89,8 +101,10 @@ const KILL_GRACE_MS = 2000;
 
 const VERSION_TIMEOUT_MS = 5000;
 
+// Cursor's CLI prints a dated build with a commit hash (`2025.09.17-abc1234`); other `agent` binaries do not.
 const CURSOR_VERSION = /^\d{4}\.\d{2}\.\d{2}-[0-9a-f]{7,}/;
 
+/** The path of the user's agents.json under `home`. */
 export function agentsFile(home: string): string {
   return join(home, ".config/keylang/agents.json");
 }
@@ -116,6 +130,7 @@ export function parseAgentSettings(file: string, value: JsonValue): AgentSetting
   if (!isJsonObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
   const settings: AgentSettings = { use: null, clis: {} };
 
+  // Strict: only `use` and `clis` are known; anything else is a typo worth an error.
   for (const [key, v] of Object.entries(value)) {
     if (key === "use") {
       if (!isJsonString(v) || !isAgent(v)) throw new Error(`${file}: \`use\` must be ${AGENT_FORMS}, got ${shown(v)}`);
@@ -135,6 +150,7 @@ function shown(value: JsonValue | undefined): string {
   return JSON.stringify(value) ?? String(value);
 }
 
+/** One `clis.<name>` entry, validated: a `bin` override for a preset, or a full `command` for a user CLI. */
 function cliDefinition(file: string, name: string, def: JsonValue): CliDefinition {
   const field = `clis.${name}`;
 
@@ -165,6 +181,7 @@ function cliDefinition(file: string, name: string, def: JsonValue): CliDefinitio
   const parts = command;
 
   if (parts[0] === "") throw new Error(`${file}: \`${field}.command[0]\` must name the binary`);
+  // Every `{…}` in the command must be a known placeholder.
   parts.forEach((part, i) => {
     for (const placeholder of part.match(/\{[^{}]*\}/g) ?? []) {
       if (!PLACEHOLDERS.has(placeholder)) throw new Error(`${file}: \`${field}.command[${i}]\`: unknown placeholder \`${placeholder}\` (use {prompt_file}, {model}, or stdin)`);
@@ -232,6 +249,7 @@ export function cliClient(agent: string, options: { root: string; env: Env; home
   const preset = isPreset(name) ? name : null;
   let runner: Runner;
 
+  // A user CLI must be defined with a `command` whose binary is on PATH; a preset may override its binary.
   if (preset === null) {
     if (defined === undefined || !("command" in defined)) return { missing: `agent \`${agent}\`: no CLI \`${name}\`: the presets are ${AGENT_CLI_PRESETS.join(", ")}; define others in ${agentsFile(options.home)} ("clis": {"${name}": {"command": [...]}})` };
     const bin = findBinary(defined.command[0]!, options.env);
@@ -257,6 +275,7 @@ export function cliClient(agent: string, options: { root: string; env: Env; home
   };
 }
 
+// How to install each preset, for the missing-binary message.
 const INSTALL: Record<Preset, string> = {
   claude: "install Claude Code (https://claude.com/claude-code)",
   codex: "install Codex CLI (https://github.com/openai/codex)",
@@ -278,6 +297,7 @@ function presetBinary(preset: Preset, bin: string | null, env: Env, home: string
     return found === null ? { missing: `\`${preset}\` is not on PATH; ${INSTALL[preset]} or change \`agent\`` } : { bin: found };
   }
 
+  // Cursor: prefer `cursor-agent`; accept a bare `agent` only when its version looks like Cursor's (Grok also ships `agent`).
   const cursorAgent = findBinary("cursor-agent", env);
 
   if (cursorAgent !== null) return { bin: cursorAgent };
@@ -291,6 +311,7 @@ function presetBinary(preset: Preset, bin: string | null, env: Env, home: string
   return { missing: `\`agent\` on PATH (${agentBin}) is \`${version ?? "no version"}\`, not the Cursor CLI; ${INSTALL.cursor}, put cursor-agent on PATH, or set "clis": {"cursor": {"bin": …}} in ${agentsFile(home)}` };
 }
 
+// `--version` lines per binary, so a run asks each binary at most once.
 const versions = new Map<string, string | null>();
 
 /** The first line of `<bin> --version`, at most 5 s, memoized per process; null when it gives none. */
@@ -364,6 +385,7 @@ export async function probeAgentClis(env: Env = process.env, home: string = home
 export function findBinary(name: string, env: Env): string | null {
   if (name.includes("/")) return executable(name) ? name : null;
 
+  // Search PATH in order; relative entries are skipped so the cwd cannot inject a binary.
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "" || !isAbsolute(dir)) continue;
     const candidate = join(dir, name);
@@ -374,6 +396,7 @@ export function findBinary(name: string, env: Env): string | null {
   return null;
 }
 
+/** Whether `path` is a regular file the process may execute. */
 function executable(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;
@@ -390,6 +413,7 @@ function executable(path: string): boolean {
 /** How the answer is read: a `type:"result"` JSON line, Codex's `-o` file, opencode's NDJSON events, or stdout. */
 export type AnswerKind = "result-json" | "file" | "opencode-events" | "stdout";
 
+/** Everything needed to run one request: argv, stdin, env, extra files and how to read the answer. */
 export interface Invocation {
   bin: string;
   args: string[];
@@ -402,14 +426,17 @@ export interface Invocation {
   answerFile: string | null;
 }
 
+// Appended to every system prompt: keylang only wants text back.
 const PREAMBLE = "Answer with text only. Do not run tools or commands and do not edit files.";
 
 /** The process to run for one request; `tmp` is a private directory outside the repository. */
 export function invocation(runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string): Invocation {
   const system = `${request.system}\n\n${PREAMBLE}`;
+  // Every run: cwd/PWD at the root, no colour, and KEYLANG_NESTED so a nested keylang knows it is inside an agent.
   const base = { ...env, PWD: root, NO_COLOR: "1", KEYLANG_NESTED: "1" };
   const modelArgs = model === "" ? [] : ["--model", model];
 
+  // A user command: system and prompt go together on stdin, or into the prompt file when the command names one.
   if ("command" in runner) {
     const promptFile = join(tmp, "prompt.txt");
     const usesFile = runner.command.some((part) => part.includes("{prompt_file}"));
@@ -509,6 +536,7 @@ function opencodeConfig(existing: string | undefined, system: string): string {
   return JSON.stringify({ ...config, agent: { ...agents, keylang: { mode: "primary", prompt: system, permission: "deny" } } });
 }
 
+/** `text` with lone UTF-16 surrogates replaced by U+FFFD, so it can be encoded as UTF-8 / TOML. */
 function wellFormed(text: string): string {
   return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
 }
@@ -519,10 +547,12 @@ interface Answer {
   model: string | null;
 }
 
+// A result line is an answer or an error.
 type ResultLine = Answer | { error: string };
 
 /** A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line. */
 export function parseResultLine(line: string): ResultLine | null {
+  // Only `type: "result"` lines count; `is_error` or an `error*` subtype is a failure.
   const value = parseJsonOrNothing(line.trim());
 
   if (!isJsonObject(value) || value.type !== "result") return null;
@@ -542,6 +572,7 @@ function answeringModel(usage: JsonValue | undefined): string | null {
   if (!isJsonObject(usage)) return null;
   let best: { model: string; output: number } | null = null;
 
+  // Sorted so ties in output tokens pick the same model every time.
   for (const model of Object.keys(usage).sort()) {
     const entry = usage[model];
 
@@ -572,6 +603,7 @@ export function parseOpencodeEvents(output: string): { text: string } | { error:
       return { error: message };
     }
 
+    // A new step starts a new answer: only the text of the last step is kept.
     if (event.type === "step_start") parts = [];
 
     if (event.type === "text" && isJsonObject(event.part) && isJsonString(event.part.text)) parts.push(event.part.text);
@@ -582,6 +614,7 @@ export function parseOpencodeEvents(output: string): { text: string } | { error:
 
 // ---------- running (I/O) ----------
 
+/** One request end to end: a private temp dir, the run, the answer read, and cleanup whatever happens. */
 async function completeWith(agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions): Promise<string> {
   if (call.signal?.aborted) throw new CliCancelled(agent);
   const tmp = mkdtempSync(join(tmpdir(), "keylang-agent-"));
@@ -594,6 +627,7 @@ async function completeWith(agent: string, runner: Runner, model: string, reques
       throw new Error(`${agent}: the prompt is ${Buffer.byteLength(prompt)} bytes; Cursor takes it as one argument, at most ${CURSOR_PROMPT_LIMIT}; use another agent CLI`);
     }
 
+    // Files the CLI reads (a prompt file) are private to the user.
     for (const file of inv.files) writeFileSync(file.path, file.text, { mode: 0o600 });
     const run = await runInvocation(agent, inv, options.root, call);
     const answer = readAnswer(agent, inv, run);
@@ -608,6 +642,7 @@ async function completeWith(agent: string, runner: Runner, model: string, reques
   }
 }
 
+/** What a run produced: its stdout and, when the result line arrived early, that line parsed. */
 interface RunResult {
   stdout: string;
   /** An early `type:"result"` line already parsed. */
@@ -642,6 +677,7 @@ function readAnswer(agent: string, inv: Invocation, run: RunResult): Answer {
   }
 }
 
+/** The last result line of the whole stdout, or null. */
 function lastResult(stdout: string): ResultLine | null {
   let found: ResultLine | null = null;
 
@@ -653,8 +689,10 @@ function lastResult(stdout: string): ResultLine | null {
 /** Process groups of runs still alive: killed when keylang exits. */
 const liveGroups = new Set<number>();
 
+// Whether the `exit` hook is installed; it is installed once per process.
 let exitHooked = false;
 
+/** Signal a whole process group (negative pid); on Windows, just the process. */
 function killGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(process.platform === "win32" ? pid : -pid, signal);
@@ -686,6 +724,11 @@ function hookExit(): void {
   }
 }
 
+/**
+ * Run one invocation in its own process group and resolve with its output.
+ * Settles exactly once: on the result line, exit, error, timeout, cancel or
+ * an output overflow; every early end stops the group.
+ */
 function runInvocation(agent: string, inv: Invocation, root: string, call: CliCallOptions): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     hookExit();
@@ -712,6 +755,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
     const stderrDecoder = new StringDecoder("utf8");
     let killTimer: NodeJS.Timeout | null = null;
 
+    // SIGTERM now, SIGKILL after the grace period if the group is still around.
     const stopGroup = (): void => {
       if (pid === undefined) return;
       killGroup(pid, "SIGTERM");
@@ -722,6 +766,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
       killTimer.unref();
     };
 
+    // Settle once and drop the timer and the abort listener.
     const finish = (outcome: { ok: RunResult } | { error: Error }): void => {
       if (settled) return;
       settled = true;
@@ -751,6 +796,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
     });
 
     if (inv.stdin !== null) child.stdin!.end(inv.stdin);
+    // Collect stdout under the size limit; for result-json CLIs, scan complete lines for the result.
     child.stdout!.on("data", (chunk: Buffer) => {
       if (settled) return;
       stdoutBytes += chunk.length;
@@ -781,6 +827,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
         return;
       }
     });
+    // Keep only the tail of stderr, for the error message.
     child.stderr!.on("data", (chunk: Buffer) => {
       stderr = (stderr + stderrDecoder.write(chunk)).slice(-STDERR_TAIL);
     });
@@ -806,6 +853,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
         return;
       }
 
+      // A failed run: name the exit code or signal and the last lines of stderr.
       const tail = stripAnsi(stderr).trim().split("\n").slice(-3).join(" ").slice(-300);
       const why = signal !== null ? `was killed by ${signal}` : `exited with code ${code}`;
       finish({ error: new Error(`${agent}: ${why}${tail === "" ? "" : `: ${tail}`}`) });
@@ -813,6 +861,7 @@ function runInvocation(agent: string, inv: Invocation, root: string, call: CliCa
   });
 }
 
+/** `text` without ANSI CSI escape sequences (colours, cursor moves). */
 function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");

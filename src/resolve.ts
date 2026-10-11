@@ -1,5 +1,12 @@
 // Cross-file ID resolution: builds the declaration index and reports
 // duplicate declarations (K002) and dangling references (K001).
+//
+// The resolve stage of Markdown → IR → resolve/rules: it reads every parsed
+// document, indexes declarations (map items, flows, `planned`) by ID and checks
+// each reference against that index, the configured layers and the snapshot's
+// knowledge of modules (opaque or complete). Entry points: `check`, `Index`
+// (also used by the LSP for definitions) and `nearestName`. Also reports K008,
+// K204, K205 and K206, which need the same index.
 
 import { CONFIG_FILE, SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
@@ -7,6 +14,7 @@ import { isDecl, kindLabel, sectionNodes, walk, type Document, type Node, type N
 import { isSegment, linkTextSpan, renderMeaning, TRIGGER_EVENT } from "./parser.ts";
 import { compareText, type Span } from "./span.ts";
 
+/** A declared ID: where its name is written and what kind of item declares it. */
 export interface Decl {
   id: string;
   kind: NodeKind;
@@ -20,6 +28,7 @@ export interface Decl {
   hasMembers: boolean;
 }
 
+/** The outcome of looking up an ID in the index. */
 export type Lookup =
   | { kind: "exact"; decl: Decl }
   /** Resolved into an opaque module (the tail is not modelled). */
@@ -49,11 +58,13 @@ export interface Unverified {
   spec: string;
 }
 
+// Where a layer declared only by `keylang.json` points: the start of that file.
 const NO_SPAN: Span = { start: { offset: 0, line: 1, col: 1 }, end: { offset: 0, line: 1, col: 1 } };
 
 /** An index as JSON: declarations and flows by their name. */
 type IndexJson = { decls: Record<string, Decl>; flows: Record<string, Decl> };
 
+/** Every declaration of the documents by ID, flows by name and `planned` intentions by ID. */
 export class Index {
   readonly decls = new Map<string, Decl>();
   readonly flows = new Map<string, Decl>();
@@ -65,10 +76,12 @@ export class Index {
     this.members = members;
   }
 
+  /** An exact declaration, else the nearest declared module above `id` when its contents are unknown (opaque), else missing. */
   lookup(id: string): Lookup {
     const exact = this.decls.get(id);
 
     if (exact) return { kind: "exact", decl: exact };
+    // Not declared: only a module above it can still account for the ID.
     const prefix = this.longestPrefix(id);
 
     if (prefix?.kind !== "module") return { kind: "missing" };
@@ -77,6 +90,7 @@ export class Index {
 
     if (members === "opaque") return { kind: "opaque", decl: prefix };
 
+    // A module whose members are known (by the snapshot or the map) does not hide the ID.
     if (members === "complete" || prefix.hasMembers) return { kind: "missing" };
 
     return { kind: "opaque", decl: prefix };
@@ -87,6 +101,7 @@ export class Index {
     return this.members?.(id) === "opaque";
   }
 
+  /** The longest declared proper prefix of `id` (`a.b` for `a.b.c`), cutting one segment at a time. */
   private longestPrefix(id: string): Decl | undefined {
     let end = id.length;
 
@@ -108,6 +123,8 @@ export class Index {
     const missing = rest.split(".")[0]?.toLowerCase();
 
     if (missing === undefined) return undefined;
+    // Candidates are the declared siblings of the first missing segment: same
+    // parent, same depth. Ties go to the smaller ID, so the hint is stable.
     const depth = (prefix === undefined ? 0 : prefix.split(".").length) + 1;
     let best: [number, string] | undefined;
 
@@ -126,6 +143,7 @@ export class Index {
     return best?.[1];
   }
 
+  /** The index as plain JSON, for `parse --json` and tools. */
   toJSON(): IndexJson {
     return { decls: Object.fromEntries(this.decls), flows: Object.fromEntries(this.flows) };
   }
@@ -141,12 +159,14 @@ function similarity(a: string, b: string): number | null {
   const longer = Math.max(codePoints(a), codePoints(b));
 
   if (shorter >= 3 && (a.includes(b) || b.includes(a))) return 0;
+  // Allowed edits grow with length: none up to 2 code points, one up to 5, else two.
   const allowed = longer <= 2 ? 0 : longer <= 5 ? 1 : 2;
   const distance = levenshtein(a, b);
 
   return distance <= allowed ? distance : null;
 }
 
+/** Length in Unicode code points, not UTF-16 units. */
 function codePoints(s: string): number {
   return [...s].length;
 }
@@ -173,6 +193,8 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
   const index = new Index(context.members);
   const diags: Diagnostic[] = [];
 
+  // Pass 1: collect declarations from every document. Flows and `planned`
+  // items have namespaces of their own; a repeat in any of them is K002.
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind === "flow" && section.name) {
@@ -202,6 +224,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
     if (!index.decls.has(layer)) index.decls.set(layer, { id: layer, kind: "layer", file: CONFIG_FILE, span: NO_SPAN, hasMembers: false });
   }
 
+  // Pass 2: mark every declaration that has a member declared directly under it.
   for (const d of index.decls.values()) {
     // A dependency alias is a member too (CONTEXT.md): a module of aliases only is not opaque.
     if (d.kind === "fn" || d.kind === "type" || d.kind === "event" || d.kind === "module" || d.kind === "dep") {
@@ -214,6 +237,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
     }
   }
 
+  // Pass 3: check every reference, now that all files are indexed.
   const unverified: Unverified[] = [];
 
   for (const doc of docs) {
@@ -225,6 +249,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
   return { index, diagnostics: diags, unverified };
 }
 
+/** Adds `decl`, or reports K002 against the first declaration of the same ID; `what` names the namespace. */
 function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]): void {
   const prev = map.get(decl.id);
 
@@ -249,6 +274,7 @@ function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnos
 /** `external` and `unassigned` are layers keylang makes itself; a rule may name them before they have modules. */
 const SYNTHETIC = new Set<string>(SYNTHETIC_LAYERS);
 
+// Kinds a bare `then <word>` may have meant.
 const THEN_KINDS = new Set(["fn", "type", "event", "module", "planned"]);
 
 /** Ids whose last segment is `word`: map declarations and `planned`, never a layer. */
@@ -281,6 +307,7 @@ function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic
   let word = "";
   let span = token.span;
 
+  // The word as written: a plain word, or the text of a `[word](…)` link.
   if (token.kind === "word") word = token.text;
   else if (token.kind === "link") {
     const close = token.text.indexOf("](");
@@ -303,6 +330,7 @@ function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic
  */
 function danglingMessage(index: Index, doc: Document, target: string): string {
   if (doc.generated !== null) {
+    // The marker names its generator as `` `keylang …` ``; reuse that command.
     const command = /`(keylang [^`]+)`/.exec(doc.generated)?.[1];
 
     return `dangling reference \`${target}\` in a generated file; ${command ? `run \`${command}\`` : "regenerate it"}`;
@@ -320,6 +348,7 @@ function checkContinues(index: Index, doc: Document, node: Node, diags: Diagnost
 
   if (flow === null || index.flows.has(flow.value)) return;
 
+  // The closest declared flow name, ties broken by name.
   const near = [...index.flows.keys()]
     .flatMap((name) => {
       const distance = similarity(flow.value, name);
@@ -352,6 +381,8 @@ function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags:
   if (index.planned.has(ref.target)) return;
   const hit = index.lookup(ref.target);
 
+  // Declared: it must be an event. Inside an opaque module: unknown, so no verdict.
+
   if (hit.kind === "exact") {
     if (hit.decl.kind !== "event") diags.push(diagnostic("K205", doc.path, ref.span, `${what} names \`${ref.target}\`, a ${kindLabel(hit.decl.kind)}, not an event; an event ID is \`events.<name>\`, as \`keylang/map/events.md\` lists them`, ref.target));
 
@@ -366,6 +397,7 @@ function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags:
     return;
   }
 
+  // Suggest the event whose last segment is closest to the written one.
   const tail = (id: string): string => id.slice(id.lastIndexOf(".") + 1);
 
   const near = [...index.decls.values()]
@@ -380,6 +412,7 @@ function checkEventRef(index: Index, doc: Document, node: Node, ref: Ref, diags:
   diags.push(diagnostic("K204", doc.path, ref.span, `unknown event \`${ref.target}\`${hint}: no code keylang read dispatches it and no config observes it`, ref.target));
 }
 
+/** Checks one item and its children: line-level warnings, then each reference (K001, or unverified inside an opaque module). */
 function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>): void {
   warnBareThen(index, doc, node, diags);
   checkContinues(index, doc, node, diags);
@@ -394,6 +427,10 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
   for (const r of refs) {
     if (SYNTHETIC.has(r.target)) continue;
     const hit = index.lookup(r.target);
+
+    // Missing is K001 unless a manifest declares the package; an opaque hit is
+    // reported as unverified only when the snapshot itself calls the module
+    // opaque (not merely a member-less module of the map).
 
     if (hit.kind === "missing") {
       if (knownExternal.has(r.target)) continue;
@@ -416,6 +453,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
   }
 }
 
+/** Edit distance over code points, computed row by row with two arrays. */
 function levenshtein(a: string, b: string): number {
   const bs = [...b];
   let prev = Array.from({ length: bs.length + 1 }, (_, i) => i);

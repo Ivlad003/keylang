@@ -4,6 +4,11 @@
 // a dialect it does not know is a problem line, not an error). The parsers
 // are pure; `readSchemas` walks the tree for the files, skipping what keylang
 // does not read (dependencies, build output, `exclude` and `outside`).
+//
+// A side input of system discovery, next to the snapshot (source → FileFacts →
+// graph): its tables feed the system of the code and its ER view. Entry points:
+// `prismaTables`, `sqlTables`, `findSchemaFiles`, `readSchemas` and the
+// per-analysis caches `schemaFiles`, `codeSchemas` and `readCodeSchemas`.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -29,11 +34,14 @@ export interface SchemaRead {
 /** A name as an ID segment: kept when it is one, else every other character as `_`. */
 function segment(name: string): string {
   if (isSegment(name)) return name;
+  // Anything but a letter, mark, digit, `_`, `$` or `-` becomes `_`; a name
+  // that still cannot start a segment (a leading digit) gets a `_` prefix.
   const cleaned = name.replace(/[^\p{L}\p{M}\p{N}_$-]/gu, "_");
 
   return isSegment(cleaned) ? cleaned : `_${cleaned}`;
 }
 
+// Prisma `datasource` providers → the technology name of the system catalog.
 const PROVIDERS = new Map([
   ["postgresql", "postgres"],
   ["postgres", "postgres"],
@@ -47,6 +55,7 @@ const PROVIDERS = new Map([
 /** What an attribute argument or an assignment holds in the Prisma AST. */
 type PrismaValue = AttributeArgument["value"];
 
+/** A literal of the Prisma AST: an identifier or a still-quoted string. */
 function isText(value: PrismaValue | undefined): value is string {
   return typeof value === "string";
 }
@@ -56,12 +65,15 @@ function isPrismaNode(value: PrismaValue | undefined): value is KeyValue | Func 
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** A text literal without its surrounding double quotes; null for anything else. */
 function unquote(value: PrismaValue | undefined): string | null {
   return isText(value) ? value.replace(/^"|"$/g, "") : null;
 }
 
 /** The names of an attribute argument that is an array (`[a, b]`), or of a `key: [a, b]` argument. */
 function arrayArg(attribute: Attribute | BlockAttribute, key?: string): string[] {
+  // Without `key`, the first positional array wins; with `key`, the first
+  // `key: [...]` argument. Items are quoted or bare names.
   for (const arg of attribute.args ?? []) {
     const value = arg.value;
     const array = key === undefined ? value : isPrismaNode(value) && value.type === "keyValue" && value.key === key ? value.value : undefined;
@@ -79,6 +91,7 @@ let prisma: Promise<typeof import("@mrleebo/prisma-ast")> | null = null;
 export async function prismaTables(text: string): Promise<DiscoveredSchema> {
   prisma ??= import("@mrleebo/prisma-ast");
   const schema = (await prisma).getSchema(text);
+  // The datasource's provider names the database; an unknown one stays generic `sql`.
   let tech = "sql";
 
   for (const block of schema.list) {
@@ -88,6 +101,8 @@ export async function prismaTables(text: string): Promise<DiscoveredSchema> {
   }
 
   const models = schema.list.filter((block): block is Model => block.type === "model");
+  // First pass: every model's table name, so relations can point at a table
+  // declared later in the file.
   const tableName = new Map<string, string>();
 
   for (const model of models) {
@@ -101,6 +116,8 @@ export async function prismaTables(text: string): Promise<DiscoveredSchema> {
     const fields = model.properties.filter((property): property is Field => property.type === "field");
     const blockAttributes = model.properties.filter((property): property is BlockAttribute => property.type === "attribute");
     const compositeId = new Set(blockAttributes.filter((attribute) => attribute.name === "id").flatMap((attribute) => arrayArg(attribute)));
+    // Foreign keys: `@relation(fields: [a], references: [b])` on a relation
+    // field marks local column `a` as pointing at column `b` of the other table.
     const foreign = new Map<string, { table: string; column: string }>();
 
     for (const field of fields) {
@@ -122,6 +139,8 @@ export async function prismaTables(text: string): Promise<DiscoveredSchema> {
       columns.push({ name: segment(field.name), type: segment(String(field.fieldType)), pk: has("id") || compositeId.has(field.name), unique: has("unique"), nullable: field.optional === true, fk: fk ? { ...fk, span: NO_SPAN } : null, line: 0 });
     }
 
+    // `@@index([...])` and `@@unique([...])` become index lines. Line 0: the
+    // table comes from code, not from a spec line.
     const indexes = blockAttributes.filter((attribute) => attribute.name === "index" || attribute.name === "unique").map((attribute) => ({ text: `${arrayArg(attribute).join(", ")}${attribute.name === "unique" ? " unique" : ""}`, line: 0 }));
     tables.push({ name: tableName.get(model.name)!, component: "", columns, indexes, description: "", line: 0 });
   }
@@ -129,6 +148,7 @@ export async function prismaTables(text: string): Promise<DiscoveredSchema> {
   return { tech, tables };
 }
 
+// The span of a foreign key read from a schema file: it has no place in a spec.
 const NO_SPAN = { start: { offset: 0, line: 0, col: 0 }, end: { offset: 0, line: 0, col: 0 } };
 
 /** The tables of SQL: `CREATE TABLE` (columns, keys, `NOT NULL`, `UNIQUE`, references) and `CREATE INDEX`; other statements are skipped. */
@@ -137,11 +157,15 @@ export function sqlTables(text: string): DiscoveredSchema {
   const tables: SystemTable[] = [];
   const byName = new Map<string, SystemTable>();
 
+  // Statements in file order; an index is attached to a table created earlier
+  // in the same file, and dropped otherwise.
   for (const statement of statements) {
     if (statement.type === "create table") {
       const create = statement;
       const table: SystemTable = { name: segment(create.name.name), component: "", columns: [], indexes: [], description: "", line: 0 };
 
+      // Column-level constraints. An array type `int[]` is written as the
+      // segment `int_array`; a primary key is never nullable.
       for (const column of create.columns) {
         if (column.kind !== "column") continue;
         const constraints = column.constraints ?? [];
@@ -158,6 +182,8 @@ export function sqlTables(text: string): DiscoveredSchema {
         });
       }
 
+      // Table-level constraints refine the columns already read. A multi-column
+      // UNIQUE says nothing about a single column, so it is not marked.
       for (const constraint of create.constraints ?? []) {
         if (constraint.type === "primary key") for (const name of constraint.columns) markColumn(table, name.name, (column) => ({ ...column, pk: true, nullable: false }));
 
@@ -179,6 +205,7 @@ export function sqlTables(text: string): DiscoveredSchema {
   return { tech: "sql", tables };
 }
 
+/** Replaces the column named `name` (as a segment) with `change` of it; a missing column is ignored. */
 function markColumn(table: SystemTable, name: string, change: (column: SystemColumn) => SystemColumn): void {
   const at = table.columns.findIndex((column) => column.name === segment(name));
 
@@ -188,6 +215,7 @@ function markColumn(table: SystemTable, name: string, change: (column: SystemCol
 /** Directories no schema of the repository's own lies in. */
 const SKIP = new Set(["node_modules", "vendor", "dist", "build", "target", "out", "coverage", "__pycache__", "venv", ".venv"]);
 
+// Bounds on the walk, so a huge repository or a data dump cannot stall discovery.
 const MAX_FILES = 200;
 
 const MAX_BYTES = 1_000_000;
@@ -200,6 +228,8 @@ const MAX_BYTES = 1_000_000;
 export function findSchemaFiles(root: string, skip: readonly string[] = []): string[] {
   const files: string[] = [];
 
+  // Depth-first walk, at most 12 levels deep, in sorted order so the file list
+  // is stable; unreadable directories and entries are skipped.
   const walk = (dir: string, depth: number): void => {
     if (depth > 12 || files.length >= MAX_FILES) return;
     let names: string[];
@@ -240,6 +270,8 @@ export function findSchemaFiles(root: string, skip: readonly string[] = []): str
 export async function readSchemas(root: string, files: readonly string[]): Promise<SchemaRead> {
   const out: SchemaRead = { schemas: [], problems: [], files: [...files] };
 
+  // One file failing to read or parse does not stop the others; its first
+  // error line becomes a problem. A schema without tables is not reported.
   for (const rel of files) {
     try {
       const text = readFileSync(join(root, rel), "utf8");
@@ -256,6 +288,9 @@ export async function readSchemas(root: string, files: readonly string[]): Promi
 
 type Done = Pick<Analysis, "config" | "snapshot">;
 
+// Per-analysis caches keyed by the snapshot object: a new analysis has a new
+// snapshot, so the cache resets by itself and old entries can be collected.
+// `reading` holds the in-flight read so concurrent callers share one walk.
 const found = new WeakMap<object, string[]>();
 
 const reading = new WeakMap<object, Promise<SchemaRead>>();

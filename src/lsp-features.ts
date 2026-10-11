@@ -1,6 +1,14 @@
 // Language features over one analysis: pure functions from an `Analysis`, a
 // document, and a position to LSP results. Positions are LSP's: 0-based line,
 // UTF-16 character. The server (`lsp.ts`) owns buffers, freshness, and I/O.
+//
+// Place in the pipeline: a reader of one finished analysis (Text IR of the
+// specs, SpecIR, diagnostics, verdicts, snapshot), shared by the language
+// server and the TUI. Entry points: `workspace`, `diagnosticsFor`, `hover`
+// / `hoverContent`, `definition`, `references`, `documentSymbols`,
+// `workspaceSymbols`, `completions`, `signatureHelp`, `codeLenses`. The
+// one unit conversion that matters: IR spans count code points, LSP
+// characters count UTF-16 code units.
 
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,16 +30,19 @@ import { flowsUsing, plannedDeclaration, walkFlow, type FlowItem, type SpecIR, t
 import { spanContains, type Pos, type Span } from "./span.ts";
 import type { Verdict } from "./verdict.ts";
 
+/** A position as LSP sends it: 0-based line, UTF-16 character. */
 export interface LspPosition {
   line: number;
   character: number;
 }
 
+/** A range of two LSP positions, end exclusive. */
 export interface LspRange {
   start: LspPosition;
   end: LspPosition;
 }
 
+/** A place in a file, by URI. */
 export interface Location {
   uri: string;
   range: LspRange;
@@ -45,6 +56,7 @@ export interface Workspace {
   text(path: string): string | null;
 }
 
+/** The workspace of one analysis: the docs as the editor shows them (open map buffers reparsed) and a text lookup that prefers open buffers. */
 export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>): Workspace {
   const mapDir = specPath(analysis.config.dir, "map/");
 
@@ -91,6 +103,7 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
 
 // ---------- positions ----------
 
+/** The offset of the start of each line (after each `\n`). */
 function lineStarts(text: string): number[] {
   const starts = [0];
 
@@ -106,15 +119,19 @@ function lineStarts(text: string): number[] {
 function lspPoint(text: string | null, line: number, col: number): LspPosition {
   const content = text?.split("\n")[line - 1];
 
+  // A line outside the known text keeps the code-point column as is.
   if (content === undefined) return { line: line - 1, character: col - 1 };
 
+  // Convert code points to UTF-16 units by re-joining the prefix.
   return { line: line - 1, character: [...content].slice(0, col - 1).join("").length };
 }
 
+/** An IR position as an LSP position. */
 function fromPos(text: string | null, pos: Pos): LspPosition {
   return lspPoint(text, pos.line, pos.col);
 }
 
+/** An IR span as an LSP range. */
 function fromSpan(text: string | null, span: Span): LspRange {
   return { start: fromPos(text, span.start), end: fromPos(text, span.end) };
 }
@@ -127,18 +144,22 @@ function lineRange(text: string | null, line: number, col: number): LspRange {
   return { start: { line: line - 1, character }, end: { line: line - 1, character: Math.max(character + 1, content.length) } };
 }
 
+/** The UTF-16 offset of an LSP position (a line past the end clamps to the text's end). */
 function toOffset(text: string, position: LspPosition): number {
   return (lineStarts(text)[position.line] ?? text.length) + position.character;
 }
 
+/** The `file:` URI of a root-relative path. */
 function uriOf(root: string, path: string): string {
   return pathToFileURL(resolve(root, path)).href;
 }
 
 // ---------- the item under the cursor ----------
 
+/** What the cursor can be on: an ID (a reference or a declared name) or a code link with its line. */
 type Target = { kind: "id"; id: string; span: Span } | { kind: "link"; path: string; line: number; span: Span };
 
+/** Every node of a document, depth-first, with its section and parent. */
 function nodesOf(doc: Document): { node: Node; section: Section; parent: Node | null }[] {
   const out: { node: Node; section: Section; parent: Node | null }[] = [];
 
@@ -157,6 +178,8 @@ function nodesOf(doc: Document): { node: Node; section: Section; parent: Node | 
 
 /** The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it. */
 export function targetAt(doc: Document, offset: number): Target | null {
+  // Nodes come outermost first; within a node, a ref beats a link, a link
+  // beats the declared name, and a `planned` line names its ID anywhere.
   for (const { node } of nodesOf(doc)) {
     if (!spanContains(node.span, offset)) continue;
 
@@ -177,6 +200,7 @@ export function targetAt(doc: Document, offset: number): Target | null {
   return null;
 }
 
+/** The document at a path: one the analysis read, else a file of the explained map. */
 function docOf(ws: Workspace, path: string): Document | undefined {
   return ws.analysis.docs.find((doc) => doc.path === path) ?? readingDoc(ws, path);
 }
@@ -194,6 +218,7 @@ function readingDoc(ws: Workspace, path: string): Document | undefined {
   const text = ws.text(path);
 
   if (text === null) return undefined;
+  // Reparse only when the text changed since the last call.
   const cached = readingDocs.get(path);
 
   if (cached?.text === text) return cached.doc;
@@ -203,6 +228,7 @@ function readingDoc(ws: Workspace, path: string): Document | undefined {
   return doc;
 }
 
+/** The target at an LSP position of a document, or null. */
 function at(ws: Workspace, path: string, position: LspPosition): Target | null {
   const doc = docOf(ws, path);
   const text = ws.text(path);
@@ -214,6 +240,7 @@ function at(ws: Workspace, path: string, position: LspPosition): Target | null {
 
 // ---------- diagnostics ----------
 
+/** A diagnostic as LSP takes it, with keylang's verdict (and a K005 reason) in `data`. */
 export interface LspDiagnostic {
   range: LspRange;
   severity: 1 | 2 | 3 | 4;
@@ -229,6 +256,7 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
   const { diagnostics, verdicts } = ws.analysis;
   const items: LspDiagnostic[] = [];
 
+  // Parser and resolver diagnostics first, with their exact spans.
   for (const diag of diagnostics) {
     if (diag.file !== path) continue;
     const data: LspDiagnostic["data"] = { verdict: diag.severity === "error" ? "fail" : "warning" };
@@ -244,6 +272,8 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
     });
   }
 
+  // Then the verdicts of the file, except those already said by a
+  // diagnostic; they cover their line from the column on. `ok` is a hint.
   for (const verdict of verdicts) {
     if (verdict.file !== path || sameFinding(verdict, diagnostics)) continue;
     const severity = verdict.verdict === "fail" ? 1 : verdict.verdict === "unverified" ? 2 : 4;
@@ -296,8 +326,10 @@ export interface HoverContent {
   range: LspRange;
 }
 
+/** A hover answer: Markdown contents and the range it is about. */
 type HoverResult = { contents: { kind: "markdown"; value: string }; range: LspRange };
 
+/** Hover at a position as LSP Markdown, or null when there is nothing to say. */
 export function hover(ws: Workspace, path: string, position: LspPosition): HoverResult | null {
   const content = hoverContent(ws, path, position);
 
@@ -311,6 +343,7 @@ export function hoverMarkdown(content: HoverContent): string {
   return [runsMarkdown(content.title), ...(content.place === null ? [] : [content.place]), ...content.evidence.map((line) => `- ${runsMarkdown(line)}`), ...flows].join("\n\n");
 }
 
+/** Runs as Markdown: code in backticks, strong in `**`. */
 function runsMarkdown(runs: readonly HoverRun[]): string {
   return runs
     .map((run) => {
@@ -334,6 +367,7 @@ function inlineRuns(text: string): HoverRun[] {
   const runs: HoverRun[] = [];
   let at = 0;
 
+  // Each backtick pair becomes a code run; the text between stays plain.
   for (const match of text.matchAll(/`([^`]*)`/g)) {
     if (match.index > at) runs.push({ text: text.slice(at, match.index) });
     runs.push({ text: match[1]!, code: true });
@@ -365,6 +399,8 @@ export function hoverContent(ws: Workspace, path: string, position: LspPosition)
   if (info.signature) title.push({ text: " " }, { text: info.signature, code: true });
   const state = info.state.join(", ");
   const place = info.file ? `${info.file}:${info.line}${state === "" ? "" : ` · ${state}`}` : state === "" ? null : state;
+  // Evidence: the verdicts on this very line for this ID, else every
+  // verdict about the ID.
   const own = ws.analysis.verdicts.filter((verdict) => verdict.area === target.id && verdict.file === path && verdict.line === target.span.start.line);
   const verdicts = own.length > 0 ? own : ws.analysis.verdicts.filter((verdict) => verdict.area === target.id);
   // The same line twice (one verdict per area and line) is said once.
@@ -375,6 +411,7 @@ export function hoverContent(ws: Workspace, path: string, position: LspPosition)
   return { id: target.id, title, place, declaration, evidence, flows: flowsUsing(ws.analysis.spec, target.id), range: fromSpan(ws.text(path), target.span) };
 }
 
+/** How hover names the section a top-level line is in. */
 const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flow: "a flow", wiring: "wiring", migration: "a migration", system: "a system" };
 
 /**
@@ -387,6 +424,8 @@ function roleHover(ws: Workspace, path: string, position: LspPosition): HoverCon
 
   if (!doc || text === null) return null;
   const offset = toOffset(text, position);
+  // The node whose span holds the cursor. A line with an ID or a ref gets
+  // the ID hover instead, unless the cursor is on its keyword.
   const hit = nodesOf(doc).find(({ node }) => spanContains(node.span, offset));
 
   if (!hit) return null;
@@ -420,12 +459,14 @@ function roleHover(ws: Workspace, path: string, position: LspPosition): HoverCon
   return { id: null, title, place: null, declaration: null, evidence, flows: [], range: fromSpan(text, onKeyword && node.keyword ? node.keyword : node.span) };
 }
 
+/** Go to definition: a code link opens its file at its line; an ID opens its declaration (code, or a spec for a planned one). */
 export function definition(ws: Workspace, path: string, position: LspPosition): Location | null {
   const target = at(ws, path, position);
 
   if (!target) return null;
 
   if (target.kind === "link") {
+    // A link's path is relative to the document and may be URL-encoded.
     const file = resolve(ws.root, dirname(path), decodeURIComponent(target.path));
 
     return { uri: pathToFileURL(file).href, range: { start: { line: target.line - 1, character: 0 }, end: { line: target.line - 1, character: 0 } } };
@@ -440,22 +481,27 @@ export function definition(ws: Workspace, path: string, position: LspPosition): 
   return { uri: uriOf(ws.root, info.file), range: { start, end: start } };
 }
 
+/** One signature in a signature-help answer. */
 export interface SignatureInformation {
   label: string;
   documentation?: string;
 }
 
+/** A signature-help answer: always one signature, nothing active to track. */
 export interface SignatureHelp {
   signatures: SignatureInformation[];
   activeSignature: 0;
   activeParameter: 0;
 }
 
+/** The signature of the last dotted ID before the cursor on its line, with its place. */
 export function signatureHelp(ws: Workspace, path: string, position: LspPosition): SignatureHelp | null {
   const text = ws.text(path);
 
   if (text === null) return null;
   const line = text.split("\n")[position.line] ?? "";
+  // Dotted IDs (at least one dot), Unicode letters allowed; the last one
+  // before the cursor is the one being written.
   const ids = [...line.slice(0, position.character).matchAll(/[\p{L}_$][\p{L}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{N}_$-]*)+/gu)].map((m) => m[0]);
   const id = ids.at(-1);
   const info = id ? describe(ws, id) : null;
@@ -478,6 +524,7 @@ export function references(ws: Workspace, path: string, position: LspPosition, i
   if (!target || target.kind !== "id") return [];
   const out: Location[] = [];
 
+  // Scan every document: declarations by their name span, uses by each ref.
   for (const doc of ws.analysis.docs) {
     const text = ws.text(doc.path);
 
@@ -493,6 +540,7 @@ export function references(ws: Workspace, path: string, position: LspPosition, i
 
 // ---------- workspace symbols ----------
 
+/** A symbol in a `workspace/symbol` answer. */
 export interface SymbolInformation {
   name: string;
   kind: number;
@@ -535,6 +583,7 @@ export function workspaceSymbols(ws: Workspace, briefs: ReadonlyMap<string, Stor
   return out;
 }
 
+/** The LSP SymbolKind of a node kind (`planned` ignored). */
 function symbolKind(kind: string): number {
   const base = kind.replace(/^planned /, "");
 
@@ -549,6 +598,7 @@ function symbolKind(kind: string): number {
   return SYMBOL.module;
 }
 
+/** Where a symbol points: a layer at its key in keylang.json, any other node at its code or spec line; null when it has no place. */
 function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
   if (hit.kind === "layer") {
     // A layer is a key of `layers` in keylang.json.
@@ -573,6 +623,7 @@ function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
 
 // ---------- document symbols ----------
 
+/** An outline entry for `textDocument/documentSymbol`, with its children. */
 export interface DocumentSymbol {
   name: string;
   detail?: string;
@@ -603,6 +654,8 @@ function statusOf(verdicts: readonly Verdict[], diagnostics: readonly Diagnostic
 function flowPhrases(spec: SpecIR): Map<Node, string> {
   const phrases = new Map<Node, string>();
 
+  // Walk every flow item; only triggers, steps, `when` and `then` have a
+  // phrase to show in the outline.
   for (const flow of spec.flows) {
     walkFlow(flow, (item) => {
       const phrase = itemPhrase(item);
@@ -614,6 +667,7 @@ function flowPhrases(spec: SpecIR): Map<Node, string> {
   return phrases;
 }
 
+/** The phrase an outline shows for a flow item: its target, condition or prose; null for other items. */
 function itemPhrase(item: Trigger | FlowItem): string | null {
   if (item.kind === "trigger" || item.kind === "step") return item.target.target;
 
@@ -624,6 +678,7 @@ function itemPhrase(item: Trigger | FlowItem): string | null {
   return null;
 }
 
+/** The outline of a document: flows and rules as groups, every other node at the top; each entry with the worst status of its lines. */
 export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
   const doc = docOf(ws, path);
   const text = ws.text(path);
@@ -632,6 +687,7 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
   const { verdicts, diagnostics, spec } = ws.analysis;
   const phrases = flowPhrases(spec);
 
+  // A node's range runs to the end of its last descendant.
   const lastLine = (node: Node): Span => {
     let end = node.span;
     walk(node, (child) => {
@@ -656,6 +712,8 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
     return worst;
   };
 
+  // One outline entry per node kind the outline names; an unknown kind is
+  // kept only as a container for its children.
   const symbolOf = (node: Node): DocumentSymbol | null => {
     const children = node.children.map(symbolOf).filter((item): item is DocumentSymbol => item !== null);
     const status = statusIn(node);
@@ -705,6 +763,8 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
 
   const out: DocumentSymbol[] = [];
 
+  // Flows and rules become one group each, spanning their heading to the
+  // last child; other sections list their nodes directly.
   for (const section of doc.sections) {
     const nodes = sectionNodes(section).map(symbolOf).filter((item): item is DocumentSymbol => item !== null);
 
@@ -725,6 +785,7 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
 
 // ---------- completion ----------
 
+/** A completion item as LSP takes it; the label replaces the whole typed word. */
 export interface CompletionItem {
   label: string;
   kind: number;
@@ -758,6 +819,8 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const doc = docOf(ws, path);
 
   if (text === null || !doc) return [];
+  // Two shapes of line: `- <keyword>` (an item start, so keywords) or
+  // `- <keyword> <args…> <word>` (an argument, so IDs or names).
   const lines = text.split("\n");
   const before = (lines[position.line] ?? "").slice(0, position.character);
   const item = /^(\s*)-\s+(\S*)$/.exec(before);
@@ -776,6 +839,7 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const range: LspRange = { start: { line: position.line, character: position.character - typed.length }, end: { line: position.line, character: position.character } };
   const replacing = (label: string): Pick<CompletionItem, "filterText" | "textEdit"> => ({ filterText: label, textEdit: { range, newText: label } });
 
+  // An item start: the keywords this section allows under the parent.
   if (item) {
     const section = sectionAt(doc, position.line + 1);
 
@@ -786,6 +850,8 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
 
   if (!argument) return [];
   const keyword = argument[2] ?? "";
+  // Argument cases in order: a flow name after `continues`, an event, an
+  // entry point of a trigger kind, then IDs.
   // The words written after the keyword, the one being typed excluded.
   const written = before.slice(0, wordStart).trim().split(/\s+/).slice(2);
 
@@ -827,6 +893,9 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const kindOf = dependencyKindOf(ws.analysis.spec, ws.analysis.index, ws.analysis.snapshot?.nodes);
   const labels = new Map<string, CompletionItem>();
 
+  // IDs from the snapshot: callables only for `step`/`trigger`, otherwise
+  // modules, fns, types and events, minus those a `deny` forbids from the
+  // enclosing module.
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     // An event (ADR 0022 п. 6) is a step too: reached through a dispatch, it reaches its observers.
     if (callableOnly ? node.kind !== "fn" && node.kind !== "event" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type" && node.kind !== "event") continue;
@@ -839,6 +908,7 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
     labels.set(id, { ...head, sortText: `1${id}`, ...replacing(id) });
   }
 
+  // Planned declarations the code does not have yet, after the code's.
   for (const item of ws.analysis.spec.planned) {
     if (labels.has(item.id)) continue;
 
@@ -887,6 +957,7 @@ function eventCompletions(ws: Workspace, replacing: (label: string) => Pick<Comp
   return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
 
+/** The section a 1-based line belongs to: the last one whose heading is at or above it. */
 function sectionAt(doc: Document, line: number): Section | undefined {
   let found: Section | undefined = doc.sections[0];
 
@@ -912,6 +983,7 @@ function enclosing(doc: Document, line: number, col: number): Node | undefined {
   return best;
 }
 
+/** The node and its ancestors, innermost first. */
 function ancestors(doc: Document, node: Node): Node[] {
   const all = nodesOf(doc);
   const chain: Node[] = [node];
@@ -935,6 +1007,7 @@ function moduleAround(ws: Workspace, doc: Document, parent: Node | undefined): s
       let id = node.id;
       const nodes = ws.analysis.snapshot?.nodes ?? {};
 
+      // A fn's ID is trimmed back to the module that holds it.
       while (nodes[id] && nodes[id]!.kind !== "module" && id.includes(".")) id = id.slice(0, id.lastIndexOf("."));
 
       return id;
@@ -946,6 +1019,7 @@ function moduleAround(ws: Workspace, doc: Document, parent: Node | undefined): s
 
 // ---------- code lenses ----------
 
+/** A code lens: where it sits and the editor command it runs. */
 type CodeLens = { range: LspRange; command: { title: string; command: string; arguments: string[][] } };
 
 /**
@@ -956,6 +1030,7 @@ export function codeLenses(ws: Workspace, path: string): CodeLens[] {
   const out: CodeLens[] = [];
   const text = ws.text(path);
 
+  // One lens per fn of this file that a flow names; sorted by line.
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (node.kind !== "fn" || node.file !== path || node.line === null) continue;
     const flows = flowsUsing(ws.analysis.spec, id);

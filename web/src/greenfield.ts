@@ -1,3 +1,5 @@
+// Web page (web/src), the greenfield («Новий проєкт») panel over the diagram
+// editor; entry point `mountGreenfield`.
 // «Новий проєкт» of the diagram page (business-flows/29): a project drawn
 // before it has code. When the served root has no keylang.json
 // (`GET /api/greenfield`), the list's header gets a «Новий проєкт» button,
@@ -16,6 +18,7 @@ import { button, make } from "./dom.ts";
 import { PALETTE, type Editor, type EditorModel } from "./editor.ts";
 import "./greenfield.css";
 
+/** A lane template: its label in the select and its lanes, top to bottom. */
 interface LaneTemplate {
   text: string;
   lanes: readonly string[];
@@ -28,6 +31,7 @@ export const TEMPLATES: ReadonlyMap<string, LaneTemplate> = new Map([
   ["empty", { text: "порожньо", lanes: [] }],
 ]);
 
+// The languages a new project may tick: keylang.json value and label.
 const LANGUAGES: readonly [string, string][] = [
   ["typescript", "TypeScript"],
   ["python", "Python"],
@@ -38,12 +42,14 @@ const LANGUAGES: readonly [string, string][] = [
 /** The gap between two lanes of a template, model units. */
 const LANE_GAP = 20;
 
+/** `GET /api/greenfield`: whether the root may get a new project, and why not. */
 interface Availability {
   available: boolean;
   reason: string | null;
   root: string;
 }
 
+/** `POST /api/greenfield`: what was written, or why not (`conflict` with existing files, `invalid` canvas, `failed`). */
 interface Answer {
   status: "written" | "conflict" | "invalid" | "failed";
   error: string | null;
@@ -61,6 +67,7 @@ interface GreenfieldRequest {
   idea: string;
 }
 
+/** Calls `/api/greenfield`; a non-JSON reply becomes an `ApiError`, while a JSON error body is returned for the caller to read. */
 async function call<T>(method: "GET" | "POST", body?: GreenfieldRequest): Promise<{ status: number; body: T }> {
   const response = await transport().send(method, "/api/greenfield", new URLSearchParams(), body);
   const text = response.text;
@@ -101,11 +108,13 @@ class Greenfield {
     this.start = button("Новий проєкт", () => void this.open(), { title: "Порожнє полотно з шаблоном доріжок: намалюйте проєкт і створіть його специфікацію" });
     this.start.id = "greenfield-new";
     this.start.className = "greenfield-new";
+    // The «Новий проєкт» button lives in the list header, outside the panel, so it shows before the panel opens.
     document.querySelector("#list header")?.append(this.start);
 
     this.template = make("select", { title: "Шаблон доріжок" });
     this.template.id = "greenfield-template";
 
+    // The template select, one option per template.
     for (const [value, template] of TEMPLATES) {
       const option = make("option", { text: template.text });
       option.value = value;
@@ -116,6 +125,7 @@ class Greenfield {
     apply.id = "greenfield-apply";
     const languages = make("span", { className: "greenfield-languages" });
 
+    // One checkbox per language; TypeScript is ticked by default.
     for (const [value, text] of LANGUAGES) {
       const label = make("label");
       const box = make("input");
@@ -160,6 +170,7 @@ class Greenfield {
 
   /** The editor on an empty canvas in «чернетка», the panel over it; a fresh canvas gets the chosen template. */
   async open(): Promise<void> {
+    // An empty `of` is the editor with no view: an empty canvas.
     if (location.hash.slice(1) !== "view=editor&of=") location.hash = "view=editor&of=";
 
     // The page opens the editor on the hash change: wait for its empty canvas.
@@ -167,6 +178,7 @@ class Greenfield {
     this.editor.setMode("draft");
     this.panel.hidden = false;
 
+    // Only an untouched canvas gets the template on its own; a drawing in progress is kept.
     if (this.editor.currentModel().lanes.length === 0 && this.editor.currentModel().nodes.length === 0) this.applyTemplate();
     this.status("новий проєкт · чернетка: доріжки — шари (верхня — найвищий), тригер і кроки — процес; далі «Створити специфікацію»");
   }
@@ -176,9 +188,11 @@ class Greenfield {
     const lanes = TEMPLATES.get(this.template.value)?.lanes ?? [];
     const entry = PALETTE.find((item) => item.kind === "lane");
 
+    // The lane shape of the palette is the template's building block; the empty template draws nothing.
     if (!entry || lanes.length === 0) return;
     this.editor.setMode("draft");
     const model = this.editor.currentModel();
+    // Skip lanes the canvas already has (by name, with or without `planned:`), and stack new ones below the lowest lane.
     const taken = new Set(model.lanes.map((lane) => lane.id.replace(/^planned:/, "")));
     let y = model.lanes.reduce((bottom, lane) => Math.max(bottom, lane.y + lane.h + LANE_GAP), 0);
 
@@ -186,6 +200,7 @@ class Greenfield {
       if (taken.has(name)) continue;
       const cell = this.editor.addFromPalette(entry, { x: 0, y });
 
+      // A layer that has no code yet is a planned ID.
       if (cell) this.editor.updateShape(cell, { id: `planned:${name}` });
       y += entry.size[1] + LANE_GAP;
     }
@@ -194,8 +209,10 @@ class Greenfield {
     this.editor.fit();
   }
 
+  /** Sends the canvas, the ticked languages and the idea; on success hides «Новий проєкт», since the project now exists. */
   private async submit(): Promise<void> {
     const languages = [...this.panel.querySelectorAll<HTMLInputElement>(".greenfield-languages input:checked")].map((box) => box.value);
+    // Let the editor finish pending edits first, so the model sent is the one on screen.
     await this.editor.flush();
     this.create.disabled = true;
     let answer: { status: number; body: Answer };
@@ -209,6 +226,7 @@ class Greenfield {
       return;
     }
 
+    // The server answered but wrote nothing: show its reason and allow another try.
     if (answer.body.status !== "written") {
       this.create.disabled = false;
       this.show(answer.body, answer.body.error ?? `HTTP ${answer.status}`);
@@ -260,6 +278,7 @@ class Greenfield {
     this.status(error === null ? `створено: ${answer?.files.length ?? 0} файлів; далі ${answer?.next[0] ?? ""}` : `не створено: ${error}`);
   }
 
+  /** Whether the project's files were written in this page. */
   written(): boolean {
     return this.done;
   }
@@ -276,6 +295,7 @@ export async function mountGreenfield(editor: Editor, status: (text: string) => 
   const wanted = new URLSearchParams(location.hash.slice(1)).get("new") === "1";
   let availability: Availability;
 
+  // An answer that is not JSON leaves the page without the greenfield button.
   try {
     availability = (await call<Availability>("GET")).body;
   } catch {

@@ -1,6 +1,12 @@
 // Code from a planned spec: `spec-to-code` builds a candidate (a stub or the
 // model's code, with failing tests) and proposes it file by file;
 // `spec-to-code --apply` writes a candidate already built.
+//
+// Place in the pipeline: an operation (see `operations.ts`) that runs the
+// other way round, spec → code: a `planned` declaration of the parsed specs
+// plus the snapshot become source files, proposed under
+// `.keylang/proposals/` or written directly. Entry points: `runSpecToCode`,
+// `runApplyCode`; the code itself is built in `src/spec-to-code.ts`.
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -18,6 +24,9 @@ import { empty, modelSetup, specHashes, specProblems } from "./shared.ts";
 
 /** The candidate as the operation reports it: each file with the proposal waiting for it now (read only when the store passes the write policy). */
 function specToCodeCandidate(root: string, built: CodeCandidate, basis: CandidateBasis): SpecToCodeCandidate {
+  // Each target carries the proposal already waiting for it, read only when
+  // its store passes the write policy (a store that does not is reported
+  // later, not read here).
   const target = (role: "code" | "test", file: FileCandidate): CodeProposalTarget => {
     const store = `${PROPOSALS_DIR}/${file.file}`;
     const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
@@ -66,6 +75,7 @@ function specToCodeCandidate(root: string, built: CodeCandidate, basis: Candidat
 export async function runSpecToCode(request: SpecToCodeRequest, context: OperationContext): Promise<OperationEnvelope<"spec-to-code">> {
   const { root } = request;
 
+  // Validate the request: an absolute root, a planned ID and a known mode.
   if (!isAbsolute(root)) return empty("spec-to-code", "failed", 2, "spec-to-code: root must be an absolute path");
 
   if (request.id.trim() === "") return empty("spec-to-code", "failed", 2, "spec-to-code: a planned id is required");
@@ -87,6 +97,8 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
   const snapshot = analyzed.snapshot;
 
   if (!snapshot) return empty("spec-to-code", "failed", 2, "spec-to-code: no supported source files; run `keylang init`");
+  // The candidate's basis: keylang.json, the sources and the hand-written
+  // specs as read now, so the commit can tell whether any changed meanwhile.
   const basis: CandidateBasis = { ...sourceInputs(analyzed.config, snapshot.manifest.files), specs: specHashes(root, analyzed.docs) };
   const into = request.into === undefined ? undefined : toPosix(request.into);
   const setup = await modelSetup(mode, analyzed.config, "spec-to-code");
@@ -114,6 +126,8 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
   // The model's requests in order: one for the code, then one per new test file; each named in the progress.
   let requests = 0;
 
+  // Wrap the client to count requests and name each one in the progress;
+  // the payload reports the count.
   const counted: LlmClient | undefined =
     model === null
       ? undefined
@@ -169,6 +183,8 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
     if (storeProblem !== null) return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: `${store}: ${storeProblem}` }] };
   }
 
+  // Under `pending: refuse` a proposal already waiting for any target
+  // refuses the whole set.
   if ((request.pending ?? "refuse") === "refuse") {
     const waiting = candidate.targets.filter((target) => target.pending !== null).map((target) => `${PROPOSALS_DIR}/${target.file}: a proposal for ${target.file} is waiting; merge it (m) or remove it before a new candidate`);
 
@@ -179,6 +195,9 @@ export async function runSpecToCode(request: SpecToCodeRequest, context: Operati
     }
   }
 
+  // The commit gate, then a re-check of everything the candidate was built
+  // from: each target and its waiting proposal, the sources and the specs.
+  // Any drift refuses the whole write.
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
 
@@ -261,6 +280,8 @@ type ApplyProblems = { policy: string | null; refused: string[] };
  * that file.
  */
 function applyProblems(request: ApplyCodeRequest): ApplyProblems {
+  // Policy first, in two passes: the code-proposal rule for every file, then
+  // the write protocol; the first problem is reported alone (exit 2).
   const { root, candidate } = request;
 
   for (const target of candidate.targets) {
@@ -275,6 +296,8 @@ function applyProblems(request: ApplyCodeRequest): ApplyProblems {
     if (problem !== null) return { policy: `${target.file}: ${problem}`, refused: [] };
   }
 
+  // Then drift (exit 1): each file must still hold the text the candidate
+  // was built from, and no proposal may be waiting for it.
   const refused: string[] = [];
 
   for (const target of candidate.targets) {
@@ -291,6 +314,9 @@ function applyProblems(request: ApplyCodeRequest): ApplyProblems {
     }
   }
 
+  // Inputs: a changed keylang.json makes every source comparison moot, so it
+  // is reported alone; otherwise sources that are candidate files are left
+  // out here, since the drift check above already named them.
   const files = new Set(candidate.targets.map((target) => target.file));
   const { basis } = candidate;
 
@@ -323,6 +349,8 @@ export async function runApplyCode(request: ApplyCodeRequest, context: Operation
   const payload: ApplyCodePayload = { id: candidate.id, files: candidate.targets.map((target) => ({ role: target.role, file: target.file, state: "not-attempted" })), refused: [], error: null };
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
 
+  // The full check runs twice: before the commit gate and again after it,
+  // since the gate may have waited while files changed.
   const check = (): OperationEnvelope<"apply-code"> | null => {
     let problems: ReturnType<typeof applyProblems>;
 
@@ -391,6 +419,8 @@ export async function runApplyCode(request: ApplyCodeRequest, context: Operation
 
     context.onProgress?.({ text: `writing ${target.file}` });
 
+    // Re-check just before each write: the file must still hold the
+    // candidate's `before` text.
     try {
       const problem = writeProblem(root, target.file, { expect: target.before });
 

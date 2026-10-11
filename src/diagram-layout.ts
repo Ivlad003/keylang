@@ -17,6 +17,10 @@
 // The directory is a view (ADR 0014): `check` never reads it, `map` never
 // writes it. Reads and writes go through the protocol of `safe-write.ts`: a
 // link out of the directory or a file with a generated marker is refused.
+//
+// Layer: web diagram editor storage, beside diagram.ts (which draws) and
+// diagram-clip.ts (copy/paste). Entry points: `diagramKeys`, `layoutToFile`,
+// `layoutFromFile`, `savedPositions`, `layoutText`, `readLayout`, `writeLayout`.
 
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,6 +31,7 @@ import { compareText } from "./span.ts";
 /** The directory of layout files under the spec directory: a view, never read as specs. */
 export const DIAGRAMS_DIR = "diagrams";
 
+/** The version of the layout file's JSON. */
 export const LAYOUT_FORMAT = 1;
 
 /** One shape of a layout file: its box in model coordinates and what the editor keeps beside it. */
@@ -47,10 +52,12 @@ export interface LayoutShape {
   proposed?: string;
 }
 
+/** The bends of one line, in model coordinates. */
 export interface LayoutEdge {
   points: { x: number; y: number }[];
 }
 
+/** A whole layout file: format, view, and shapes and lines by stable key. */
 export interface LayoutFile {
   format: number;
   view: string;
@@ -83,6 +90,7 @@ export interface ClientEntry {
   status?: "pending" | "rejected";
 }
 
+/** The editor's whole layout, by canvas key. */
 export type ClientLayout = Record<string, ClientEntry>;
 
 /** What the keys are computed from: a diagram's nodes, edges and lanes (src/diagram.ts), structurally. */
@@ -98,6 +106,7 @@ const LINE_ID = /^(?:trigger|step|then|when|emits|after|every|parallel|hole|call
 /** A view's file name: `flow:checkout` → `flow--checkout.layout.json`; what a file name cannot hold is `_xx` hex. */
 export function viewSlug(view: string): string {
   const at = view.indexOf(":");
+  // Keep ASCII letters, digits, `.` and `-`; every other character becomes its UTF-8 bytes as `_xx`.
   const encode = (text: string): string => text.replace(/[^A-Za-z0-9.-]/g, (c) => [...Buffer.from(c, "utf8")].map((b) => `_${b.toString(16).padStart(2, "0")}`).join(""));
 
   return at === -1 ? encode(view) : `${encode(view.slice(0, at))}--${encode(view.slice(at + 1))}`;
@@ -153,6 +162,7 @@ export function diagramKeys(diagram: KeyDiagram): Map<string, string> {
     into.set(edge.to, [...(into.get(edge.to) ?? []), edge.from]);
   }
 
+  // Outgoing and incoming neighbours of each node, used to key holes and parallel gateways.
   const lineKeyed = (id: string): boolean => LINE_ID.test(id);
 
   for (const node of diagram.nodes) {
@@ -166,6 +176,8 @@ export function diagramKeys(diagram: KeyDiagram): Map<string, string> {
 
   for (const [id, key] of said) base.set(id, key);
 
+  // Key a hole or parallel gateway by the keys of its neighbours (sorted, so
+  // branch order does not matter); `seen` guards against cycles between them.
   const resolve = (id: string, seen: Set<string>): string => {
     const known = base.get(id);
 
@@ -187,6 +199,7 @@ export function diagramKeys(diagram: KeyDiagram): Map<string, string> {
   };
 
   for (const node of diagram.nodes) resolve(node.id, new Set());
+  // Derived keys get twin numbers after the keys of shapes that say something.
   const derived = twinsApart(diagram.nodes.filter((node) => !said.has(node.id)).map((node) => [node.id, base.get(node.id)!]), said.values());
 
   return new Map(diagram.nodes.map((node) => [node.id, said.get(node.id) ?? derived.get(node.id)!]));
@@ -196,6 +209,7 @@ export function diagramKeys(diagram: KeyDiagram): Map<string, string> {
 export function twinsApart(pairs: readonly (readonly [string, string])[], taken: Iterable<string> = []): Map<string, string> {
   const used = new Map<string, number>();
 
+  // Keys already taken elsewhere count as a first use, so a new one starts at `#2`.
   for (const key of taken) used.set(key, 1);
   const out = new Map<string, string>();
 
@@ -208,8 +222,10 @@ export function twinsApart(pairs: readonly (readonly [string, string])[], taken:
   return out;
 }
 
+// Two decimals: stable numbers and one-line diffs for a moved shape.
 const round = (value: number): number => Math.round(value * 100) / 100;
 
+/** A shape as the file stores it: rounded numbers, and only the non-empty text fields. */
 function cleanShape(entry: ClientEntry): LayoutShape {
   const shape: LayoutShape = { x: round(entry.x), y: round(entry.y) };
 
@@ -240,6 +256,7 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
   const edges: Record<string, LayoutEdge> = {};
   const byClient = new Map<string, string>();
   const drawn: [string, string][] = [];
+  // Client keys sorted, so twin numbering does not depend on the editor's insertion order.
   const entries = Object.entries(layout).sort(([a], [b]) => compareText(a, b));
 
   for (const [key, entry] of entries) {
@@ -251,6 +268,7 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
     else if (entry.kind !== undefined && entry.kind !== "") drawn.push([key, shapeBase(entry.kind, entry.id ?? "", entry.label ?? "")]);
   }
 
+  // Drawn shapes are keyed after the diagram's own, so a clash makes the drawn one the twin.
   for (const [key, stable] of twinsApart(drawn, byClient.values())) byClient.set(key, stable);
 
   for (const [key, entry] of entries) {
@@ -286,6 +304,7 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
     edgePairs.push([key, `edge:${from}->${to}`]);
   }
 
+  // Twin parallel edges between the same pair, then store their rounded bends.
   for (const [key, stable] of twinsApart(edgePairs)) edges[stable] = { points: layout[key]!.points!.map((p) => ({ x: round(p.x), y: round(p.y) })) };
 
   return { format: LAYOUT_FORMAT, view, shapes, edges };
@@ -300,10 +319,13 @@ export function layoutToFile(view: string, layout: ClientLayout, diagram: KeyDia
  */
 export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: ReadonlySet<string> = new Set()) {
   const nodeKeys = diagramKeys(diagram);
+  // Invert the node keys: from the stable key in the file back to the diagram's node id.
   const byStable = new Map([...nodeKeys].map(([id, key]) => [key, id]));
   const laneIds = new Set(diagram.groups.map((group) => group.id));
   const out: ClientLayout = {};
 
+  // A shape the diagram has gets its box; a lane, note or still-proposed drawn
+  // shape is passed through under its own key; anything else no longer applies.
   for (const [stable, shape] of Object.entries(file.shapes)) {
     const id = byStable.get(stable);
 
@@ -321,6 +343,7 @@ export function layoutFromFile(file: LayoutFile, diagram: KeyDiagram, pending: R
     else if (shape.proposed && shape.kind) out[stable] = { ...shape, status: pending.has(shape.proposed) ? "pending" : "rejected" };
   }
 
+  // Map each stable edge key to the editor's key for the same edge, numbering parallel twins on both sides.
   const edgeKey = new Map<string, number>();
   const clientEdges = new Map<string, string>();
 
@@ -377,6 +400,7 @@ export function savedPositions(file: LayoutFile | null, diagram: KeyDiagram) {
   return out;
 }
 
+/** A JSON value with every object's keys sorted, recursively. */
 function sorted(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(sorted);
 
@@ -394,8 +418,10 @@ export function layoutText(file: LayoutFile): string {
   return `${JSON.stringify({ format: file.format, view: file.view, shapes, edges }, null, 2)}\n`;
 }
 
+// A JSON number that is not NaN or infinite.
 const isFiniteNumber = (value: JsonValue | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 
+/** A point with finite `x` and `y`, else null. */
 function readPoint(value: JsonValue): { x: number; y: number } | null {
   return isJsonObject(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) ? { x: value.x, y: value.y } : null;
 }
@@ -418,6 +444,7 @@ function readEntry(value: JsonValue): ClientEntry | null {
   return entry;
 }
 
+/** A line with valid points only; one bad point drops the whole line. */
 function readEdge(value: JsonValue): LayoutEdge | null {
   if (!isJsonObject(value) || !Array.isArray(value.points)) return null;
   const points: { x: number; y: number }[] = [];
@@ -492,6 +519,7 @@ export function readLayout(root: string, specDir: string, view: string): SavedLa
   if (problem !== null) throw new Error(`${path}: ${problem}`);
   const text = readFileSync(join(root, path), "utf8");
 
+  // A generated file in this place is no layout: refuse rather than misread it.
   if (isGeneratedText(text)) throw new Error(`${path}: a generated file, not a layout`);
 
   try {

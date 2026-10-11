@@ -1,5 +1,12 @@
 // TypeScript / JavaScript facts: imports, declarations, exports, calls.
 // A tree walk over the top level plus tree-sitter queries inside bodies.
+//
+// Pipeline: source → `FileFacts` (this module, via `extractTs`) → graph →
+// map/index. The graph resolves the import sources, callee texts and export
+// rows recorded here; nothing here touches other files. Entry points:
+// `extractTs` for one file and `withTsTree` for callers that need the parsed
+// tree. Key terms: a *hole* is a call kept as text because it does not name a
+// resolvable symbol; a *pass* is a function handed to a call as a value.
 
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, WebCallFact, WebFacts, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
@@ -23,6 +30,7 @@ const JSX_QUERY = `
 (jsx_opening_element name: (_) @tag)
 `;
 
+// `require("./x")` and `import("./x")` with a plain string argument: the module source each loads.
 const REQUIRE_QUERY = `
 (call_expression function: (identifier) @fn arguments: (arguments (string (string_fragment) @source)) (#eq? @fn "require"))
 (call_expression function: (import) arguments: (arguments (string (string_fragment) @source)))
@@ -37,6 +45,7 @@ const LITERAL_CALLS = new Set(["setGlobalPrefix"]);
 /** Members whose first argument names an event (`CallFact.nameArg`): NestJS `EventEmitter2.emit('order.created')`. */
 const NAME_ARG_CALLS = new Set(["emit", "emitAsync"]);
 
+/** The facts of one TypeScript or JavaScript file: what the graph reads to build nodes, edges and holes. */
 export function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
 
@@ -54,6 +63,7 @@ export function extractTs(path: string, src: string): Promise<FileFacts> {
 export async function withTsTree<T>(path: string, src: string, use: (tree: Tree, language: Language, typeStars: ReadonlyMap<number, string>) => T): Promise<T> {
   const g = grammarFor(path);
 
+  // First parse. Most files have no `export type *`, so the tree is used as it is.
   const first = await withTree(g, src, (tree, language): { done: T } | { keywords: TypeStar[] } => {
     const keywords = typeStarKeywords(tree.rootNode);
 
@@ -61,6 +71,7 @@ export async function withTsTree<T>(path: string, src: string, use: (tree: Tree,
   });
 
   if ("done" in first) return first.done;
+  // Blank each `type` keyword in place (same length, so offsets, lines and columns stay) and parse again.
   let blanked = src;
 
   for (const k of first.keywords) blanked = `${blanked.slice(0, k.start)}${" ".repeat(k.end - k.start)}${blanked.slice(k.end)}`;
@@ -79,11 +90,13 @@ interface TypeStar {
 
 /** `export type * from "./t"` read as `export`, an error node holding `type`, then `*` or `* as NS`. */
 function typeStarKeywords(root: Node): TypeStar[] {
+  // A clean tree has none of these errors. Only top-level `export` statements can hold one.
   if (!root.hasError) return [];
   const out: TypeStar[] = [];
 
   for (const stmt of root.namedChildren) {
     if (stmt.type !== "export_statement") continue;
+    // The broken shape is `export`, then an ERROR node holding just `type`, then `*` or `* as NS`.
     const [keyword, error, next] = stmt.children;
 
     if (keyword?.type !== "export" || error?.type !== "ERROR" || error.text !== "type" || (next?.type !== "*" && next?.type !== "namespace_export")) continue;
@@ -109,10 +122,12 @@ const MAX_DEPTH = 1000;
  */
 let parents: Map<number, Node> | null = null;
 
+/** The parent of a named node: from the index while `extractTree` runs, else from tree-sitter. */
 function parentOf(node: Node): Node | null {
   return parents?.get(node.id) ?? node.parent;
 }
 
+/** Index every named node's parent by node id. An explicit stack, so a deep tree does not overflow. */
 function parentIndex(root: Node): Map<number, Node> {
   const index = new Map<number, Node>();
   const stack: Node[] = [root];
@@ -128,6 +143,10 @@ function parentIndex(root: Node): Map<number, Node> {
   return index;
 }
 
+/**
+ * Extract one parsed file. Sets the module-wide `parents` and `header` state
+ * that the walk reads, and always clears it, even when extraction throws.
+ */
 function extractTree(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   parents = parentIndex(root);
   const head = moduleHeader(root);
@@ -151,6 +170,7 @@ let header: ReadonlySet<number> = new Set();
 /** Statements a declaration sits in: a comment above any of them documents it. */
 const DOC_WRAPPERS = new Set(["export_statement", "lexical_declaration", "variable_declaration", "variable_declarator", "ambient_declaration", "expression_statement", "assignment_expression"]);
 
+// `/**` that opens a JSDoc block; `/**/` (an empty block comment) is not one.
 const JSDOC = /^\/\*\*(?!\/)/;
 
 /**
@@ -160,7 +180,9 @@ const JSDOC = /^\/\*\*(?!\/)/;
  * other code in between, the file's header and a license document nothing.
  */
 function docOf(node: Node): string | undefined {
+  // Look above the declaration first, then above each statement that wraps it.
   for (let at: Node | null = node; at; ) {
+    // Scan earlier siblings, nearest first. Decorators and line comments are stepped over; any other node ends the search.
     for (let prev = at.previousNamedSibling; prev; prev = prev.previousNamedSibling) {
       if (prev.type === "decorator") continue;
 
@@ -173,6 +195,7 @@ function docOf(node: Node): string | undefined {
       return nonEmpty(jsdocDescription(blockCommentBody(prev.text))) ?? undefined;
     }
 
+    // No JSDoc among the siblings: climb to the wrapping statement, if there is one.
     const parent = parentOf(at);
     at = parent && DOC_WRAPPERS.has(parent.type) ? parent : null;
   }
@@ -196,6 +219,7 @@ function moduleHeader(root: Node): ModuleHeader {
   const leading: Node[] = [];
   let first: Node | null = null;
 
+  // The comments before the first statement (a `#!` line is skipped), and that statement.
   for (const child of root.namedChildren) {
     if (child.type === "hash_bang_line") continue;
 
@@ -207,6 +231,7 @@ function moduleHeader(root: Node): ModuleHeader {
     leading.push(child);
   }
 
+  // Group them into blocks: a comment that starts on the line after the previous one ends joins its block.
   const blocks: Node[][] = [];
 
   for (const comment of leading) {
@@ -216,6 +241,7 @@ function moduleHeader(root: Node): ModuleHeader {
     else blocks.push([comment]);
   }
 
+  // The first block with real text is the candidate; license notices and `/// <reference>` blocks are skipped.
   for (const [i, block] of blocks.entries()) {
     const text = block.map((c) => c.text).join("\n");
 
@@ -224,6 +250,9 @@ function moduleHeader(root: Node): ModuleHeader {
 
     if (doc === null) continue;
     const end = block.at(-1)!.endPosition.row;
+    // The block belongs to the module when another block follows it, no statement follows, a blank line
+    // separates it from the first statement, or that statement is an import or a directive.
+    // Otherwise it documents the first statement, and the module has no doc.
     const own = i < blocks.length - 1 || first === null || first.startPosition.row > end + 1 || first.type === "import_statement" || (first.type === "expression_statement" && first.namedChildren[0]?.type === "string");
 
     return own ? { doc, nodes: new Set(block.map((c) => c.id)) } : { doc: null, nodes: new Set() };
@@ -232,11 +261,13 @@ function moduleHeader(root: Node): ModuleHeader {
   return { doc: null, nodes: new Set() };
 }
 
+/** The facts of a file once the parent index and header are set: the top-level walk, then the whole-tree collectors. */
 function extractIndexed(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null };
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
+  // A tree too deep for the ancestor walks is not read at all: opaque, with the line where it gets too deep.
   const tooDeep = lineDeeperThan(root, MAX_DEPTH);
 
   if (tooDeep !== null) {
@@ -246,6 +277,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     return facts;
   }
 
+  // Queries are compiled once per grammar. The `typescript` grammar has no JSX nodes, so no tag query there.
   const calls = query(language, g, "calls", CALLS_QUERY);
   const jsxTags = g === "typescript" ? null : query(language, g, "jsx", JSX_QUERY);
   const requires = query(language, g, "require", REQUIRE_QUERY);
@@ -253,6 +285,9 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   // Bodies whose calls belong to a declaration; every other call is module-level code.
   const covered = new Set<number>();
 
+  // The calls and component uses inside `body`, as facts of the declaration that owns it.
+  // `cls` is the enclosing class, for `this.m()`; `keep` filters the captured nodes (module-level
+  // calls skip those inside declaration bodies). Marks `body` as covered.
   const declCalls = (body: Node, cls: ClassScope | null = null, keep: (n: Node) => boolean = () => true): CallFact[] => {
     if (body.id !== root.id) covered.add(body.id);
     const out: CallFact[] = [];
@@ -263,6 +298,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
       if (!fact) continue;
       const call = parentOf(c.node);
+      // `setGlobalPrefix("api")` and `emit("order.created")`: keep the first argument, which framework adapters read.
       const member = fact.callee.slice(fact.callee.lastIndexOf(".") + 1);
       const first = call?.type === "call_expression" && !fact.opaque && (LITERAL_CALLS.has(member) || NAME_ARG_CALLS.has(member)) ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
 
@@ -273,6 +309,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
         else fact.nameArg = { literal: value, text: collapse(first.text).slice(0, MAX_CALLEE) };
       }
 
+      // Functions the call receives as values (`later(save)`), and whether the call sits in a closure.
       const passes = call ? passesOf(call, body, cls) : [];
 
       if (passes.length > 0) fact.passes = passes;
@@ -290,6 +327,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
     if (!jsxTags) return out;
 
+    // JSX tags are calls of the component they name.
     for (const c of jsxTags.captures(body)) {
       if (!keep(c.node)) continue;
       const fact = componentOfTag(c.node, body, cls);
@@ -303,6 +341,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     return out.sort((a, b) => a.line - b.line || a.col - b.col);
   };
 
+  // One top-level declaration, bare or under `export`: push its declaration, import and export facts.
+  // Named declarations `break` to the export bookkeeping after the switch; the rest `return` having done their own.
   const visitDecl = (node: Node, exported: boolean): void => {
     switch (node.type) {
       case "function_declaration":
@@ -317,6 +357,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
       case "lexical_declaration":
       case "variable_declaration": {
+        // Each declarator is a `require` import, a function value, a class value or a plain value.
         for (const d of node.namedChildren) {
           if (d.type !== "variable_declarator") continue;
           const nameNode = d.childForFieldName("name");
@@ -324,6 +365,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
           if (!nameNode || nameNode.type !== "identifier") continue;
           const name = nameNode.text;
+          // `const x = require("./x")` (or SFCC's `module.superModule`) binds a whole module: an import, not a declaration.
           const req = value ? (requireSource(value, requires) ?? superModuleSource(value)) : null;
 
           if (req) {
@@ -343,6 +385,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
             facts.decls.push(classDecl(name, fnValue, d, exported, declCalls, facts));
           }
 
+          // Every exported declarator is an export row, whatever its value; the kind tells the graph what it stands for.
           if (exported) {
             facts.exports.add(name);
             const kind = fnNode ? "fn" : fnValue?.type === "class" ? "class" : "value";
@@ -424,6 +467,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
         return;
     }
 
+    // The declarations that reached `break`: the export row's kind comes from the node type.
     if (exported) {
       const name = node.childForFieldName("name")?.text;
 
@@ -441,6 +485,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   // Declarations exported later by name: `function a() {}; export { a }`.
   const localExports = new Set<string>();
 
+  // The top-level walk, in source order: imports, exports, CommonJS assignments and declarations.
   for (const node of root.namedChildren) {
     switch (node.type) {
       case "import_statement":
@@ -449,6 +494,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       case "export_statement": {
         const source = node.childForFieldName("source");
 
+        // `export … from "./x"`: a re-export, which is also an import of that module.
         if (source) {
           const spec = stringValue(source);
 
@@ -495,6 +541,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           break;
         }
 
+        // A local export: `export <declaration>`, `export { … }` or `export default …`.
         const declaration = node.childForFieldName("declaration");
         const isDefault = node.children.some((c) => c.type === "default");
 
@@ -563,8 +610,10 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     }
   }
 
+  // `export { a }` and `export default a` may come after `a`; mark those declarations exported now.
   for (const d of facts.decls) if (localExports.has(d.name)) d.exported = true;
 
+  // Module-level calls: every call outside the bodies a declaration already claimed.
   const inDeclaration = (n: Node): boolean => {
     for (let at: Node | null = n; at; at = parentOf(at)) if (covered.has(at.id)) return true;
 
@@ -572,15 +621,18 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   };
 
   facts.moduleCalls = declCalls(root, null, (n) => !inDeclaration(n));
+  // Whole-tree collectors, each adding its own kind of fact.
   collectDynamicImports(root, facts);
   collectUnsupported(root, facts);
   collectValueRefs(root, facts);
   collectRouteEntries(root, facts);
   collectWebFacts(root, facts);
+  // A hash of the module's value code (constants, top-level calls), so a change outside declarations is seen.
   const values = valuesFingerprint(root.namedChildren, facts.decls);
 
   if (values !== undefined) facts.values = values;
 
+  // A syntax error anywhere keeps the facts read so far, but marks them opaque.
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -615,6 +667,7 @@ function reactBindings(root: Node): ReactBindings {
   const names = new Map<string, string>();
   const objects = new Map<string, ReadonlySet<string>>();
 
+  // Only value imports from the React modules; `import type` binds nothing at runtime.
   for (const stmt of root.namedChildren) {
     if (stmt.type !== "import_statement" || typeKeyword(stmt)) continue;
 
@@ -624,6 +677,7 @@ function reactBindings(root: Node): ReactBindings {
       if (!exported) continue;
 
       for (const b of fact.bindings) {
+        // A named import binds one export; a default or namespace import binds an object whose members are the exports.
         if (b.kind === "named") {
           if (exported.has(b.imported) && !typeOnlySpecifier(stmt, b.local)) names.set(b.local, b.imported);
         } else objects.set(b.local, exported);
@@ -683,6 +737,7 @@ function typeOnlySpecifier(stmt: Node, local: string): boolean {
   return false;
 }
 
+/** A declaration fact at `node`'s span, with its JSDoc and its fingerprint facts. */
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
   const doc = docOf(node);
@@ -694,10 +749,12 @@ function decl(kind: DeclFact["kind"], name: string, node: Node, signature: strin
   return fact;
 }
 
+/** The call, marked as made through a parameter or local binding when it is one. */
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
   return bound ? { ...call, bound } : call;
 }
 
+/** A call fact named `callee` at `node`'s span. */
 function callFact(callee: string, node: Node): CallFact {
   const at = located(node);
 
@@ -720,6 +777,7 @@ function opaqueCall(node: Node): CallFact {
  * name is an `opaque` fact.
  */
 function calleeOfCall(node: Node, body: Node, cls: ClassScope | null): CallFact | null {
+  // Strip parentheses and type assertions around the callee.
   let n = unwrapValue(node);
 
   // `(0, f.g)()` calls `f.g` without its `this`.
@@ -727,7 +785,9 @@ function calleeOfCall(node: Node, body: Node, cls: ClassScope | null): CallFact 
 
   switch (n.type) {
     case "identifier": {
+      // Node's `require(...)` is an import, read by the require query; a shadowed `require` is an ordinary call.
       if (n.text === "require" && parentOf(node)?.type === "call_expression" && requireKind(n) !== "shadowed") return null;
+      // A callee named by a parameter or local is bound; through a local, it may be a hook with a default.
       const fact = boundCall(callFact(n.text, n), bindingOf(n, n.text, body));
       const hook = fact.bound ? localHook(n, n.text, body) : null;
 
@@ -750,11 +810,13 @@ function calleeOfCall(node: Node, body: Node, cls: ClassScope | null): CallFact 
 
     case "super":
       return callFact("super", n);
+    // `import()`, `obj[k]()` and `new class {}` are recorded elsewhere or as `unsupported`.
     case "import":
     case "subscript_expression":
     case "class":
       return null;
     default:
+      // A function literal called in place has its calls read where they are; anything else is an opaque hole.
       return FUNCTION_VALUES.has(n.type) ? null : opaqueCall(n);
   }
 }
@@ -769,6 +831,7 @@ function calleeOfCall(node: Node, body: Node, cls: ClassScope | null): CallFact 
  */
 function componentOfTag(name: Node, body: Node, cls: ClassScope | null): CallFact | null {
   if (name.type === "identifier") {
+    // A lowercase ASCII first letter (a–z) marks an intrinsic element, as in JSX itself.
     const first = name.text.codePointAt(0) ?? 0;
 
     if (first >= 0x61 && first <= 0x7a) return null;
@@ -780,6 +843,7 @@ function componentOfTag(name: Node, body: Node, cls: ClassScope | null): CallFac
   const fact = calleeFact(name, body, cls);
 
   if (fact) return fact;
+  // A member tag with no binding to resolve: its text, or an opaque hole when it is too long.
   const text = collapse(name.text);
 
   return text.length < MAX_CALLEE ? callFact(text, name) : opaqueCall(name);
@@ -811,6 +875,7 @@ function componentOfFactory(call: Node, calleeNode: Node, body: Node, cls: Class
 function factoryCallee(node: Node, body: Node, react: ReactBindings): boolean {
   let n = unwrapValue(node);
 
+  // `(0, jsx)(Cart)`: the last expression of a sequence is the callee.
   while (n.type === "sequence_expression" && n.namedChildren.length > 0) n = unwrapValue(n.namedChildren.at(-1)!);
   const bound = reactExportOf(n, react);
 
@@ -828,6 +893,7 @@ function requireKind(node: Node): "global" | "created" | "shadowed" {
   if (binding === null) return "global";
 
   if (binding.kind !== "local") return "shadowed";
+  // A local `require`: a module loader only when it is `createRequire(…)`'s result.
   const value = binding.node.childForFieldName("value");
   const init = value ? unwrapValue(value) : null;
   const fn = init?.type === "call_expression" ? init.childForFieldName("function")?.text.replace(/\s+/g, "") : undefined;
@@ -835,12 +901,14 @@ function requireKind(node: Node): "global" | "created" | "shadowed" {
   return fn === "createRequire" || fn?.endsWith(".createRequire") ? "created" : "shadowed";
 }
 
+/** An import fact of `source` at `node`'s span, with the statement's text as written. */
 function importAt(node: Node, source: string, bindings: ImportBinding[], reexport: boolean): ImportFact {
   const at = located(node);
 
   return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
+/** Node types that declare something of their own; type-reference collection stops at them. */
 const NESTED_DECL = new Set(["function_declaration", "generator_function_declaration", "function_signature", "class_declaration", "abstract_class_declaration", "method_definition", "interface_declaration", "type_alias_declaration", "enum_declaration", "internal_module"]);
 
 /**
@@ -854,9 +922,11 @@ function nestedDeclaration(node: Node): boolean {
 
 /** 1-based line of the first node nested deeper than `limit` below `root`; null when none is. */
 function lineDeeperThan(root: Node, limit: number): number | null {
+  // A cursor walk instead of recursion: the tree being measured may be too deep to recurse over.
   const cursor = root.walk();
 
   try {
+    // Depth-first: down to the first child; else to the next sibling, climbing while there is none.
     for (let depth = 0; ; ) {
       if (depth > limit) return cursor.startPosition.row + 1;
 
@@ -887,6 +957,7 @@ function walkNamed(root: Node, enter: (node: Node) => boolean | void): void {
     if (enter(node) === false) continue;
     const children = node.namedChildren;
 
+    // Push children in reverse, so they pop in source order.
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
 
@@ -895,6 +966,7 @@ function walkNamed(root: Node, enter: (node: Node) => boolean | void): void {
   }
 }
 
+/** The empty scope: no type names bound. */
 const NO_NAMES: ReadonlySet<string> = new Set();
 
 /**
@@ -912,8 +984,10 @@ function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): Typ
   for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
     const current = item.node;
 
+    // A nested declaration has its own type references; the root itself is always read.
     if (current.id !== node.id && nestedDeclaration(current)) continue;
 
+    // `ns.Order` is one qualified reference; its parts are not read again.
     if (current.type === "nested_type_identifier") {
       const at = located(current);
       out.push({ name: at.text.replace(/\s+/g, ""), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
@@ -922,6 +996,7 @@ function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): Typ
 
     const scope = typeNamesBound(current, item.bound);
 
+    // A type name that is not the declaration's own name and not bound by a generic in scope.
     if (current.type === "type_identifier" && current.id !== skip?.id && !scope.has(current.text)) {
       const at = located(current);
       out.push({ name: at.text, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
@@ -943,12 +1018,14 @@ function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): Typ
 function typeNamesBound(node: Node, bound: ReadonlySet<string>): ReadonlySet<string> {
   const names: string[] = [];
 
+  // `<T, U>` on a function, class, alias or interface.
   for (const param of node.childForFieldName("type_parameters")?.namedChildren ?? []) {
     const name = param.type === "type_parameter" ? param.childForFieldName("name") : null;
 
     if (name) names.push(name.text);
   }
 
+  // `[K in keyof T]: …`: the mapped type's key.
   if (node.type === "index_signature") {
     for (const clause of node.namedChildren) {
       const name = clause.type === "mapped_type_clause" ? clause.childForFieldName("name") : null;
@@ -986,6 +1063,7 @@ function typeNamesBound(node: Node, bound: ReadonlySet<string>): ReadonlySet<str
 function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node, scope: ClassScope | null) => CallFact[], facts: FileFacts): DeclFact {
   const body = cls.childForFieldName("body");
   const items = body?.namedChildren ?? [];
+  // The class's member names, for resolving `this.m()` in its bodies.
   const scope = classScope(items);
   // `class C<T>`: `T` is no type reference in its heritage or its members.
   const typeParams = typeNamesBound(cls, NO_NAMES);
@@ -996,6 +1074,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   // Decorators of the next member: tree-sitter writes them as siblings before it in the class body.
   let pending: CodeDecorator[] = [];
 
+  // One pass over the class body, in source order: decorators wait for their member.
   for (const m of items) {
     if (m.type === "decorator") {
       const fact = decoratorFact(m);
@@ -1004,6 +1083,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       continue;
     }
 
+    // The member's decorators: those written as siblings before it, plus any tree-sitter nested under it.
     const memberDecorators = [...pending, ...decoratorsOf(m)];
     pending = [];
     const isField = m.type === "public_field_definition" || m.type === "field_definition";
@@ -1018,6 +1098,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       continue;
     }
 
+    // Only methods, method signatures and fields are members; anything else in the body is skipped.
     if (!isField && m.type !== "method_definition" && m.type !== "method_signature" && m.type !== "abstract_method_signature") continue;
     const nameNode = m.childForFieldName("name") ?? m.childForFieldName("property");
 
@@ -1028,6 +1109,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       continue;
     }
 
+    // Static and private flags. `#name` is private by the language; `private` only by TypeScript.
     const mname = memberName(nameNode);
     const hash = nameNode.type === "private_property_identifier";
     const isStatic = m.children.some((c) => c.type === "static");
@@ -1042,9 +1124,11 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     };
 
     if (!isField) {
+      // A method: a fn member, exported unless private; only a method with a body has calls.
       const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m, typeParams), []));
 
       if (m.children.some((c) => c.type === "get" || c.type === "set")) member.accessor = true;
+      // A constructor also carries its parameters' decorators (`@Inject(T) private x`).
       const withParams = mname === "constructor" ? [...memberDecorators, ...parameterDecorators(m)] : memberDecorators;
 
       if (withParams.length > 0) member.decorators = withParams;
@@ -1052,6 +1136,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       continue;
     }
 
+    // A field: a function value makes it a fn member; any other value adds its types and initializer calls.
     const written = m.childForFieldName("value");
     const value = written ? unwrapValue(written) : null;
 
@@ -1069,6 +1154,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     (m.children.some((c) => c.type === "static") ? statics : instance).push({ node: m, calls });
   }
 
+  // Instance initializers run before the constructor body, so their calls come first in it.
   if (instance.length > 0) {
     const constructor = members.find((m) => m.kind === "fn" && m.name === "constructor");
 
@@ -1076,16 +1162,19 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     else members.push(initializer("constructor", instance));
   }
 
+  // Static initializers become a synthesized `static` member, unless the class already has one by that name.
   if (statics.length > 0) {
     if (members.some((m) => m.name === "static")) for (const item of statics) facts.unsupported.push(unsupported(item.node, "static initializer of a class with a member named `static`"));
     else members.push(initializer("static", statics));
   }
 
+  // The class's own types: type-parameter constraints and defaults, heritage, and its fields.
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
   // `class C<T extends Order, U = Item>`: a constraint and a default name types; the parameters themselves do not.
   const typeParamsNode = cls.childForFieldName("type_parameters");
   const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : []), ...fieldTypes];
   const out = decl("class", name, at, heritage(cls), exported, [], types, members);
+  // A hash of the class body's value code, as for a module.
   const values = valuesFingerprint(items, members);
 
   if (values !== undefined) out.values = values;
@@ -1125,6 +1214,7 @@ function decoratorFact(node: Node): CodeDecorator | null {
 
   if (!expr) return null;
   const at = located(node);
+  // `@Get(':id')` is a call of `Get`; `@Injectable` is the bare name. Anything else names nothing.
   const callee = expr.type === "call_expression" ? expr.childForFieldName("function") : expr;
 
   if (!callee || (callee.type !== "identifier" && callee.type !== "member_expression")) return null;
@@ -1142,12 +1232,14 @@ function decoratorArg(node: Node): DecoratorArg {
 
   if (n.type === "number" && Number.isFinite(Number(n.text))) return { kind: "number", value: Number(n.text) };
 
+  // A plain identifier or a dotted name (`Role.Admin`): the regex rejects calls, indexes and spaces.
   if (n.type === "identifier" || (n.type === "member_expression" && /^[\w$.]+$/.test(n.text))) return { kind: "name", name: n.text };
 
   if (FUNCTION_VALUES.has(n.type)) return { kind: "function" };
 
   if (n.type === "array") return { kind: "array", items: n.namedChildren.filter((c) => c.type !== "comment").map((c) => ({ ...decoratorArg(c), line: located(c).line, col: located(c).col })) };
 
+  // An object literal: each property whose key is static. Spreads and computed keys are dropped.
   if (n.type === "object") {
     const props: { key: string; value: DecoratorArg; line: number; col: number }[] = [];
 
@@ -1173,6 +1265,7 @@ function decoratorArg(node: Node): DecoratorArg {
 
   const text = collapse(n.text);
 
+  // Anything else is kept as shortened text.
   return { kind: "other", text: text.length <= MAX_CALLEE ? text : `${text.slice(0, MAX_CALLEE - 1)}…` };
 }
 
@@ -1200,6 +1293,7 @@ export function unwrapValue(node: Node): Node {
   return at;
 }
 
+/** Expression node types that are a function value. */
 const FUNCTION_VALUES = new Set(["arrow_function", "function_expression", "function", "generator_function"]);
 
 /** Wrappers that return the component they wrap; their `const` is the fn of the wrapped render. */
@@ -1228,6 +1322,8 @@ function reactWrapperFn(value: Node, react: ReactBindings): Node | null {
 
 /** A synthesized member over the initializers it runs, from the first to the last. */
 function initializer(name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]): DeclFact {
+  // The span runs from the first initializer to the last; the fingerprint joins theirs in order,
+  // and the imported names they read are deduplicated and sorted for stable output.
   const first = located(items[0]!.node);
   const last = located(items[items.length - 1]!.node);
   const prints = items.map((item) => fingerprintFacts(item.node));
@@ -1240,6 +1336,7 @@ function initializer(name: "constructor" | "static", items: { node: Node; calls:
   return fact;
 }
 
+/** A member's name as code calls it: a string key unquoted, a `#private` name without its `#`. */
 function memberName(node: Node): string {
   const text = node.type === "string" ? (stringValue(node) ?? node.text) : node.text;
 
@@ -1256,11 +1353,13 @@ interface ClassScope {
   params: Map<string, string>;
 }
 
+/** What the class body says about its fields: their classes, constructor hooks and the parameters that fill them. */
 function classScope(items: readonly Node[]): ClassScope {
   const fields = new Map<string, string>();
   const hooks = new Map<string, HookFact>();
   const fromParams = new Map<string, string>();
 
+  // Declared fields: the class from the type annotation, else from a `new X()` initializer.
   for (const m of items) {
     if (m.type !== "public_field_definition" && m.type !== "field_definition") continue;
     const nameNode = m.childForFieldName("name") ?? m.childForFieldName("property");
@@ -1271,6 +1370,7 @@ function classScope(items: readonly Node[]): ClassScope {
     if (type) fields.set(memberName(nameNode), type);
   }
 
+  // The constructor adds parameter properties and `this.x = …` assignments.
   const ctor = items.find((m) => m.type === "method_definition" && m.childForFieldName("name")?.text === "constructor");
 
   if (!ctor) return { fields, hooks, params: fromParams };
@@ -1292,6 +1392,8 @@ function classScope(items: readonly Node[]): ClassScope {
   });
   const paramIndex = (name: string): number => params.findIndex((p) => p.childForFieldName("pattern")?.text === name);
 
+  // Top-level `this.x = …` statements of the constructor body: `new X()` gives the class,
+  // a parameter gives the parameter (and its type).
   for (const stmt of ctor.childForFieldName("body")?.namedChildren ?? []) {
     const expr = stmt.type === "expression_statement" ? stmt.namedChildren[0] : null;
 
@@ -1319,6 +1421,7 @@ function classScope(items: readonly Node[]): ClassScope {
     let param: number | null = null;
     let path = "";
 
+    // The injecting side: a parameter (`p ?? f`) or a property of one (`options.run ?? f`). Anything else injects nothing known.
     if (source.type === "identifier") param = paramIndex(source.text);
     else if (source.type === "member_expression" && source.childForFieldName("object")?.type === "identifier") {
       param = paramIndex(source.childForFieldName("object")!.text);
@@ -1331,6 +1434,7 @@ function classScope(items: readonly Node[]): ClassScope {
   return { fields, hooks, params: fromParams };
 }
 
+/** The import facts of one `import` statement: none when its source is not a plain string. */
 function importStatement(node: Node): ImportFact[] {
   // TypeScript `import y = require("./y")`: `y` is the whole module.
   const required = node.namedChildren.find((c) => c.type === "import_require_clause");
@@ -1350,6 +1454,7 @@ function importStatement(node: Node): ImportFact[] {
   const bindings: ImportBinding[] = [];
   const clause = node.namedChildren.find((c) => c.type === "import_clause");
 
+  // The clause binds a default (`a`), a namespace (`* as ns`) and named imports (`{ b as c }`).
   for (const c of clause?.namedChildren ?? []) {
     if (c.type === "identifier") bindings.push({ kind: "default", local: c.text });
     else if (c.type === "namespace_import") {
@@ -1380,6 +1485,7 @@ function importStatement(node: Node): ImportFact[] {
 
 /** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */
 function collectDynamicImports(root: Node, facts: FileFacts): void {
+  // Record one dynamic import, unless the same source on the same line is already an import (a top-level `require`).
   const add = (node: Node, spec: string, optional: boolean, typeOnly = false): void => {
     const line = node.startPosition.row + 1;
     const same = facts.imports.find((i) => i.source === spec && i.line === line);
@@ -1399,8 +1505,10 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
     facts.imports.push(fact);
   };
 
+  // Every call and `new` in the file, inside declarations or not.
   walkNamed(root, (node) => {
     if (node.type === "new_expression" || node.type === "call_expression") {
+      // `new URL("./w.ts", import.meta.url)` and similar module URLs; null means the specifier is computed.
       const specs = moduleUrlSpecs(node);
 
       if (specs === null) facts.unsupported.push(unsupported(node, "computed specifier"));
@@ -1422,6 +1530,7 @@ function collectDynamicImports(root: Node, facts: FileFacts): void {
       if (isImport || isRequire || isResolve) {
         const arg = node.childForFieldName("arguments")?.namedChildren[0];
 
+        // A literal specifier is an import; any other argument is a computed specifier, recorded as unsupported.
         if (arg?.type === "string") {
           const spec = stringValue(arg);
 
@@ -1442,6 +1551,7 @@ const TYPE_CONTEXT = new Set(["type_annotation", "opting_type_annotation", "omit
  * `typeof import("./a")`, `v as import("./a").T`): a type-only dependency, as `import type` is.
  */
 function inTypePosition(node: Node): boolean {
+  // Climb until a type context says yes, or a statement block or the program says the call is in value code.
   for (let child = node, parent = node.parent; parent !== null; child = parent, parent = parent.parent) {
     if (TYPE_CONTEXT.has(parent.type)) return true;
 
@@ -1472,6 +1582,7 @@ function collectUnsupported(root: Node, facts: FileFacts): void {
   });
 }
 
+/** An unsupported-construct fact at `node`'s span, with its text and the reason. */
 function unsupported(node: Node, reason: string): UnsupportedFact {
   const at = located(node);
 
@@ -1484,6 +1595,7 @@ function unsupported(node: Node, reason: string): UnsupportedFact {
  * other shape.
  */
 function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | null {
+  // A plain name: bound when a parameter or local of an enclosing scope declares it.
   if (n.type === "identifier" || n.type === "shorthand_property_identifier") return boundCall(callFact(n.text, n), bindingOf(n, n.text, stop));
 
   if (n.type !== "member_expression") return null;
@@ -1492,6 +1604,7 @@ function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | nul
 
   if (!obj || !prop) return null;
 
+  // `this.m`: a member of the class, possibly a hook its constructor set.
   if (obj.type === "this") {
     // `this` of an object-literal method or a nested `function` is not the class.
     if (!classThis(n)) return { ...callFact(`this.${prop.text}`, n), bound: "local" };
@@ -1503,6 +1616,7 @@ function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | nul
     return fact;
   }
 
+  // `a.b`: bound when `a` is local; then a local `const a = new A()` may name the receiver's class.
   if (obj.type === "identifier") {
     const fact = boundCall(callFact(`${obj.text}.${prop.text}`, n), bindingOf(n, obj.text, stop));
     const receiver = fact.bound ? localClass(n, obj.text, stop) : null;
@@ -1542,6 +1656,7 @@ function calleeFact(n: Node, stop: Node, cls: ClassScope | null): CallFact | nul
 
 /** `this` at `n` is the class instance: the nearest enclosing non-arrow function is a class member, or a field initializer or `static {}` holds it. */
 function classThis(n: Node): boolean {
+  // Arrow functions keep the outer `this`, so they are climbed through.
   for (let at = parentOf(n); at; at = parentOf(at)) {
     if (at.type === "class_body") return true;
 
@@ -1563,6 +1678,7 @@ function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
 
   if (args?.type !== "arguments") return [];
   const out: PassFact[] = [];
+  // Each argument, by its position among the arguments (comments do not count).
   args.namedChildren.filter((arg) => arg.type !== "comment").forEach((arg, index) => {
     const add = (node: Node, path: string, written: Node = node): void => {
       const fact = calleeFact(node, stop, cls);
@@ -1579,6 +1695,7 @@ function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
       out.push(Object.assign(pass, { text: collapse(at.text).slice(0, MAX_CALLEE), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol }));
     };
 
+    // The argument itself is a function value: `run(save)`, `run(this.m)`.
     if (arg.type === "identifier" || arg.type === "member_expression") add(arg, "");
     // `this.m.bind(this)`: the function `this.m`, with `this` fixed.
     const bound = arg.type === "call_expression" ? arg.childForFieldName("function") : null;
@@ -1586,6 +1703,7 @@ function passesOf(call: Node, stop: Node, cls: ClassScope | null): PassFact[] {
 
     if (fn && (fn.type === "identifier" || fn.type === "member_expression")) add(fn, "", arg);
 
+    // An object literal: each property that names a function, by its key (`{ generate: worker.generate }`).
     if (arg.type !== "object") return;
 
     for (const p of arg.namedChildren) {
@@ -1613,6 +1731,7 @@ function markClosure(fact: CallFact, n: Node, stop: Node): void {
   let outermost: Node | null = null;
   let stored = false;
 
+  // Climb from the call to the declaration: remember the outermost function and whether any is stored rather than passed.
   for (let at = parentOf(n); at && at.id !== stop.id; at = parentOf(at)) {
     if (!FUNCTION_NODES.has(at.type)) continue;
     outermost = at;
@@ -1640,6 +1759,7 @@ function newClass(value: Node | null): string | null {
   return ctor?.type === "identifier" ? ctor.text : null;
 }
 
+/** What binds a name in scope: a declarator, a parameter (with its function and position), or another kind of binding. */
 type Declaration = { kind: "local"; node: Node } | { kind: "parameter"; node: Node; fn: Node; index: number } | { kind: "other" };
 
 /**
@@ -1648,7 +1768,10 @@ type Declaration = { kind: "local"; node: Node } | { kind: "parameter"; node: No
  * `catch` variable, a nested function or class name. Null when nothing binds it.
  */
 function declarationOf(from: Node, name: string, stop: Node): Declaration | null {
+  // Walk out from `from` to `stop`, checking at each level the scope that level opens. The nearest binding wins.
   for (let at: Node | null = from; at; at = parentOf(at)) {
+    // A function: its parameters (`x =>` has a single one), then its own name, which a named
+    // function expression binds inside itself.
     if (FUNCTION_NODES.has(at.type)) {
       const single = at.childForFieldName("parameter");
 
@@ -1660,6 +1783,8 @@ function declarationOf(from: Node, name: string, stop: Node): Declaration | null
       if (at.id !== stop.id && at.type !== "arrow_function" && at.childForFieldName("name")?.text === name) return { kind: "other" };
     }
 
+    // A block or the module: `const`/`let`/`var` declarators and other declarations among its statements.
+    // Position is not checked: a declaration anywhere in the block binds the name in all of it, as JS scoping does.
     if (BLOCK_NODES.has(at.type) || at.type === "program") {
       for (const stmt of blockStatements(at)) {
         const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
@@ -1676,6 +1801,7 @@ function declarationOf(from: Node, name: string, stop: Node): Declaration | null
       }
     }
 
+    // Loop and `catch` variables bind the name, but carry no value keylang reads.
     if (at.type === "for_in_statement") {
       const left = at.childForFieldName("left");
 
@@ -1711,9 +1837,11 @@ function localClass(from: Node, name: string, stop: Node): string | null {
   if (!binding || binding.kind === "other") return null;
   let type: string | null;
 
+  // A local: its annotation, else its `new X()` initializer. A parameter: its annotation. Destructured names have no class.
   if (binding.kind === "local") type = binding.node.childForFieldName("name")?.type === "identifier" ? (typeName(binding.node.childForFieldName("type")) ?? newClass(binding.node.childForFieldName("value"))) : null;
   else type = binding.node.childForFieldName("pattern")?.type === "identifier" ? typeName(binding.node.childForFieldName("type")) : null;
 
+  // The class name must not itself be shadowed in scope, or it names something else.
   return type && bindingOf(binding.node, type, stop) === null ? type : null;
 }
 
@@ -1756,6 +1884,7 @@ function localHook(from: Node, name: string, stop: Node): HookFact | null {
 
   if (!binding || binding.kind === "other") return null;
 
+  // A parameter with a default: `function run(g = f)`. Callers inject only into the declaration's own parameters.
   if (binding.kind === "parameter") {
     const found = defaultIn(binding.node, name, "");
     const fallback = found ? fallbackCallee(found.value, stop) : null;
@@ -1773,6 +1902,7 @@ function localHook(from: Node, name: string, stop: Node): HookFact | null {
   let fallback: string;
   let path = "";
 
+  // `const g = x ?? f`: `x` is what a caller may inject.
   if (pattern.type === "identifier") {
     const hook = fallbackOf(value, stop);
 
@@ -1790,6 +1920,7 @@ function localHook(from: Node, name: string, stop: Node): HookFact | null {
     path = found.path;
   }
 
+  // The injecting value: `request` itself, or its property in `request.generate`.
   const head = source.type === "member_expression" ? source.childForFieldName("object") : source;
 
   if (source.type === "member_expression") path = source.childForFieldName("property")?.text ?? "";
@@ -1800,6 +1931,7 @@ function localHook(from: Node, name: string, stop: Node): HookFact | null {
   return { name, fallback, param: index, path: index === null ? "" : path, owner: "self" };
 }
 
+/** The parameter is a plain name (`p`, `p: T`, `p = d`), not a destructuring pattern. */
 function plainParameter(node: Node): boolean {
   if (node.type === "identifier") return true;
 
@@ -1862,6 +1994,7 @@ function defaultIn(node: Node, name: string, path: string): { value: Node; path:
  * position of each name in the file.
  */
 function collectValueRefs(root: Node, facts: FileFacts): void {
+  // The first position of each name; a member read is keyed with a leading `.` so it never collides with a plain name.
   const first = new Map<string, ValueRefFact>();
 
   const note = (name: string, node: Node, member: boolean): void => {
@@ -1870,6 +2003,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
     if (!first.has(key)) first.set(key, member ? { name, member: true, line: node.startPosition.row + 1, col: startCol(node) } : { name, line: node.startPosition.row + 1, col: startCol(node) });
   };
 
+  // Every node in the file: plain identifiers, destructured properties and member reads.
   walkNamed(root, (node) => {
     const parent = parentOf(node);
 
@@ -1881,6 +2015,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
     // Destructuring reads properties: `const { feed } = decoder` takes the method as a value.
     if (node.type === "shorthand_property_identifier_pattern" || (node.type === "property_identifier" && parent?.type === "pair_pattern" && parent.childForFieldName("key")?.id === node.id)) note(node.text, node, true);
 
+    // `a.b` read without a call and not assigned: a member read, or `mod.b` when `a` is an imported module.
     if ((node.type === "property_identifier" || node.type === "private_property_identifier") && parent?.type === "member_expression" && parent.childForFieldName("property")?.id === node.id) {
       const grand = parentOf(parent);
       const called = calledMember(parent);
@@ -1897,6 +2032,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
 
     return true;
   });
+  // Source order, so the facts are stable whatever order the walk noted them in.
   facts.valueRefs = [...first.values()].sort((a, b) => a.line - b.line || a.col - b.col);
 }
 
@@ -1937,12 +2073,15 @@ function exportedValue(node: Node): boolean {
     parent = parentOf(at);
   }
 
+  // Then from the object literal to what holds it; a shorthand outside an object literal exports nothing.
   if (parent?.type === "object" && (node.type === "shorthand_property_identifier" || at.type === "pair")) {
     at = parent;
     parent = parentOf(at);
   } else if (node.type === "shorthand_property_identifier") return false;
 
+  // `export default handler` / `export = handler`, not `export const` or `export … from`, and not an object.
   if (parent?.type === "export_statement") return at.type !== "object" && parent.childForFieldName("declaration") === null && parent.childForFieldName("source") === null;
+  // Otherwise only a top-level assignment to `module.exports` or one of its properties counts.
   const statement = parent ? parentOf(parent) : null;
 
   if (parent?.type !== "assignment_expression" || parent.childForFieldName("right")?.id !== at.id || statement?.type !== "expression_statement" || (statement ? parentOf(statement) : null)?.type !== "program") return false;
@@ -1951,6 +2090,7 @@ function exportedValue(node: Node): boolean {
   return left === "module.exports" || ((left.startsWith("exports.") || left.startsWith("module.exports.")) && at.type !== "object");
 }
 
+/** Parents under which an identifier is a binding or a label, never a value read. */
 const BINDING_PARENTS = new Set(["import_specifier", "export_specifier", "namespace_import", "import_clause", "namespace_export", "labeled_statement", "break_statement", "continue_statement", "object_pattern", "array_pattern", "rest_pattern"]);
 
 /** The identifier is a callee, a declared name, or a binding — not a value read. */
@@ -1997,6 +2137,7 @@ function stringsOf(node: Node): string[] | null {
     return left && right ? [...new Set([...left, ...right])] : null;
   }
 
+  // An identifier: follow it to a single-name `const` declarator and read that value.
   if (node.type !== "identifier") return null;
   const binding = declarationOf(node, node.text, node.tree.rootNode);
   const decl = binding?.kind === "local" ? binding.node : null;
@@ -2007,8 +2148,10 @@ function stringsOf(node: Node): string[] | null {
   return isConst && value && decl?.childForFieldName("name")?.type === "identifier" ? stringsOf(value) : null;
 }
 
+// A module file name: `.js`, `.ts`, `.jsx`, `.tsx`, and their `c`/`m` variants (`.mjs`, `.cts`).
 const MODULE_FILE = /\.[cm]?[jt]sx?$/;
 
+/** The node is `import.meta.url`, whatever the spacing. */
 function isImportMetaUrl(node: Node | undefined): boolean {
   return node !== undefined && node.text.replace(/\s+/g, "") === "import.meta.url";
 }
@@ -2028,6 +2171,8 @@ function moduleUrlSpecs(node: Node): { spec: string; optional: boolean }[] | nul
 
   if (!spec) return [];
 
+  // `new URL(spec, import.meta.url)`: relative module files only; extensionless ones are optional.
+  // A computed spec whose literal tail names a non-module file (`.png`) is no import; any other computed spec is a hole.
   if (node.type === "new_expression" && node.childForFieldName("constructor")?.text === "URL" && isImportMetaUrl(base)) {
     const strings = stringsOf(spec);
 
@@ -2036,6 +2181,7 @@ function moduleUrlSpecs(node: Node): { spec: string; optional: boolean }[] | nul
     return strings.filter((s) => s.startsWith(".") && (MODULE_FILE.test(s) || extensionless(s))).map((s) => ({ spec: s, optional: !MODULE_FILE.test(s) }));
   }
 
+  // `register(spec, import.meta.url)` or `{ parentURL: import.meta.url }`: a loader hook named relative to this module.
   const fn = node.type === "call_expression" ? node.childForFieldName("function") : null;
   const isRegister = fn?.text === "register" || fn?.text.replace(/\s+/g, "") === "module.register";
   const parentUrl = isImportMetaUrl(base) || (base?.type === "object" && base.namedChildren.some((p) => p.type === "pair" && p.childForFieldName("key")?.text === "parentURL" && isImportMetaUrl(p.childForFieldName("value") ?? undefined)));
@@ -2050,6 +2196,7 @@ function extensionless(spec: string): boolean {
   return last !== "" && last !== "." && last !== ".." && !last.includes(".");
 }
 
+// A file extension at the end of a string: `.png`, `.json`.
 const NON_MODULE_SUFFIX = /\.[A-Za-z0-9]+$/;
 
 /** The literal end of a computed string: the tail of a template, the last operand of `+`. */
@@ -2073,9 +2220,10 @@ function staticSuffix(node: Node): string {
   return "";
 }
 
-/** Parameters and locals declared directly in a function, not inside a nested one. */
+/** Function node types: each opens a scope for its parameters and the locals declared directly in it, not inside a nested one. */
 const FUNCTION_NODES = new Set(["function_declaration", "generator_function_declaration", "function_expression", "function", "generator_function", "arrow_function", "method_definition", "function_signature"]);
 
+/** Node types whose statements declare names for the whole block. */
 const BLOCK_NODES = new Set(["statement_block", "switch_body", "class_body"]);
 
 /**
@@ -2085,6 +2233,7 @@ const BLOCK_NODES = new Set(["statement_block", "switch_body", "class_body"]);
  * does not name the module-level symbol of the same name.
  */
 function bindingOf(call: Node, name: string, stop: Node): "parameter" | "local" | null {
+  // Walk out from the call to `stop`; the first scope that binds the name decides.
   for (let at: Node | null = call; at; at = parentOf(at)) {
     if (FUNCTION_NODES.has(at.type)) {
       const params = at.childForFieldName("parameters") ?? at.childForFieldName("parameter");
@@ -2095,12 +2244,14 @@ function bindingOf(call: Node, name: string, stop: Node): "parameter" | "local" 
       if (at.id !== stop.id && at.type !== "arrow_function" && at.childForFieldName("name")?.text === name) return "local";
     }
 
+    // A block, or the body of the declaration itself (its locals shadow module names too).
     if (BLOCK_NODES.has(at.type) || (at.id === stop.id && at.childForFieldName("body")?.type === "statement_block")) {
       const block = BLOCK_NODES.has(at.type) ? at : at.childForFieldName("body");
 
       if (block && blockDeclares(block, name)) return "local";
     }
 
+    // Loop and `catch` variables are locals of their statement.
     if (at.type === "for_in_statement") {
       const left = at.childForFieldName("left");
 
@@ -2132,6 +2283,7 @@ function blockStatements(block: Node): Node[] {
   return block.namedChildren.flatMap((c) => (c.type === "switch_case" || c.type === "switch_default" ? c.childrenForFieldName("body") : []));
 }
 
+/** Some statement of the block (or an `export` of one) declares `name`. */
 function blockDeclares(block: Node, name: string): boolean {
   for (const stmt of blockStatements(block)) {
     const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
@@ -2144,6 +2296,7 @@ function blockDeclares(block: Node, name: string): boolean {
   return false;
 }
 
+/** Names a statement declares: every name of its declarators, or a function's or class's name. */
 function declaredNames(stmt: Node): string[] {
   if (stmt.type === "lexical_declaration" || stmt.type === "variable_declaration") {
     return stmt.namedChildren.filter((d) => d.type === "variable_declarator").flatMap((d) => {
@@ -2192,6 +2345,7 @@ function patternNames(node: Node): string[] {
     case "variable_declaration":
       return declaredNames(node);
     default:
+      // Object and array patterns, rest patterns and parameter lists: the names of every part.
       if (node.type.endsWith("_pattern") || node.type === "formal_parameters" || node.type === "rest_pattern") return node.namedChildren.flatMap(patternNames);
 
       return [];
@@ -2218,6 +2372,7 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): { sourc
 
   if (call?.type !== "call_expression") return null;
 
+  // The require query also matches nested calls; only a string argument of `call` itself counts.
   for (const m of requires.matches(call)) {
     const src = m.captures.find((c) => c.name === "source");
 
@@ -2229,6 +2384,7 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): { sourc
     if ((args ? parentOf(args) : null)?.id !== call.id) continue;
     const fn = m.captures.find((c) => c.name === "fn");
 
+    // The `require` form captures `fn`; the `import()` form does not, so it binds a namespace.
     if (fn && requireKind(fn.node) === "shadowed") continue;
 
     return { source: src.node.text, namespace: fn === undefined };
@@ -2240,6 +2396,7 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): { sourc
 /** The specifier of SFCC's `module.superModule` (`src/frameworks/cartridges.ts` resolves the same literal). */
 const SUPER_MODULE = "module.superModule";
 
+/** The node is `module.superModule`, whatever the spacing. */
 function isSuperModule(node: Node): boolean {
   return node.type === "member_expression" && node.text.replace(/\s+/g, "") === SUPER_MODULE;
 }
@@ -2267,6 +2424,7 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
 
   /** A function value becomes the fn `name`; the kind of the module's declaration of that name, if any. */
   const declare = (name: string, fn: Node, at: Node): DeclFact["kind"] | null => {
+    // A name the module already declares keeps that declaration; only a fresh function value adds one.
     const existing = facts.decls.find((d) => d.name === name);
 
     if (existing) return existing.kind;
@@ -2283,6 +2441,7 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
     const target = value ? unwrapValue(value) : null;
     const form = name === "default" ? { form: "default" as const } : {};
 
+    // `exports.run = run` exports the local `run`; a different name makes it an alias.
     if (target?.type === "identifier" || target?.type === "shorthand_property_identifier") {
       facts.exportRows.push({ name, kind: "value", local: target.text, ...(name === "default" ? form : target.text !== name ? { form: "alias" as const } : {}) });
 
@@ -2293,6 +2452,7 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
     facts.exportRows.push({ name, kind: kind ?? "value", local: kind ? name : null, ...form });
   };
 
+  // `module.exports = { a, b: impl, go() {} }`: each property is a named export.
   if (left === "module.exports") {
     if (right.type === "object") {
       for (const p of right.namedChildren) {
@@ -2301,6 +2461,7 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
           const k = p.childForFieldName("key")?.text;
 
           if (!k) continue;
+          // A quoted key (`"a": f`) is unquoted: the regex strips one leading and one trailing quote.
           row(k.replace(/^['"]|['"]$/g, ""), p.childForFieldName("value"), p);
         } else if (p.type === "method_definition") {
           const name = p.childForFieldName("name");
@@ -2312,11 +2473,16 @@ function commonJsExports(stmt: Node, facts: FileFacts, declCalls: (n: Node) => C
       // `module.exports = handler`, `= function () {}`: the module's value, `default` to an ESM importer.
       row("default", right, expr);
     }
+  // `exports.x = …`, `module.exports.x = …`: the export is the last segment.
   } else if (left.startsWith("exports.") || left.startsWith("module.exports.")) {
     row(left.slice(left.lastIndexOf(".") + 1), right, expr);
   }
 }
 
+/**
+ * The text of a string literal without its quotes: its first fragment only, so
+ * an escape sequence ends it. `""` for an empty string, null for any other node.
+ */
 function stringValue(n: Node): string | null {
   if (n.type !== "string") return null;
 
@@ -2329,6 +2495,7 @@ const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all"]);
 /** SFRA's `server` registrations: a route (`get`, `post`, `use`) or a change of one another cartridge declared. */
 const SFRA_METHODS = new Set(["get", "post", "use", "append", "prepend", "replace"]);
 
+// A controller of an SFCC cartridge: `cartridges/<name>/cartridge/controllers/<Controller>.js`.
 const SFRA_CONTROLLER = /(?:^|\/)cartridges\/[^/]+\/cartridge\/controllers\/[^/]+\.js$/;
 
 /**
@@ -2341,6 +2508,7 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
   const entries: NonNullable<FileFacts["entries"]> = [];
   const controller = SFRA_CONTROLLER.test(facts.path);
 
+  // Recursion is safe here: `extractIndexed` already refused trees deeper than `MAX_DEPTH`.
   const walk = (node: Node): void => {
     if (node.type === "call_expression") {
       const fn = node.childForFieldName("function");
@@ -2350,6 +2518,7 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
       const path = args[0] === undefined ? null : stringValue(args[0]);
       const handler = args.length >= 2 ? args[args.length - 1] : undefined;
 
+      // `<anything>.<verb>("/path" | "*", …, handler)` with a named handler last: a route entry.
       if (method !== null && ROUTE_METHODS.has(method) && path !== null && (path.startsWith("/") || path === "*") && handler !== undefined && (handler.type === "identifier" || handler.type === "member_expression")) {
         const at = located(node);
         entries.push({ kind: "route", label: `${method.toUpperCase()} ${path}`, callee: collapse(handler.text), line: at.line, col: at.col });
@@ -2375,6 +2544,7 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
     for (const child of node.namedChildren) walk(child);
   };
 
+  // Router pages are read only in a `routes` file, where `lazy(() => import(…))` names their modules.
   const pages = ROUTES_FILE.test(facts.path) ? lazyImports(root) : null;
   walk(root);
 
@@ -2385,8 +2555,10 @@ function collectRouteEntries(root: Node, facts: FileFacts): void {
 const WEB_METHODS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options", "use", "register", "route"]);
 
 /** Callees that create a router or an app: `express()`, `express.Router()`, `Router()`, `fastify()`, `Fastify()`. */
+// The regex matches the callee's last segment: `express`, `fastify`, `Fastify`, or `Router` (`express.Router`).
 const WEB_CREATORS = /(?:^|\.)(?:Router|express|fastify|Fastify)$/;
 
+/** HTTP verbs among the registration methods. */
 const WEB_VERBS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options"]);
 
 /**
@@ -2405,6 +2577,7 @@ function collectWebFacts(root: Node, facts: FileFacts): void {
     return { ...decoratorArg(n), line: at.line, col: at.col };
   };
 
+  // Top-level declarators whose value comes from a call or `new` (`const app = express()`), and an exported `config` object.
   for (const stmt of root.namedChildren) {
     const exported = stmt.type === "export_statement";
     const decl = exported ? stmt.childForFieldName("declaration") : stmt;
@@ -2421,6 +2594,7 @@ function collectWebFacts(root: Node, facts: FileFacts): void {
       if (exported && name.text === "config" && value.type === "object") web.config = decoratorArg(value);
       const callee = value.type === "call_expression" ? value.childForFieldName("function") : value.type === "new_expression" ? value.childForFieldName("constructor") : null;
 
+      // Only a plain or dotted name as the callee: the regex rejects calls, indexes and spaces.
       if (callee && (callee.type === "identifier" || callee.type === "member_expression") && /^[\w$.]+$/.test(callee.text)) {
         const at = located(d);
         web.values.push({ name: name.text, callee: callee.text, line: at.line, col: at.col });
@@ -2428,7 +2602,9 @@ function collectWebFacts(root: Node, facts: FileFacts): void {
     }
   }
 
+  // A file-level `'use server'` makes every export a server action; a function-level one marks that function.
   if (directives(root).includes("use server")) web.useServer = true;
+  // One walk for server actions and for registration calls (`<receiver>.<method>(…)`).
   walkNamed(root, (node) => {
     if (FUNCTION_NODES.has(node.type)) {
       const body = node.childForFieldName("body");
@@ -2473,6 +2649,8 @@ function collectWebFacts(root: Node, facts: FileFacts): void {
       }
     }
 
+    // Only a named receiver, and only argument counts a registration can have: a verb needs a path and a handler,
+    // unless `route('/x')` already gave the path.
     if (object?.type !== "identifier") return;
 
     // `route('/x')` of a chain is read with its verbs; `route({ … })` is Fastify's.
@@ -2488,6 +2666,7 @@ function collectWebFacts(root: Node, facts: FileFacts): void {
 
     if (route !== undefined) fact.route = route;
 
+    // A registration on a function's first parameter (`(app) => app.get(…)`, a Fastify plugin) is done within that function.
     for (let up = parentOf(node); up; up = parentOf(up)) {
       if (!FUNCTION_NODES.has(up.type) || firstParameter(up) !== object.text) continue;
       const fnAt = located(up);
@@ -2509,6 +2688,7 @@ function directives(block: Node): string[] {
   const out: string[] = [];
 
   for (const stmt of block.namedChildren) {
+    // Directives are the leading string statements; the first other statement ends them.
     if (stmt.type === "comment") continue;
     const expr = stmt.type === "expression_statement" ? stmt.namedChildren[0] : null;
     const value = expr ? stringValue(expr) : null;
@@ -2535,6 +2715,7 @@ function firstParameter(fn: Node): string | null {
   return pattern?.type === "identifier" ? pattern.text : null;
 }
 
+/** A function's name, if any, and whether it is declared at the top level of the module. */
 interface FunctionName {
   name: string | null;
   top: boolean;
@@ -2548,6 +2729,7 @@ function functionName(fn: Node): FunctionName {
   if (fn.type === "function_declaration" || fn.type === "generator_function_declaration") return { name: fn.childForFieldName("name")?.text ?? null, top: topLevel(parent) };
   let at: Node | null = parent;
 
+  // A function expression: look through wrappers to what holds it.
   while (at && (at.type === "parenthesized_expression" || at.type === "as_expression" || at.type === "satisfies_expression")) at = parentOf(at);
 
   if (at?.type === "variable_declarator") {
@@ -2565,6 +2747,7 @@ function functionName(fn: Node): FunctionName {
   return { name: fn.childForFieldName("name")?.text ?? null, top: false };
 }
 
+// A router's route table: a file named `routes` with a JS or TS extension.
 const ROUTES_FILE = /(?:^|\/)routes\.(?:js|jsx|ts|tsx|mjs)$/;
 
 /** `const Cart = loadable(() => import('./pages/cart'))` (or `lazy`, `React.lazy`) at the top level: name → specifier. */
@@ -2582,6 +2765,7 @@ function lazyImports(root: Node): Map<string, string> {
 
       if (name?.type !== "identifier" || !value) continue;
       const call = unwrapValue(value);
+      // The call's first argument is an arrow or function whose body is an `import("…")` call.
       const loader = call.type === "call_expression" ? call.childForFieldName("arguments")?.namedChildren.find((a) => a.type !== "comment") : undefined;
       const body = loader && FUNCTION_VALUES.has(loader.type) ? loader.childForFieldName("body") : null;
       const imported = body ? unwrapValue(body) : null;
@@ -2602,6 +2786,7 @@ function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null
   let path: string | null = null;
   let component: string | null = null;
 
+  // A literal `path` (string or plain template) and a `component` that is a name.
   for (const p of node.namedChildren) {
     if (p.type !== "pair") continue;
     const key = p.childForFieldName("key")?.text;
@@ -2625,6 +2810,7 @@ function pageOf(node: Node, lazy: ReadonlyMap<string, string>): EntryFact | null
   return Object.assign(entry, { line: at.line, col: at.col });
 }
 
+/** A function's signature as written: its parameters (parenthesized for `x =>`), then `→` and the return type. */
 function signature(fn: Node): string {
   const params = fn.childForFieldName("parameters") ?? fn.childForFieldName("parameter");
   const ret = fn.childForFieldName("return_type");
@@ -2647,6 +2833,7 @@ function withoutParamDecorators(params: Node): string {
   return text;
 }
 
+/** A type's signature: `= <type>` for a short alias (60 characters at most), else its heritage. */
 function typeSignature(n: Node): string | null {
   const v = n.childForFieldName("value");
 
@@ -2659,12 +2846,14 @@ function typeSignature(n: Node): string | null {
   return heritage(n);
 }
 
+/** A class or interface's `extends`/`implements` clause, whitespace collapsed. */
 function heritage(n: Node): string | null {
   const h = n.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
 
   return h ? collapse(h.text) : null;
 }
 
+/** Whitespace runs collapsed to one space, trimmed. */
 function collapse(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
@@ -2674,4 +2863,5 @@ export function isNodeBuiltin(spec: string): boolean {
   return spec.startsWith("node:") || builtinModules.includes(spec);
 }
 
+// The grammar type, re-exported from `treesitter.ts` beside the extractor.
 export type { Grammar };

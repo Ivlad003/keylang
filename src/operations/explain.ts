@@ -1,6 +1,14 @@
 // The explanations of a node: the offline help and summary (`explain`), one
 // answer of the model (`explain --llm`), what needs explaining
 // (`explain --stale`, the plan of a brief batch) and the batch itself.
+//
+// Place in the pipeline: operations (see `operations.ts`) over a fresh
+// analysis (snapshot + specs) and the stored explanations under
+// `<dir>/explain/`. Entry points: `runExplain`, `runExplainLlm`,
+// `runExplainPlan`, `runExplainBatch`. Key terms: answer (a full
+// explanation), brief (a short one the map and C4 show), baseline/closure
+// (the fingerprint of the code an explanation was written against; a
+// mismatch makes it stale), wave (briefs that can be asked in parallel).
 
 import { isAbsolute, resolve } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
@@ -35,6 +43,8 @@ export async function runExplain(request: ExplainRequest, context: OperationCont
 
   if (context.signal?.aborted) return empty("explain", "cancelled", null);
 
+  // A diagnostic code (K001, ...) is answered from the built-in help, with
+  // no analysis.
   if (isDiagnosticCode(subject)) {
     const found = codeExplanation(subject);
 
@@ -55,6 +65,8 @@ export async function runExplain(request: ExplainRequest, context: OperationCont
   }
 
   if (context.signal?.aborted) return empty("explain", "cancelled", null);
+  // An explanation store in the layout of keylang 0.1 gets a note on where
+  // to move it.
   const old = oldExplanations(analyzed.config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const found = nodeExplanation(analyzed, subject, request.detail ?? analyzed.config.explain.detail);
@@ -114,6 +126,8 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
   const found = nodeExplanation(analyzed, id, detail);
 
   if ("unknown" in found) return { ...empty("explain-llm", "failed", 2), messages: [...notes, { level: "error", text: unknownIdMessage(id, found.suggestion) }] };
+  // Where the answer lives and why the saved one (if any) cannot be reused:
+  // `reason` is null when it is fresh and of the same detail and language.
   const { lang } = config.explain;
   const file = explanationPath(config, id, detail);
   // The saved file as read: the commit writes only over these bytes.
@@ -186,6 +200,8 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
   }
 
   if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
+  // Clean the answer: briefs are cut to their short form, answers lose a
+  // wrapping fence or remark.
   const text = detail === "brief" ? briefText(answer) : answerText(answer);
 
   if (text === "") {
@@ -194,6 +210,8 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
     return failed(2, [{ level: "error", text: payload.error }]);
   }
 
+  // The stored explanation records who answered, when, and the baseline of
+  // the code it explains, so a later change marks it stale.
   const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail, text };
   payload.answer = savedAnswer(analyzed, id, e);
   const keep = { level: "info" as const, text: previous === null ? "nothing was written" : `nothing was written; ${file} keeps the saved answer` };
@@ -210,6 +228,8 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
 
   if (context.signal?.aborted) return { ...empty("explain-llm", "cancelled", null), payload };
 
+  // After the gate, refuse the write if the saved file or any input changed
+  // while the model was answering.
   const refuse = (reasons: string[]): OperationEnvelope<"explain-llm"> => {
     payload.refused = reasons;
 
@@ -255,6 +275,7 @@ export async function runExplainLlm(request: ExplainLlmRequest, context: Operati
 export async function runExplainPlan(request: ExplainPlanRequest, context: OperationContext): Promise<OperationEnvelope<"explain-plan">> {
   if (!isAbsolute(request.root)) return empty("explain-plan", "failed", 2, "explain: root must be an absolute path");
 
+  // `--limit` and `--jobs` only shape a brief plan.
   if (request.list === "briefs") {
     for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
       if (value !== undefined && (!Number.isInteger(value) || value < 1)) return empty("explain-plan", "failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
@@ -277,6 +298,8 @@ export async function runExplainPlan(request: ExplainPlanRequest, context: Opera
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
 
+  // `--stale` alone lists saved explanations that are stale or whose node is
+  // gone; no snapshot is needed for that.
   if (request.list === "stale-saved") {
     const inventory = staleInventory(analyzed);
     const payload: ExplainPlanPayload = { list: "stale-saved", ...inventory, snapshotId, text: staleInventoryText(inventory) };
@@ -388,6 +411,7 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
     }
   };
 
+  // Pin every planned brief file's current bytes: each write expects them.
   const planned = plan.map((entry) => entry.id);
   const files = new Map(planned.map((id) => [id, explanationPath(config, id, "brief", planned)]));
   const expected = new Map([...files.values()].map((file) => [file, readTextOrNull(resolve(root, file))]));
@@ -397,6 +421,8 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
   const signal = context.signal ? AbortSignal.any([context.signal, halt.signal]) : halt.signal;
   const cancelled = (): boolean => context.signal?.aborted === true;
 
+  // The first stop wins: its reason is kept and every request in flight is
+  // aborted.
   const stop = (why: "cancelled" | "outdated" | "refused", reasons: string[] = []): void => {
     if (payload.stopped !== null) return;
     payload.stopped = why;
@@ -445,6 +471,8 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
 
     if (text === "") return finish(id, `${client.agent} answered without text; nothing written`);
     // Asked once, before the first write: from here on the session defers its own writes and Cancel stops between briefs.
+    // The gate is a shared promise, so concurrent workers wait on the same
+    // single call; an exception becomes a refusal.
     gate ??= Promise.resolve()
       .then(() => context.beforeCommit?.({ targets: [...files.values()] }))
       .catch((error) => ({ refused: [errorText(error)] }));
@@ -480,6 +508,8 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
 
     if (target !== null) return finish(id, `${file}: ${target}`);
     // The repository's baseline reads the layer briefs this batch just wrote.
+    // The baseline: for the repository node, from the layer briefs; for any
+    // other node, from its code.
     const closure = id === SYSTEM_ID ? systemBaseline(analyzed.snapshot!, briefs) : (currentBaseline(analyzed, id) ?? "");
     const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure, lang, detail: "brief", text };
 
@@ -497,6 +527,9 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
   };
 
   context.onProgress?.({ text: `asking ${client.agent}: ${plan.length} brief(s), ${jobs} at a time` });
+  // Waves run in order (members before their parents, so a parent's
+  // request can read its members' fresh briefs); within a wave, `jobs`
+  // workers drain a shared queue.
   const waves = [...new Set(plan.map((entry) => entry.wave))];
 
   for (const [index, wave] of waves.entries()) {
@@ -516,6 +549,7 @@ export async function runExplainBatch(request: ExplainBatchRequest, context: Ope
     await Promise.all(workers);
   }
 
+  // Stable output: failures by ID, not-started nodes in plan order.
   payload.failed.sort((a, b) => compareText(a.id, b.id));
   payload.notStarted = plan.map((entry) => entry.id).filter((id) => notStarted.has(id));
   payload.text = explainBatchText(payload);

@@ -3,10 +3,14 @@
 // reads (npm names, Python and Rust import names, Composer names). `check`
 // takes a driver import as the evidence of a relation, and discovery turns an
 // imported driver into a component. Data only, no I/O.
+// Used by `# system` checking (spec → rules) and by system discovery from the
+// snapshot. Entry points: `TECHNOLOGIES`, `technologyOf` (name → technology),
+// `evidenceIds` and `technologiesOfPackage` (technology ↔ external module IDs).
 
 import { externalSegment, EXTERNAL } from "./external-ids.ts";
 import type { ComponentKind } from "./parser.ts";
 
+/** One catalog entry: a technology, the component kind it is and its driver packages. */
 export interface Technology {
   /** The canonical name: what discovery writes, what aliases resolve to. */
   name: string;
@@ -24,6 +28,7 @@ const SQL_CLIENTS = ["@prisma/client", "prisma", "typeorm", "knex", "sequelize",
 /** AWS's Python SDK talks to every AWS service. */
 const BOTO = ["boto3", "botocore", "aioboto3"];
 
+/** The catalog. Order matters only for `technologiesOfPackage`, which lists matches in this order. */
 export const TECHNOLOGIES: readonly Technology[] = [
   // Any SQL database: what a generic client or ORM shows when no driver names the database.
   { name: "sql", kind: "db", sql: true, aliases: ["database", "rdbms"], packages: [] },
@@ -71,12 +76,14 @@ export const TECHNOLOGIES: readonly Technology[] = [
   { name: "keycloak", kind: "auth", aliases: [], packages: ["keycloak-connect", "keycloak-js", "python-keycloak", "keycloak"] },
 ];
 
+// Lookup by lowercased name or alias; a later entry wins a shared word.
 const BY_WORD = new Map<string, Technology>();
 
 for (const tech of TECHNOLOGIES) for (const word of [tech.name, ...tech.aliases]) BY_WORD.set(word.toLowerCase(), tech);
 
 /** The technology a component's text starts with (`postgres 16`, `PostgreSQL`), or null when it names none of the catalog. */
 export function technologyOf(text: string | null | undefined): Technology | null {
+  // Only the first word counts (`postgres 16` → postgres), without a trailing punctuation mark.
   const word = text?.trim().split(/\s+/)[0]?.toLowerCase().replace(/[,;:]$/, "");
 
   return word ? (BY_WORD.get(word) ?? null) : null;
@@ -84,6 +91,7 @@ export function technologyOf(text: string | null | undefined): Technology | null
 
 /** The external IDs whose import is evidence of talking to `tech`. */
 export function evidenceIds(tech: Technology): Set<string> {
+  // A SQL database also accepts any generic SQL client or ORM as evidence.
   const packages = tech.sql ? [...tech.packages, ...SQL_CLIENTS] : tech.packages;
 
   return new Set(packages.map((pkg) => `${EXTERNAL}.${externalSegment(pkg)}`));

@@ -7,6 +7,10 @@
 // named handler are `route`. Each collector is a pure function of the facts,
 // the graph and the manifest texts; a computed path or a handler keylang
 // cannot name is no entry, and a framework's routes are its adapter's.
+//
+// Sits after the graph (source → FileFacts → graph → snapshot): the snapshot's
+// `entries` come from `collectEntries`, and framework adapters place theirs
+// with `entryScope` + `frameworkEntry`. `fnIn` resolves a written name to a fn ID.
 
 import { parse as parseToml, type TomlTable, type TomlValue } from "smol-toml";
 import type { FileFacts } from "./extract/facts.ts";
@@ -25,6 +29,7 @@ export interface EntryManifests {
 /** The POSIX paths of the manifests entry points come from, in `snapshotId` with their text. */
 export const ENTRY_MANIFESTS = ["package.json", "pyproject.toml", "Cargo.toml"] as const satisfies readonly (keyof EntryManifests)[];
 
+/** What the collectors read: the graph, its facts, the manifests and a file-existence check. */
 export interface EntryInputs {
   graph: Graph;
   facts: readonly FileFacts[];
@@ -40,6 +45,7 @@ export interface EntryScope {
   fns: ReadonlyMap<string, { file: string; line: number }>;
 }
 
+/** Index the graph for the collectors: facts by path, and every fn (nested modules included) by ID. */
 export function entryScope(graph: Graph, facts: readonly FileFacts[]): EntryScope {
   const fns = new Map<string, { file: string; line: number }>();
 
@@ -58,6 +64,7 @@ export function entryScope(graph: Graph, facts: readonly FileFacts[]): EntryScop
 function placeOf(scope: EntryScope, id: string, fallback: { file: string; line: number }): { file: string; line: number } {
   const fn = scope.fns.get(id);
 
+  // A fn with a known file, else a module with a path, else where the fact was written.
   if (fn !== undefined && fn.file !== "") return fn;
   const module = scope.graph.modules.get(id);
 
@@ -91,6 +98,8 @@ export function collectEntries(inputs: EntryInputs): EntryPoint[] {
     ...phpScriptEntries(facts, scope),
   ];
 
+  // Drop exact duplicates (same kind, label, ID and place), then sort so the
+  // snapshot lists entries in the same order on every run.
   const seen = new Set<string>();
 
   return entries
@@ -105,6 +114,7 @@ export function collectEntries(inputs: EntryInputs): EntryPoint[] {
     .sort(compareEntries);
 }
 
+/** The entry order of the snapshot: kind, label, ID, file, line. */
 export function compareEntries(a: EntryPoint, b: EntryPoint): number {
   return cmp(a.kind, b.kind) || cmp(a.label, b.label) || cmp(a.id, b.id) || cmp(a.file, b.file) || a.line - b.line;
 }
@@ -117,6 +127,7 @@ export function binTargets(packageJson: string | null): { name: string; path: st
   const bin = manifest.bin;
   const out: { name: string; path: string }[] = [];
 
+  // The string form is named after the package, without its npm scope.
   if (isJsonString(bin)) {
     const name = isJsonString(manifest.name) ? manifest.name.replace(/^@[^/]+\//, "") : null;
 
@@ -134,11 +145,13 @@ export function binTargets(packageJson: string | null): { name: string; path: st
  * `bin/cli.ts`). A built file outside the sources resolves to nothing.
  */
 export function binSource(path: string, has: (path: string) => boolean): string | null {
+  // The path itself first, then each JS extension's TypeScript twin.
   const candidates = [path, path.replace(/\.js$/, ".ts"), path.replace(/\.mjs$/, ".mts"), path.replace(/\.cjs$/, ".cts"), path.replace(/\.js$/, ".tsx")];
 
   return candidates.find(has) ?? null;
 }
 
+/** `cli` entries from package.json `bin`, one per name whose file has a source in the graph. */
 function binEntries(packageJson: string | null, scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -159,6 +172,7 @@ function binEntries(packageJson: string | null, scope: EntryScope): EntryPoint[]
 /** HTTP methods a Next.js route handler file exports, one handler each. */
 const NEXT_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
+/** A `route.<ext>` file under an `app/` directory; group 1 is the path between `app/` and the file. */
 const NEXT_ROUTE_FILE = /(?:^|\/)app\/(.*?)(?:\/)?route\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
 
 /**
@@ -170,11 +184,13 @@ export function nextRoutePath(file: string): string | null {
   const match = NEXT_ROUTE_FILE.exec(file);
 
   if (match === null) return null;
+  // Route groups `(name)` organise files but add nothing to the URL.
   const segments = (match[1] ?? "").split("/").filter((segment) => segment !== "" && !/^\(.*\)$/.test(segment));
 
   return `/${segments.join("/")}`;
 }
 
+/** `route` entries for the HTTP-method handlers a Next.js route file exports. */
 function nextRouteEntries(facts: readonly FileFacts[], scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -183,6 +199,7 @@ function nextRouteEntries(facts: readonly FileFacts[], scope: EntryScope): Entry
 
     if (path === null) continue;
 
+    // Handlers declared in the file itself.
     for (const decl of file.decls) {
       if (decl.kind !== "fn" || !decl.exported || !NEXT_METHODS.has(decl.name)) continue;
       const id = fnIn(scope, file.path, decl.name);
@@ -203,6 +220,7 @@ function nextRouteEntries(facts: readonly FileFacts[], scope: EntryScope): Entry
   return out;
 }
 
+/** `route` entries for `app.get('/x', h)`-style registrations the frontend recorded with a literal path and a named handler. */
 function expressRouteEntries(facts: readonly FileFacts[], scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -218,6 +236,7 @@ function expressRouteEntries(facts: readonly FileFacts[], scope: EntryScope): En
   return out;
 }
 
+/** `main` entries for Python `if __name__ == "__main__":` blocks: the fn the block calls, else the module. */
 function pythonMainEntries(facts: readonly FileFacts[], scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -246,6 +265,7 @@ export function pyprojectScripts(pyproject: string | null): { name: string; modu
     return [];
   }
 
+  // Only `[project.scripts]` with string values; anything else is ignored.
   const project = parsed.project;
   const scripts = isTomlTable(project) && isTomlTable(project.scripts) ? project.scripts : null;
 
@@ -254,6 +274,7 @@ export function pyprojectScripts(pyproject: string | null): { name: string; modu
 
   for (const [name, target] of Object.entries(scripts)) {
     if (!isTomlString(target)) continue;
+    // `pkg.module:func`; without `:` the script runs the module itself.
     const [module, fn] = target.split(":", 2);
 
     if (module === undefined || module === "") continue;
@@ -271,6 +292,7 @@ export function pythonModuleFile(module: string, has: (path: string) => boolean)
   return candidates.find(has) ?? null;
 }
 
+/** `cli` entries for pyproject.toml scripts whose module is a file of the graph. */
 function pyprojectScriptEntries(pyproject: string | null, scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -286,6 +308,7 @@ function pyprojectScriptEntries(pyproject: string | null, scope: EntryScope): En
   return out;
 }
 
+/** A Cargo bin target path; group 1 is the crate directory (with trailing `/`, or empty at the root). */
 const RUST_BIN_FILE = /^(.*?)src\/(?:main\.rs|bin\/[^/]+\.rs|bin\/[^/]+\/main\.rs)$/;
 
 /**
@@ -296,6 +319,7 @@ const RUST_BIN_FILE = /^(.*?)src\/(?:main\.rs|bin\/[^/]+\.rs|bin\/[^/]+\/main\.r
 export function rustBinTarget(file: string, cargoToml: string | null, exists: (path: string) => boolean): boolean {
   const match = RUST_BIN_FILE.exec(file);
 
+  // Cargo's default layout counts only when a manifest sits beside `src/`.
   if (match !== null && exists(`${match[1] ?? ""}Cargo.toml`)) return true;
 
   if (cargoToml === null) return false;
@@ -307,11 +331,13 @@ export function rustBinTarget(file: string, cargoToml: string | null, exists: (p
     return false;
   }
 
+  // Otherwise an explicit `[[bin]]` table of the root manifest may name the file.
   const bins = Array.isArray(parsed.bin) ? parsed.bin : [];
 
   return bins.some((bin) => isTomlTable(bin) && isTomlString(bin.path) && normalizePath(bin.path) === file);
 }
 
+/** `main` entries for `fn main` of each Rust bin target. */
 function rustMainEntries(facts: readonly FileFacts[], scope: EntryScope, cargoToml: string | null, exists: (path: string) => boolean): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -328,6 +354,7 @@ function rustMainEntries(facts: readonly FileFacts[], scope: EntryScope, cargoTo
   return out;
 }
 
+/** The places a PHP file runs as a script from: `bin/<name>.php` or `public/index.php`. */
 const PHP_SCRIPT = /^(?:bin\/[^/]+\.php|public\/index\.php)$/;
 
 /** A PHP file run as a script, by its place: `bin/*.php` or `public/index.php`, with code at its top level. A class in `bin/` is a declaration, not a script. */
@@ -335,6 +362,7 @@ export function phpScript(file: Pick<FileFacts, "path" | "decls" | "moduleCalls"
   return PHP_SCRIPT.test(file.path) && (file.decls.length === 0 || file.moduleCalls.length > 0);
 }
 
+/** `main` entries for PHP scripts; the entry is the file's module, since a script has no main fn. */
 function phpScriptEntries(facts: readonly FileFacts[], scope: EntryScope): EntryPoint[] {
   const out: EntryPoint[] = [];
 
@@ -363,6 +391,7 @@ export function fnIn(scope: EntryScope, file: string, name: string): string | nu
 
   if (head === undefined || head === "") return null;
 
+  // A bare name: a fn declared in this file (by its written name), else an import.
   if (rest.length === 0) {
     const own = module.fns.find((fn) => (fn.written ?? fn.name) === head && (fn.file === null || fn.file === file));
 
@@ -371,6 +400,8 @@ export function fnIn(scope: EntryScope, file: string, name: string): string | nu
     return importedSymbol(scope, module, file, head, null);
   }
 
+  // `Head.member`: a method of a class declared in this file, else a member
+  // of a module import. Longer paths are not resolved.
   if (rest.length === 1) {
     const member = rest[0]!;
     const cls = module.children.find((child) => child.class && child.name === head && (child.path === null || child.path === file));
@@ -393,6 +424,9 @@ function importedSymbol(scope: EntryScope, module: Module, file: string, local: 
   for (const imp of facts.imports) {
     for (const binding of imp.bindings) {
       if (binding.local !== local) continue;
+      // The export name to look up: the member for a namespace import,
+      // `default` or the imported name for a plain one. A namespace without a
+      // member, or a named binding with one, cannot name a fn.
       const exported = binding.kind === "module" ? member : member === null ? (binding.kind === "default" ? "default" : binding.imported) : null;
 
       if (exported === null) continue;
@@ -404,6 +438,7 @@ function importedSymbol(scope: EntryScope, module: Module, file: string, local: 
         module.deps.find((d) => d.file === file && (d.text.includes(`"${imp.source}"`) || d.text.includes(`'${imp.source}'`)));
 
       if (dep === undefined) continue;
+      // Only a fn or a value export can be a handler; a class or a type cannot.
       const row = scope.graph.exports.find((entry) => entry.module === dep.target && entry.name === exported);
 
       if (row?.symbol != null && (row.kind === "fn" || row.kind === "value")) return row.symbol;
@@ -413,6 +448,7 @@ function importedSymbol(scope: EntryScope, module: Module, file: string, local: 
   return null;
 }
 
+/** A manifest path in POSIX form without a leading `./`. */
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.\//, "");
 }
@@ -427,10 +463,12 @@ function isTomlTable(value: TomlValue | undefined): value is TomlTable {
   return value !== undefined && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
+/** A TOML string value. */
 function isTomlString(value: TomlValue | undefined): value is string {
   return typeof value === "string";
 }
 
+/** Plain code-unit order, independent of locale. */
 function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

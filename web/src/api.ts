@@ -4,6 +4,12 @@
 // bar (the rest of the fragment, the selected view, stays), and every request
 // carries it as `Authorization: Bearer`. The types mirror src/diagram.ts and
 // src/tui/web.ts; the client checks only what it draws.
+//
+// Place in the pipeline: the browser end of the web view. The server (or a
+// static export, or the in-tab Worker) turns the snapshot and the specs into
+// diagrams and listings; this module only fetches them. Entry points: `Api`
+// (one method per route), `transport`/`useTransport` (which backend answers)
+// and `replyJson`/`errorOf` (decoding an answer or its refusal).
 
 import { isJsonObject, isJsonString, parseJson } from "../../src/json.ts";
 import type { EditorModel } from "./editor.ts";
@@ -32,6 +38,8 @@ export interface Transport {
 
 /** The query in one order: a static export files its answers by `path?query`, so the page spells it as `src/tui/read-api.ts` does. */
 export function requestKey(path: string, query: URLSearchParams): string {
+  // Sort by name, then by value, with plain code-unit comparison (not locale):
+  // the key must match the exporter's byte for byte, or the static page misses its answer.
   const pairs = [...query.entries()].sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0));
   const text = new URLSearchParams(pairs).toString();
 
@@ -42,6 +50,7 @@ export function requestKey(path: string, query: URLSearchParams): string {
 export function keyShard(key: string, shards: number): number {
   let hash = 0x811c9dc5;
 
+  // FNV-1a step: xor in the unit, multiply by the 32-bit prime; `>>> 0` keeps the hash unsigned.
   for (let i = 0; i < key.length; i++) {
     hash ^= key.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
@@ -70,6 +79,7 @@ class HttpTransport implements Transport {
 
     if (body !== undefined) init.body = JSON.stringify(body);
     const response = await fetch(search === "" ? relative : `${relative}?${search}`, init);
+    // An attachment (an export, a bundle) names its file in `Content-Disposition: ...; filename="<name>"`.
     const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
     const reply: Reply = { status: response.status, type: response.headers.get("Content-Type") ?? "text/plain", text: await response.text() };
 
@@ -79,6 +89,7 @@ class HttpTransport implements Transport {
   }
 }
 
+// The page's one transport, created lazily so a static page can swap it in before the first request.
 let current: Transport | null = null;
 
 /** The transport of this page: the one `useTransport` put, else HTTP with this tab's token. */
@@ -111,6 +122,8 @@ export function takeToken(): string {
   const hash = new URLSearchParams(location.hash.slice(1));
   const fromUrl = hash.get("t");
 
+  // First visit: keep the token for this tab and drop it from the address bar,
+  // so it does not end up in history, bookmarks or a shared link.
   if (fromUrl) {
     sessionStorage.setItem(TOKEN_KEY, fromUrl);
     hash.delete("t");
@@ -121,8 +134,10 @@ export function takeToken(): string {
   return sessionStorage.getItem(TOKEN_KEY) ?? "";
 }
 
+/** The check verdict a diagram shape or edge carries; `planned` is an ID marked planned and not yet in the code, `null` means no result. */
 export type Verdict = "ok" | "fail" | "unverified" | "planned" | null;
 
+/** One flow of `GET /api/views`: a written or discovered flow with where it is declared. */
 export interface FlowListing {
   name: string;
   file: string;
@@ -135,6 +150,7 @@ export interface FlowListing {
   label?: string;
 }
 
+/** The answer of `GET /api/views`: everything the page can show, for its menus and search. */
 export interface Views {
   flows: string[];
   entries: { id: string; kind: string; label: string }[];
@@ -153,6 +169,7 @@ export interface Views {
   systems?: SystemListing[];
 }
 
+/** One system of `Views.systems`: where it is declared and how many views it has. */
 export interface SystemListing {
   name: string;
   file: string | null;
@@ -171,6 +188,7 @@ export interface SystemSummary {
   tables: number;
 }
 
+/** One event node of the snapshot with its publisher and subscriber counts. */
 export interface EventListing {
   id: string;
   file: string | null;
@@ -179,6 +197,7 @@ export interface EventListing {
   subscribers: number;
 }
 
+/** Where a call is written: file (null when unknown), 1-based line and column. */
 export interface CallSite {
   file: string | null;
   line: number;
@@ -206,6 +225,7 @@ export interface CallRef {
   entries: { kind: string; label: string }[];
 }
 
+/** A call the snapshot could not resolve (a hole), with its reason and any candidate targets. */
 export interface CallHole {
   kind: string;
   reason: string;
@@ -214,6 +234,7 @@ export interface CallHole {
   candidates?: string[];
 }
 
+/** The answer of `GET /api/calls`: a node's callees, unresolved calls, callers and the entry points that reach it. */
 export interface Calls {
   id: string;
   node: { kind: string; file: string | null; line: number | null; layer: string | null; doc: string | null } | null;
@@ -266,12 +287,14 @@ export interface FlowProposal {
   merge: string;
 }
 
+/** One check result attached to a diagram node: its verdict, criterion and message. */
 export interface NodeResult {
   verdict: string;
   criterion: string;
   message: string;
 }
 
+/** A shape of a server-drawn diagram, already placed: its box is in model coordinates. */
 export interface DiagramNode {
   id: string;
   kind: string;
@@ -292,6 +315,7 @@ export interface DiagramNode {
   h: number;
 }
 
+/** An arrow between two `DiagramNode` IDs; the canvas routes it. */
 export interface DiagramEdge {
   from: string;
   to: string;
@@ -301,6 +325,7 @@ export interface DiagramEdge {
   async?: boolean;
 }
 
+/** A labelled frame around shapes (a layer, a module), placed like a node. */
 export interface DiagramGroup {
   id: string;
   label: string;
@@ -311,6 +336,7 @@ export interface DiagramGroup {
   h: number;
 }
 
+/** The answer of `GET /api/diagram`: one view laid out; `reason` explains an empty one. */
 export interface Diagram {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
@@ -374,6 +400,7 @@ export interface ClipShape {
   colour?: string;
 }
 
+/** An edge of a copied fragment between two `ClipShape` keys, with its bends if any. */
 export interface ClipEdge {
   from: string;
   to: string;
@@ -391,6 +418,7 @@ export interface BundleRequest {
   withCallees?: number;
 }
 
+/** The header of a bundle: which repository, commit and snapshot it came from. */
 export interface BundleHeader {
   format: number;
   repo: string;
@@ -431,6 +459,7 @@ export interface BundleImport {
   merge?: string;
 }
 
+/** The answer of `GET /api/usages`: the flows and entry points that use an ID. */
 export interface Usages {
   id: string;
   flows: { name: string; file: string; line: number }[];
@@ -484,6 +513,7 @@ export class ApiError extends Error {
   }
 }
 
+/** The page's client of the diagram API: one method per route, each decoded with `replyJson`. */
 export class Api {
   views(): Promise<Views> {
     return this.get<Views>("/api/views");
@@ -553,6 +583,7 @@ export class Api {
   async diagramProposal(model: EditorModel, specHash: string | null): Promise<DiagramProposal> {
     const reply = await transport().send("POST", "/api/diagram-proposal", new URLSearchParams(), { model, specHash });
 
+    // 409 is not an error here: the specs moved or the target refused, and the body says how.
     if (reply.status === 409) {
       // SAFETY: a 409 of /api/diagram-proposal is a DiagramProposal with its `status` and `error` (docs/tui.md «Діаграми (API)»).
       return JSON.parse(reply.text) as DiagramProposal;

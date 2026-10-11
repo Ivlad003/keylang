@@ -2,11 +2,16 @@
 // The words come from the help text (commands and their subcommands) and
 // the option table of the argument parser, so a new command or flag is
 // completed as soon as `--help` and the parser know it.
+// Part of the CLI layer; pure text generation, the CLI does the I/O.
+// Entry points: `helpCommands`, `completionScript`, `isShell`.
 
+/** Shells `keylang completions` can write a script for. */
 export const SHELLS = ["bash", "zsh", "fish"] as const;
 
+/** One supported shell name. */
 export type Shell = (typeof SHELLS)[number];
 
+/** Whether `name` is a supported shell. */
 export function isShell(name: string): name is Shell {
   return SHELLS.some((shell) => shell === name);
 }
@@ -30,6 +35,7 @@ export function helpCommands(usage: string): Map<string, string[]> {
   let inside = false;
 
   for (const line of usage.split("\n")) {
+    // Scan only the `Commands:` block: it starts at its heading and ends at the next unindented line.
     if (line === "Commands:") {
       inside = true;
       continue;
@@ -38,9 +44,11 @@ export function helpCommands(usage: string): Map<string, string[]> {
     if (!inside) continue;
 
     if (line !== "" && !line.startsWith(" ")) break;
+    // Exactly two spaces of indentation: deeper lines are wrapped descriptions, not commands.
     const head = /^ {2}(\S.*)$/.exec(line);
 
     if (head === null) continue;
+    // The first word is the command, the second a subcommand only if it is a plain word (not `<arg>` or `--flag`).
     const [command, sub] = head[1]!.split(/\s+/);
 
     if (command === undefined || !WORD.test(command)) continue;
@@ -53,6 +61,7 @@ export function helpCommands(usage: string): Map<string, string[]> {
   return commands;
 }
 
+/** The completion script for `shell`, ending with a newline. */
 export function completionScript(shell: Shell, words: CompletionWords): string {
   switch (shell) {
     case "bash":
@@ -64,14 +73,17 @@ export function completionScript(shell: Shell, words: CompletionWords): string {
   }
 }
 
+/** Every flag spelling: `--long` and, when there is one, `-s`. */
 function flagWords(words: CompletionWords): string[] {
   return words.flags.flatMap((flag) => [`--${flag.long}`, ...(flag.short === undefined ? [] : [`-${flag.short}`])]);
 }
 
+/** Commands that have subcommands, in help order. */
 function withSubcommands(words: CompletionWords): [string, readonly string[]][] {
   return [...words.commands].filter(([, subs]) => subs.length > 0);
 }
 
+/** Bash: flags when the word starts with `-`, commands at position 1, subcommands at position 2, otherwise files. */
 function bashScript(words: CompletionWords): string {
   const cases = withSubcommands(words).map(([command, subs]) => `      ${command}) words="${subs.join(" ")}" ;;`);
 
@@ -95,6 +107,7 @@ function bashScript(words: CompletionWords): string {
   ].join("\n");
 }
 
+/** Zsh: works both sourced and autoloaded from $fpath (`#compdef`); falls back to file completion after the subcommand. */
 function zshScript(words: CompletionWords): string {
   const cases = withSubcommands(words).map(([command, subs]) => `      ${command}) compadd ${subs.join(" ")}; return ;;`);
 
@@ -122,6 +135,7 @@ function zshScript(words: CompletionWords): string {
   ].join("\n");
 }
 
+/** Fish: commands until one is seen, then that command's subcommands; flags anywhere. */
 function fishScript(words: CompletionWords): string {
   const commands = [...words.commands.keys()];
 

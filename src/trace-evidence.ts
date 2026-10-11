@@ -3,20 +3,29 @@
 // one span satisfies one step, order comes from start/end on one clock or
 // from `links`, never from sorting timestamps. Only a complete run confirms or
 // refutes: absence is a failure only when the run is also sufficiently instrumented.
+//
+// The evidence step of `check` for flows (spec rules over SpecIR flows): trace
+// adapters write the JSONL, `trace-plan.ts` tells them what to wrap, and this
+// module reads it and judges each step. Entry points: `loadTraces` (files →
+// `TraceRun`s) and `traceFlow` (runs + flow shape → verdict per node). Terms:
+// run, span, clock (one process's ordering), link, instrumented symbol.
 
 import { closeSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 
+/** The trace event schema version this reader accepts. */
 export const TRACE_SCHEMA = 1;
 
+/** A point on one clock: `seq` orders events of that clock; `ts` is wall time, not used for order. */
 interface Mark {
   clockId: string;
   seq: number;
   ts: number;
 }
 
+/** One call of an instrumented symbol: its start, its end (null while open) and its parent span. */
 export interface TraceSpan {
   spanId: string;
   parentSpanId: string | null;
@@ -26,6 +35,7 @@ export interface TraceSpan {
   end: (Mark & { outcome: string }) | null;
 }
 
+/** All events of one `(runId, testId, flow)` across the trace files, validated and assembled. */
 export interface TraceRun {
   /** Trace files the run's events came from, in reading order: one run may span several. */
   files: string[];
@@ -108,6 +118,8 @@ function eachLine(path: string, visit: (text: string, line: number) => void): vo
     let rest = "";
     let line = 0;
 
+    // The decoder keeps a multi-byte character split across chunks; `rest` keeps
+    // the partial last line until the next chunk completes it.
     for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) {
       const lines = (rest + decoder.write(chunk.subarray(0, read))).split("\n");
       rest = lines.pop() ?? "";
@@ -115,12 +127,14 @@ function eachLine(path: string, visit: (text: string, line: number) => void): vo
       for (const text of lines) visit(text, ++line);
     }
 
+    // The last line, which has no newline after it (empty when the file ends with one).
     visit(rest + decoder.end(), ++line);
   } finally {
     closeSync(fd);
   }
 }
 
+/** Validates one JSONL event and folds it into its run; every error names `file:line` and the field. */
 function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text: string): void {
   const at = `${file}:${line}`;
   let value: JsonValue;
@@ -136,6 +150,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
 
   if (event.schemaVersion !== TRACE_SCHEMA) throw new Error(`${at}: unsupported trace schemaVersion ${JSON.stringify(event.schemaVersion)}`);
 
+  // Typed field readers: each throws with the field's name when it is missing or of the wrong type.
   const str = (field: string): string => {
     const v = event[field];
 
@@ -166,6 +181,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   const snapshotId = event.snapshotId;
 
   if (snapshotId !== undefined && snapshotId !== null && !isJsonString(snapshotId)) throw new Error(`${at}: \`snapshotId\` must be a string or null`);
+  // The run's identity as one unambiguous string key (JSON escapes any separator).
   const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
   let run = runs.get(key);
 
@@ -179,6 +195,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
   run.snapshots.add(snapshotId ?? null);
   const kind = str("event");
 
+  // Three event kinds: a span starts, a span ends, a process reports its run.
   if (kind === "start") {
     const links = ids("links", "span ids") ?? [];
     const parent = event.parentSpanId;
@@ -191,6 +208,7 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
     run.spans.set(spanId, { spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links, start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
     run.clocks.add(str("clockId"));
   } else if (kind === "end") {
+    // An end may arrive before its start (another file, read later): it waits in `pendingEnds`.
     const spanId = str("spanId");
     const end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: isJsonString(event.outcome) ? event.outcome : "ok" };
     run.clocks.add(end.clockId);
@@ -219,6 +237,8 @@ function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text
 
     for (const [id, reason] of Object.entries(reasons ?? {})) if (isJsonString(reason) && !run.uninstrumented.has(id)) run.uninstrumented.set(id, reason);
     const open = ids("open", "span ids") ?? [];
+    // Complete only if every record says so; drops add up, and one record that
+    // does not report drops makes the total unknown.
     run.complete &&= event.complete === true;
     run.dropped = run.dropped === null || dropped === undefined ? null : run.dropped + dropped;
     // A symbol is instrumented in the run only when every process says so.
@@ -248,7 +268,9 @@ function finishRun(draft: RunDraft): TraceRun {
 
   const spans = [...draft.spans.values()];
 
+  // A span that never ended is open, as if the adapter had reported it.
   for (const span of spans) if (span.end === null) draft.open.add(span.spanId);
+  // One snapshot across all events binds the run; several leave it unbound.
   const [snapshotId] = draft.snapshots;
   // A process that wrote spans but no `run` record (killed, terminated, gone with its parent's exit) left the run
   // short of its end. A record without a clock does not say whose it is, so with one the clocks are not judged.
@@ -281,6 +303,7 @@ export type ShapeNode =
   | { kind: "when"; key: number; children: ShapeNode[] }
   | { kind: "parallel"; key: number; children: ShapeNode[] };
 
+/** The trace verdict of one flow node, with the run and test it came from. */
 export interface TraceEvidence {
   verdict: "ok" | "fail" | "unverified";
   message: string;
@@ -307,10 +330,13 @@ export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { ke
     into.set(key, list);
   };
 
+  // The trigger becomes the root step, so its steps must be found inside its span.
   const tree: ShapeNode[] = trigger ? [{ kind: "step", key: trigger.key, id: trigger.id, children: [...shape] }] : [...shape];
   const keys = keysOf(tree);
   const mine = runs.filter((run) => run.flow === flow);
 
+  // A run that cannot speak for the current code (unbound, stale, or not
+  // through the trigger) only contributes unverified notes to `others`.
   for (const run of mine) {
     const base = { runId: run.runId, testId: run.testId };
     const where = run.files.join(", ");
@@ -335,6 +361,8 @@ export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { ke
 
   const out = new Map<number, TraceEvidence>();
 
+  // Per node: outcomes of runs that entered win over the others; among them a
+  // failure wins, then a pass, then the first note.
   for (const key of keys) {
     const outcomes = entered.get(key) ?? others.get(key) ?? [];
     const fail = outcomes.find((item) => item.verdict === "fail");
@@ -350,6 +378,7 @@ export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { ke
   return out;
 }
 
+/** Every node key of a shape, pre-order. */
 function keysOf(nodes: readonly ShapeNode[]): number[] {
   return nodes.flatMap((node) => [node.key, ...keysOf(node.children)]);
 }
@@ -357,6 +386,7 @@ function keysOf(nodes: readonly ShapeNode[]): number[] {
 /** Spans of one run tried before its matching is given up as too large to search. */
 const MATCH_BUDGET = 200_000;
 
+/** Thrown to abandon a search that has used up `MATCH_BUDGET`. */
 class OverBudget extends Error {}
 
 /** Spans assigned to flow nodes: an outcome per node and the spans it took. */
@@ -369,10 +399,12 @@ interface Assignment {
 
 const NOTHING: Assignment = { outcomes: [], spans: [], ok: 0, fail: 0 };
 
+/** An assignment with its ok/fail counts computed from the outcomes. */
 function assignment(outcomes: [number, Outcome][], spans: string[] = []): Assignment {
   return { outcomes, spans, ok: outcomes.filter(([, o]) => o.verdict === "ok").length, fail: outcomes.filter(([, o]) => o.verdict === "fail").length };
 }
 
+/** Assignments of disjoint parts of the flow, joined. */
 function combine(...parts: Assignment[]): Assignment {
   return { outcomes: parts.flatMap((p) => p.outcomes), spans: parts.flatMap((p) => p.spans), ok: parts.reduce((n, p) => n + p.ok, 0), fail: parts.reduce((n, p) => n + p.fail, 0) };
 }
@@ -408,6 +440,7 @@ class Matcher {
   constructor(run: TraceRun) {
     this.run = run;
 
+    // Index spans by id and by parent, in file order.
     for (const span of run.spans) {
       this.spans.set(span.spanId, span);
       const list = this.byParent.get(span.parentSpanId) ?? [];
@@ -428,6 +461,7 @@ class Matcher {
       return keysOf(nodes).map((key) => [key, { verdict: "unverified", message: `trace of ${this.run.testId} is too large to match (${this.run.spans.length} spans)`, ...this.base() }]);
     }
 
+    // Downgrade every confirmed verdict of an unfinished run to unverified, with the reason.
     const doubt = this.incompleteness();
 
     if (doubt === null) return best.outcomes;
@@ -436,6 +470,7 @@ class Matcher {
     return best.outcomes.map(([key, outcome]) => [key, outcome.verdict === "unverified" ? outcome : { ...outcome, verdict: "unverified", message: `${outcome.message}; ${doubt}` }]);
   }
 
+  /** The run and test fields every outcome of this run carries. */
   private base(): RunIdentity {
     return { runId: this.run.runId, testId: this.run.testId };
   }
@@ -448,6 +483,7 @@ class Matcher {
     if (cached) return cached;
     const out: TraceSpan[] = [];
 
+    // At the top every span is a candidate (in file order); under a span, walk its subtree.
     if (parent === null) out.push(...this.run.spans);
     else {
       const visit = (id: string): void => {
@@ -465,6 +501,7 @@ class Matcher {
     return out;
   }
 
+  /** Spans of symbol `id` under `parent` that the assignment being built has not taken yet. */
   private candidates(parent: TraceSpan | null, id: string): TraceSpan[] {
     return this.descendants(parent).filter((span) => span.symbolId === id && !this.used.has(span.spanId));
   }
@@ -509,6 +546,9 @@ class Matcher {
     if (cached !== undefined) return cached;
     let value: number;
 
+    // An upper bound for pruning: a node counts only if a span of its symbol (or
+    // of a `when`'s first step) exists under `parent` at all; children are
+    // bounded under the same parent, which over-counts and so stays safe.
     if (node.kind === "parallel") value = node.children.reduce((sum, child) => sum + this.bound(parent, child), 0);
     else {
       const probe = node.kind === "step" ? node.id : node.children.find((child) => child.kind === "step")?.id;
@@ -523,6 +563,7 @@ class Matcher {
 
   /** Symbols of `nodes[i..]` and everything under them. */
   private symbolsFrom(nodes: readonly ShapeNode[], i: number): Set<string> {
+    // Cached per node array and start index; arrays are stable, so identity is a key.
     let cached = this.suffixes.get(nodes);
 
     if (!cached) {
@@ -563,6 +604,9 @@ class Matcher {
       this.belowIds.set(parentKey, under);
     }
 
+    // The memo key: the parent, the position, the previous sibling's spans and
+    // only those taken spans this suffix could have used (under this parent and
+    // of its symbols). Other taken spans cannot change the answer.
     const inside = under;
     const taken = [...this.used].filter((id) => inside.has(id) && symbols.has(this.spans.get(id)?.symbolId ?? "")).sort();
     const key = JSON.stringify([parent?.spanId ?? null, i, previous.map((span) => span.spanId), taken]);
@@ -582,6 +626,7 @@ class Matcher {
     return best;
   }
 
+  /** `list` without the memo: branch on `when` and `parallel`, else try every span of the step. */
   private solve(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: readonly TraceSpan[], trigger: boolean): Assignment {
     const node = nodes[i];
 
@@ -590,9 +635,12 @@ class Matcher {
     if (node.kind === "when") return this.branch(parent, nodes, i, node, previous, trigger);
 
     if (node.kind === "parallel") return this.group(parent, nodes, i, node, previous, trigger);
+    // A step: candidates that do not start before the previous sibling (on its clock).
     const pool = this.candidates(parent, node.id);
     const inOrder = pool.filter((span) => !previous.some((before) => startsBefore(span, before)));
 
+    // Try each candidate as the step's image; stop early once an assignment
+    // reaches the upper bound, since nothing can beat it.
     if (inOrder.length > 0) {
       const ceiling = nodes.slice(i).reduce((sum, item) => sum + this.bound(parent, item), 0);
       let best: Assignment | null = null;
@@ -608,10 +656,13 @@ class Matcher {
       return best!;
     }
 
+    // Only spans that start too early: the step ran, but out of order.
     const early = pool[0];
     const passed = early ? previous.find((before) => startsBefore(early, before)) : undefined;
 
     if (early && passed) return this.take(parent, nodes, i, node, early, { verdict: "fail", message: `out of order: starts before \`${passed.symbolId}\``, ...this.base() }, trigger);
+    // No span at all: a failure only when the run proves the absence; the
+    // step's children cannot be judged without it.
     const doubt = this.absenceDoubt(node.id);
     // A span only in another call tree does not prove the step ran under this parent, and it does not prove it never ran.
     const outside = !doubt && parent ? this.outsideRoot(parent, node.id) : null;
@@ -630,6 +681,8 @@ class Matcher {
   /** `span` as `node`: its children are matched inside it, the siblings after it. */
   private take(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean): Assignment {
     if (--this.budget < 0) throw new OverBudget();
+    // Reserve the span and what its children take while the siblings after it
+    // are matched, then release them: `used` describes the current search path only.
     this.used.add(span.spanId);
     const inside = this.list(span, node.children, 0, [], false);
 
@@ -646,12 +699,15 @@ class Matcher {
   private branch(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: readonly TraceSpan[], trigger: boolean): Assignment {
     const first = node.children.find((child) => child.kind === "step");
 
+    // The branch's first step never ran: the branch says nothing in this test.
     if (!first || first.kind !== "step" || this.candidates(parent, first.id).length === 0) {
       const skipped: Outcome = { verdict: "unverified", message: "branch not exercised", ...this.base() };
 
       return combine(assignment(keysOf([node]).map((key): [number, Outcome] => [key, skipped])), this.list(parent, nodes, i + 1, previous, trigger));
     }
 
+    // Exercised: match its steps under the same parent, then the siblings after
+    // it, still ordered after the sibling before the `when`.
     const inside = this.list(parent, node.children, 0, [], false);
 
     for (const id of inside.spans) this.used.add(id);
@@ -672,6 +728,8 @@ class Matcher {
     const parts: Assignment[] = [];
     const taken: TraceSpan[] = [];
 
+    // Match each member on its own (any order), keeping its spans reserved for
+    // the later members so two members never share a span.
     for (const child of node.children) {
       const part = this.list(parent, this.alone(child), 0, previous, false);
       parts.push(part);
@@ -688,6 +746,7 @@ class Matcher {
     const after = this.list(parent, nodes, i + 1, taken.length > 0 ? taken : previous, trigger);
 
     for (const id of inside.spans) this.used.delete(id);
+    // The group's own verdict from its direct members only.
     const verdicts = inside.outcomes.filter(([key]) => node.children.some((child) => child.key === key)).map(([, outcome]) => outcome);
     const worst = verdicts.find((outcome) => outcome.verdict === "fail") ?? verdicts.find((outcome) => outcome.verdict === "unverified");
     const own: Outcome = worst ?? { verdict: "ok", message: `every step of the group observed in ${this.run.testId}`, ...this.base() };
@@ -712,6 +771,7 @@ class Matcher {
     let current = span;
     const seen = new Set<string>();
 
+    // `seen` guards against a malformed parent cycle.
     while (current.parentSpanId && !seen.has(current.spanId)) {
       seen.add(current.spanId);
       const parent = this.spans.get(current.parentSpanId);
@@ -731,6 +791,7 @@ class Matcher {
   private outsideRoot(parent: TraceSpan, id: string): TraceSpan | null {
     const parentRoot = this.rootSpan(parent).spanId;
 
+    // The first untaken span of `id` rooted in another tree that is not plainly earlier.
     for (const span of this.run.spans) {
       if (span.symbolId !== id || this.used.has(span.spanId)) continue;
       const root = this.rootSpan(span);
@@ -765,6 +826,7 @@ class Matcher {
     return outcomes.find((outcome) => outcome.verdict === "fail") ?? outcomes.find((outcome) => outcome.verdict === "unverified") ?? outcomes[0]!;
   }
 
+  /** Whether `span` provably runs after `after` (and inside `parent`): ordered by a link, or by sequence numbers on one clock. */
   private orderAfter(parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null): Outcome {
     // A later sibling inside the previous sibling's subtree is not after it. `links` do not repair that.
     if (after && this.nestedIn(span, after)) {
@@ -776,6 +838,8 @@ class Matcher {
       return { verdict: "unverified", message: `async step without a link to \`${parent.symbolId}\``, ...this.base() };
     }
 
+    // After the previous sibling: an explicit link settles it; otherwise both
+    // must be on one clock and the sibling must have ended before this start.
     if (after) {
       if (span.links.includes(after.spanId)) return { verdict: "ok", message: `observed in ${this.run.testId}`, ...this.base() };
 
@@ -791,10 +855,12 @@ class Matcher {
   }
 }
 
+/** Two marks are comparable only on one clock. */
 function sameClock(a: Mark, b: Mark): boolean {
   return a.clockId === b.clockId;
 }
 
+/** `span` provably starts before `other`: same clock, smaller sequence number. */
 function startsBefore(span: TraceSpan, other: TraceSpan): boolean {
   return sameClock(span.start, other.start) && span.start.seq < other.start.seq;
 }

@@ -4,6 +4,10 @@
 // answers computed once and written as files) and the analysis in the browser
 // (`app.html`, a Worker over files in memory). Nothing here writes: the
 // writes (proposals, layouts, greenfield, bundles) stay in `web.ts`.
+//
+// Layer: TUI/web, after the pipeline: it reads a finished analysis (snapshot,
+// SpecIR, verdicts) and turns it into JSON views. `web.ts`, `web-export.ts`
+// and the browser worker call `createReadApi`.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -41,6 +45,7 @@ export interface ReadAnswer {
   file?: string;
 }
 
+/** What the read API answers from: the root, the shared analysis, and the analyzer for its own fresh runs. */
 export interface ReadApiOptions {
   root: string;
   /** The analysis the answers read; concurrent callers may share one. */
@@ -65,6 +70,7 @@ const MAX_BRANCHES = 100;
  * answers by it, and the page (`web/src/api.ts`, `requestKey`) spells it alike.
  */
 export function requestKey(path: string, query: URLSearchParams): string {
+  // Sort by name, then by value, so the same query in any order gives the same key.
   const pairs = [...query.entries()].sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0));
   const text = new URLSearchParams(pairs).toString();
 
@@ -108,6 +114,7 @@ export function isRefusal<Parsed>(answer: Parsed | string): answer is string {
   return typeof answer === "string";
 }
 
+/** The read API of one repository. */
 export interface ReadApi {
   answer(path: string, query: URLSearchParams): Promise<ReadAnswer>;
   /** The diagram of a view key (`flow:checkout`, `discovered:<name>`, `layers`…) before any layout file; a string says why there is none. */
@@ -118,6 +125,7 @@ export interface ReadApi {
   docs(done: Analysis): SpecDocs;
 }
 
+/** Builds the read API over `options`; its caches live as long as the returned object. */
 export function createReadApi(options: ReadApiOptions): ReadApi {
   const root = options.root;
   // The discovered view parsed as specs, kept while its files are the same: `check` never reads it (ADR 0014).
@@ -134,6 +142,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       .sort()
       .map((name) => join(dir, name));
 
+    // Cache key: the path, mtime and size of each file; any edit, addition or removal re-parses.
     const key = files
       .map((file) => {
         const stat = statSync(file);
@@ -153,6 +162,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
   const processesOf = (done: Analysis) => (done.snapshot ? processViews(done.snapshot, done.spec, readProcesses(done.config.root, done.config.dir)) : []);
 
   const keyedDiagram = (done: Analysis, key: string): Diagram | string => {
+    // A bad key is the caller's error; a missing discovered view is an empty diagram.
     const wanted = viewOfKey(key);
 
     if (wanted === null) return `view: a view key such as flow:<name>, discovered:<name>, entry:<id>, process:<domain> or layers`;
@@ -174,6 +184,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     const explainedDir = `${dir}/${EXPLAINED_MAP_DIR}/`;
     const specDir = join(root, dir);
 
+    // Every Markdown file under the spec directory; their text is read lazily from disk.
     if (existsSync(specDir)) {
       for (const abs of collectMdFiles([specDir])) {
         const path = toPosix(relative(root, abs));
@@ -184,6 +195,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       }
     }
 
+    // The map and explained map come from the analysis, as it rendered them now.
     if (done.map) {
       for (const [name, body] of done.map.files) text.set(`${mapDir}${name}`, body);
       let rendered = done.map.explained;
@@ -196,6 +208,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       for (const [name, body] of rendered ?? []) text.set(`${explainedDir}${name}`, body);
     }
 
+    // The group a file is listed under in the «Карта» tab, by its directory.
     const groupOf = (path: string): DocEntry["group"] =>
       path.startsWith(mapDir) ? "map" : path.startsWith(explainedDir) ? "map-explained" : path.startsWith(`${dir}/${DISCOVERED_FLOWS_DIR}/`) ? "flows-discovered" : path.startsWith(`${dir}/flows/`) ? "flows" : path.startsWith(`${dir}/explain/`) ? "explain" : "spec";
 
@@ -209,6 +222,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
   const MEMOIZED = new Set(["/api/coverage", "/api/tour", "/api/docs"]);
 
   const answer = async (path: string, query: URLSearchParams): Promise<ReadAnswer> => {
+    // Memoized per analysis: concurrent callers share the same promise; a failed one is forgotten so it can be retried.
     if (!MEMOIZED.has(path)) return compute(path, query);
     const done = await options.analysis();
     let own = memo.get(done);
@@ -226,6 +240,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     return found;
   };
 
+  /** One answer, computed fresh: each `/api/…` path is a branch below. */
   const compute = async (path: string, query: URLSearchParams): Promise<ReadAnswer> => {
     const json = <Body>(status: number, body: Body): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
 
@@ -273,6 +288,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       if (q.length < 2) return json(400, { error: "search needs q= of two characters or more" });
       const done = await options.analysis();
       const nodes = done.snapshot?.nodes ?? {};
+      // Case-insensitive substring match over every ID.
       const found = Object.keys(nodes).filter((id) => id.toLowerCase().includes(q));
       // A name that is the hit (`…order-details`) before one that only holds it, then the shorter.
       const last = (id: string): string => id.slice(id.lastIndexOf(".") + 1).toLowerCase();
@@ -309,12 +325,14 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       if (isRefusal(diagram)) return json(400, { error: diagram });
       let saved: { path: string; file: LayoutFile | null };
 
+      // A layout file that cannot be read is a conflict the page shows; the diagram itself is fine.
       try {
         saved = readLayout(root, rootRelative(root, done.config.dir), view);
       } catch (error) {
         return json(409, { error: error instanceof Error ? error.message : String(error) });
       }
 
+      // Shapes with a pending proposal are marked in the layout.
       const pending = new Set(pendingTargets(root));
 
       return json(200, { view, file: saved.path, exists: saved.file !== null, layout: saved.file === null ? {} : layoutFromFile(saved.file, diagram, pending) });
@@ -347,6 +365,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
 
       if (!done.snapshot) return json(200, { prefix, ids: [], more: false, reason: "no snapshot: the specs were checked without code" });
 
+      // Prefix match, sorted, capped at `MAX_IDS` with a flag that more exist.
       const found = Object.keys(done.snapshot.nodes)
         .filter((id) => id.startsWith(prefix))
         .sort(compareText);
@@ -373,6 +392,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
         return json(400, { error: error instanceof Error ? error.message : String(error) });
       }
 
+      // The attachment name keeps only safe characters.
       return { status: 200, type: "application/xml; charset=utf-8", body: text, file: `${wanted.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.${format}` };
     }
 
@@ -381,12 +401,14 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       const result = await runCoverage({ kind: "coverage", root }, { analyze: options.analyze });
 
       if (result.payload === null) return json(409, { error: result.messages[0]?.text ?? "coverage failed" });
+      // The page does not need the text report, only the data.
       const { text: _text, ...report } = result.payload;
 
       return json(200, report);
     }
 
     // A discovered flow is drawn like a flow, from the discovered view and without verdicts: `check` does not judge it.
+    // From here on: `/api/views` (no view) or `/api/diagram` (a parsed view).
     const discovered = path === "/api/diagram" && query.get("view") === "discovered";
     const view = path !== "/api/diagram" ? null : parseView(discovered ? new URLSearchParams({ view: "flow", name: query.get("name") ?? "" }) : query);
 
@@ -395,6 +417,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     // The business processes `flows discover --names` saved, with their flows found again in this snapshot.
     const processes = processesOf(done);
 
+    // `/api/views`: every view the page can offer, plus the flow and discovered listings.
     if (view === null) {
       const found = discoveredSpec(done);
       const entries = new Map((done.snapshot?.entries ?? []).map((entry) => [entry.id, entry]));
@@ -422,6 +445,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       });
     }
 
+    // `/api/diagram` of a discovered flow: no verdicts, its own layout key.
     const specDir = rootRelative(root, done.config.dir);
 
     if (discovered) {
@@ -437,6 +461,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
       return json(200, found ? { ...diagramOf({ snapshot: done.snapshot, spec: found, results: [], view, saved }), specHash: specHash(root, done.docs) } : { nodes: [], edges: [], groups: [], reason: "no discovered flows: run `keylang flows discover`" });
     }
 
+    // `/api/diagram` of any other view: the check results ride on its shapes.
     const results = checkResults(done.verdicts, done.snapshot?.snapshotId ?? null, done.diagnostics);
 
     // The view's layout file places the shapes (business-flows/24); one that cannot be read leaves the computed places.
@@ -469,6 +494,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     const json = <Body>(status: number, body: Body): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
     let base;
 
+    // The base: the feature base by default, else the ref as given.
     try {
       base = since === null || since === "" ? featureBaseOrigin(root, "web") : { ref: since, source: "since" as const, label: since };
     } catch (error) {
@@ -487,6 +513,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     }
 
     const done = await options.analysis();
+    // Which modules each source file holds (classes excluded), to label changed files.
     const modulesOf = new Map<string, string[]>();
 
     for (const [id, node] of Object.entries(done.snapshot?.nodes ?? {})) {
@@ -497,6 +524,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     const specDir = `${rootRelative(root, done.config.dir)}/`;
     const deleted = new Set(changed.deleted);
 
+    // Changed files that still exist, classified as spec, code or other; then the deleted ones with their former modules.
     const files = [...changed.paths]
       .filter((file) => !deleted.has(file))
       .sort(compareText)
@@ -516,6 +544,7 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
 }
 
 /** At most this many check results ride on one shape. */
+/** A check result as it rides on a diagram shape. */
 const MAX_NODE_RESULTS = 20;
 
 type NodeResult = { verdict: string; criterion: string; message: string };
@@ -526,6 +555,7 @@ type NodeResult = { verdict: string; criterion: string; message: string };
  * (an entry's call tree), those about its ID.
  */
 function withResults(diagram: Diagram, results: readonly CheckResult[]): Omit<Diagram, "nodes"> & { nodes: (DiagramNode & { results?: NodeResult[] })[] } {
+  // Index the results by spec line and by area, for the two lookups below.
   const byLine = new Map<string, CheckResult[]>();
   const byArea = new Map<string, CheckResult[]>();
 
@@ -546,6 +576,7 @@ function withResults(diagram: Diagram, results: readonly CheckResult[]): Omit<Di
     // A component's verdicts are those of its relations: `system <name>`, area `<component> <verb> <target>`.
     const system = diagram.system ? `system ${diagram.system.name}` : null;
 
+    // A component looks up its system's relations; a spec shape its line; a code shape its ID.
     const found =
       node.kind === "component" && system !== null ? results.filter((result) => result.criterion === system && result.area.startsWith(`${node.label} `))
       : ref?.specFile !== undefined && ref.specLine !== undefined ? byLine.get(`${ref.specFile}:${ref.specLine}`)

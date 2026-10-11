@@ -23,6 +23,11 @@
 //   one.
 // - The layout of each process view and of the layers view goes to
 //   `<dir>/diagrams/`, keyed as the editor keys it (`diagram-layout.ts`).
+//
+// Pipeline: web editor model (diagram) → spec Markdown + keylang.json texts,
+// reusing the diagram proposal code; nothing is parsed or resolved here.
+// Entry point: `greenfieldPlan`; key terms: lane (= layer), process (= flow
+// started by a trigger), planned declaration, layout.
 
 import { isReservedLayerName } from "./config.ts";
 import { layoutPath, layoutText, LAYOUT_FORMAT, shapeBase, type LayoutShape } from "./diagram-layout.ts";
@@ -44,6 +49,7 @@ export const GREENFIELD_LANGUAGES: LanguageChoices = {
   rust: ["rust"],
 };
 
+/** What the `web --new` dialog sends: the drawing, chosen languages, the idea and where specs go. */
 export interface GreenfieldInput {
   model: EditorModel;
   /** Keys of `GREENFIELD_LANGUAGES`. */
@@ -54,12 +60,14 @@ export interface GreenfieldInput {
   specDir: string;
 }
 
+/** One file the operation will create. */
 export interface GreenfieldFile {
   /** Relative to the root, POSIX. */
   path: string;
   text: string;
 }
 
+/** Every file of the new project, plus what the dialog reports back (layers, features, notes). */
 export interface GreenfieldPlan {
   files: GreenfieldFile[];
   /** Layers from the highest to the lowest. */
@@ -69,23 +77,28 @@ export interface GreenfieldPlan {
   notes: string[];
 }
 
+/** An empty project's spec: the proposal code compares the drawing with nothing, so everything is new. */
 const EMPTY_SPEC: SpecIR = { rules: [], rejectedLayers: [], hasRules: false, modules: [], flows: [], planned: [], wires: [] };
 
 /** Shapes that carry a keylang ID: planned in an empty project. */
 const NAMED: ReadonlySet<string> = new Set(["module", "fn", "type", "task", "start", "external"]);
 
+/** Shapes that are code structure (not process steps); a dependency between them becomes an `allow`. */
 const STRUCTURE: ReadonlySet<string> = new Set(["module", "fn", "type"]);
 
+/** A layer name valid as a keylang ID segment and as a folder name. */
 const LAYER_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 const STRUCTURE_FILE = "structure";
 
+/** The bare ID of a shape, without the editor's `planned:` prefix. */
 const strip = (id: string): string => id.replace(/^planned:/, "");
 
 /** A line of prose that no parser reads as a list item, a heading or a quote. */
 function prose(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
 
+  // A line starting with a bullet, heading, quote or ordered-list marker is escaped with `\`.
   return /^(?:[-*+#>]|\d+[.)])/.test(line) ? `\\${line}` : line;
 }
 
@@ -96,11 +109,13 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
   const notes: string[] = [];
 
   // ── layers ───────────────────────────────────────────────────────────────
+  // Lanes ordered top to bottom (then left to right, then key) so the layer order is stable.
   const lanes = [...model.lanes].sort((a, b) => a.y - b.y || a.x - b.x || compareText(a.key, b.key));
 
   if (lanes.length === 0) return "draw at least one lane: a lane is a layer (the template «4 шари» draws four)";
   const layers: string[] = [];
 
+  // Each lane must name a valid, non-reserved, unique layer; the first problem is the answer.
   for (const lane of lanes) {
     const name = strip(lane.id);
 
@@ -112,6 +127,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
     layers.push(name);
   }
 
+  // Map the dialog's choices to languages; any unknown choice rejects the plan.
   const languages = [...new Set(input.languages.flatMap((name) => GREENFIELD_LANGUAGES[name] ?? []))];
   const unknown = input.languages.filter((name) => !Object.hasOwn(GREENFIELD_LANGUAGES, name));
 
@@ -122,6 +138,8 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
   // ── the drawing as an empty project reads it ────────────────────────────
   const nodes: EditorNode[] = [];
 
+  // Re-key every named shape as `planned:<layer>.<name>`: other kinds and shapes
+  // without a name pass through; a named one outside every lane rejects the plan.
   for (const node of model.nodes) {
     if (!NAMED.has(node.kind)) {
       nodes.push(node);
@@ -142,6 +160,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
     nodes.push({ ...node, id: `planned:${bare}`, kind: node.kind === "external" ? "task" : node.kind });
   }
 
+  // A `dependency` drawn between structure shapes or lanes means the same as `allow`.
   const ends = new Map(nodes.map((node) => [node.key, node.kind]));
 
   for (const lane of model.lanes) ends.set(lane.key, "lane");
@@ -150,6 +169,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
   const drawing: EditorModel = { ...model, nodes, edges, lanes: model.lanes.map((lane) => ({ ...lane, id: strip(lane.id) })) };
   const changes = diagramChanges({ model: drawing, diagram: { nodes: [], edges: [] }, flow: null, spec: EMPTY_SPEC, snapshot: null, specDir, read: () => null, config: { text: null, layers: Object.fromEntries(layers.map((layer) => [layer, [`src/${layer}/**`]])) } });
 
+  // Loose structure is declared in its own file below, so the proposal's "belongs to no flow" note is dropped.
   for (const note of changes.notes) if (!/^planned `.*` belongs to no flow/.test(note)) notes.push(note);
 
   const files: GreenfieldFile[] = [];
@@ -163,6 +183,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
   for (const target of changes.targets) {
     const prefix = `${dir}flows/`;
 
+    // Only new flow files become features; other targets (rules, layouts) are handled further down.
     if (!target.target.startsWith(prefix) || !target.target.endsWith(".md")) continue;
     const slug = target.target.slice(prefix.length, -".md".length);
     const members = target.shapes.map((key) => byKey.get(key)).filter((node): node is EditorNode => node !== undefined);
@@ -171,6 +192,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
     const trigger = members.find((node) => node.kind === "start" && (node.description ?? "").trim() !== "");
 
     if (trigger) text = text.replace(/^(# flow [^\n]*\n)/, `$1\n${prose(trigger.description!)}\n`);
+    // IDs the feature file declares with `- planned <kind> <id>`, so structure and rules know them.
     const planned = [...text.matchAll(/^- planned \w+ (\S+)/gm)].map((match) => match[1]!);
 
     for (const id of planned) declared.add(id);
@@ -178,6 +200,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
     files.push({ path: file, text });
     features.push({ slug, file, planned });
     const shapes = laneShapes();
+    // Layout keys follow the editor's scheme; a repeated base gets `#2`, `#3`… in drawing order.
     const taken = new Map<string, number>();
 
     for (const node of members) {
@@ -196,10 +219,12 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
   if (loose.length > 0) {
     let slug = STRUCTURE_FILE;
 
+    // Avoid a clash with a process that is itself called `structure`.
     for (let n = 2; features.some((feature) => feature.slug === slug); n++) slug = `${STRUCTURE_FILE}-${n}`;
     const lines: string[] = [];
     const ids: string[] = [];
 
+    // One `planned` line per distinct ID.
     for (const node of loose) {
       const id = strip(node.id);
 
@@ -229,6 +254,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
     return false;
   });
 
+  // `layers` lists them from lowest to highest, hence the reverse; a single layer needs no order.
   const layersLine = layers.length > 1 ? [`- layers ${[...layers].reverse().join(" < ")}`] : [];
   files.push({ path: `${dir}rules.md`, text: `# rules\n\n${[...layersLine, ...kept].join("\n")}${layersLine.length + kept.length > 0 ? "\n" : ""}` });
 
@@ -238,6 +264,7 @@ export function greenfieldPlan(input: GreenfieldInput): GreenfieldPlan | string 
 
   // ── the idea ─────────────────────────────────────────────────────────────
   const idea = input.idea.replace(/\r\n?/g, "\n").trim();
+  // The idea is quoted line by line (blank lines as a bare `>`) so it can never parse as spec items.
   const quoted = idea === "" ? ["> (ідею ще не записано)"] : idea.split("\n").map((line) => (line.trim() === "" ? ">" : `> ${line}`));
   const featureList = features.map((feature) => `\`${feature.file}\``).join(", ");
 

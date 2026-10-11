@@ -3,6 +3,11 @@
 // refused by the write policy before it is read — and writes nothing before
 // Enter; Esc writes nothing.
 
+//
+// Layer: TUI forms. `app.ts` opens these from the palette and routes the
+// prompt's keys through `keys()`; the writes themselves run as the shared
+// `export` and `export-c4` operations (`../../operations.ts`).
+
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { C4_FORMATS, C4_LEVELS, isC4Diagram } from "../../c4-export.ts";
@@ -21,6 +26,7 @@ import type { FormHost } from "./host.ts";
 
 /** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`, `.keylang/export/parse.txt`, `.keylang/export/trace-plan.json`. */
 function defaultExportPath(kind: OperationRecord["kind"], format: ExportFormat): string {
+  // The file name follows the report's kind, the extension its format.
   const extension: Record<ExportFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt", tree: "txt" };
   const name = kind === "explain-edge" ? "edge" : kind === "parse" || kind === "trace-plan" ? kind : "check";
 
@@ -31,6 +37,7 @@ function defaultExportPath(kind: OperationRecord["kind"], format: ExportFormat):
 function exportSourceOf(record: OperationRecord, format: ExportFormat): ExportSource | null {
   const result = record.result;
 
+  // Each kind of record has its own formats; a format the kind lacks gives no source.
   if (result?.kind === "check" && result.payload !== null && isCheckFormat(format)) {
     const { results, snapshotId, coverage, lines } = result.payload;
 
@@ -49,6 +56,7 @@ function exportSourceOf(record: OperationRecord, format: ExportFormat): ExportSo
   return null;
 }
 
+/** The two export forms of a session, reaching it only through its `FormHost`. */
 export class ExportForms {
   private readonly host: FormHost;
 
@@ -89,12 +97,14 @@ export class ExportForms {
    * target as it is now. Nothing is written before Save; Esc writes nothing.
    */
   openExportPrompt(): void {
+    // One operation at a time: an export would race the running one.
     if (this.state.activeOperation !== null) {
       this.state.message = "export: an operation is already running";
 
       return;
     }
 
+    // The record to export (the selected F6 report, or the latest that can be exported).
     const found = exportRecord(this.state);
 
     if ("reason" in found) {
@@ -128,6 +138,7 @@ export class ExportForms {
 
   /** Why the typed target cannot receive the export now, or null. A dirty buffer of it is never written under. */
   private exportProblem(path: string): string | null {
+    // The write policy first; it may throw on an I/O error, which becomes the reason.
     if (path === "") return "type the target path, relative to the root";
     let problem: string | null;
 
@@ -138,6 +149,7 @@ export class ExportForms {
     }
 
     if (problem !== null) return problem;
+    // A target open in the editor with unsaved edits is refused, so the export never clobbers them.
     const buffer = this.state.buffers.get(path);
 
     return buffer && isDirty(buffer) ? "open with unsaved edits: save or undo them first; an export never writes under them" : null;
@@ -149,6 +161,7 @@ export class ExportForms {
     const form = prompt?.exportForm;
 
     if (prompt?.kind !== "export" || !form) return;
+    // The rows: format, path with its caret, and the Save row.
     const record = this.state.records.find((candidate) => candidate.id === form.record);
     const path = prompt.text.trim();
     prompt.items = [
@@ -159,6 +172,7 @@ export class ExportForms {
     form.problem = this.exportProblem(path);
     let target: string;
 
+    // The target row: the refusal, or what Save would do to the file as it is now.
     if (form.problem !== null) {
       form.expect = null;
       target = `refused: ${form.problem}`;
@@ -172,6 +186,7 @@ export class ExportForms {
           : `new file${parent !== "." && !existsSync(resolve(this.state.root, parent)) ? ` · creates ${parent}/` : ""}`;
     }
 
+    // The details: which report, whether it is outdated, the target and the size of what is written.
     prompt.details = [
       record ? `report #${record.id}: ${operationLabel(record.params)} · ${recordSummary(record)}` : "the report is gone",
       ...(record?.outdated != null ? [`outdated: ${record.outdated} · saved as it ran; nothing is checked again`] : []),
@@ -209,6 +224,7 @@ export class ExportForms {
     const record = this.state.records.find((candidate) => candidate.id === form.record);
     const source = record ? exportSourceOf(record, form.format) : null;
 
+    // The record may have been dropped from the history since the form opened.
     if (!record || source === null) {
       this.state.prompt = null;
       this.state.message = "export: the report is gone";
@@ -216,6 +232,7 @@ export class ExportForms {
       return;
     }
 
+    // Check the target again: a refusal now, or one the form showed, keeps the form open.
     const path = prompt.text.trim();
     const problem = this.exportProblem(path);
 
@@ -248,6 +265,7 @@ export class ExportForms {
   private c4Request(form: C4Form, out: string): ExportC4Request {
     const request: ExportC4Request = { kind: "export-c4", root: this.state.root, format: form.format, level: form.level };
 
+    // `--layer` exists only at the component level; no `out` means "show in F6".
     if (form.level === "component" && form.layer !== null) request.layer = form.layer;
 
     if (out !== "") request.out = toPosix(out);
@@ -270,6 +288,7 @@ export class ExportForms {
       `Run ${operationLabel(this.c4Request(form, out))}`,
     ];
 
+    // No file: nothing to check.
     if (out === "") {
       prompt.note = "no file: the diagram shows in F6 and nothing is written · type a path to write it";
 
@@ -285,6 +304,7 @@ export class ExportForms {
       return;
     }
 
+    // Say what Enter would do to the existing file: create it, replace a C4 export, or refuse anything else.
     const current = readText(resolve(this.state.root, out));
     prompt.note =
       current === null
@@ -302,6 +322,7 @@ export class ExportForms {
     if (!prompt || !form) return;
     const row = prompt.ids?.[prompt.index];
 
+    // Only the choice row under the selection changes; the layer row is fixed at the container level.
     if (row === "format") form.format = cycle(C4_FORMATS, form.format, delta);
     else if (row === "level") form.level = cycle(C4_LEVELS, form.level, delta);
     else if (row === "layer" && form.level === "component") form.layer = cycle([null, ...form.layers], form.layer, delta);

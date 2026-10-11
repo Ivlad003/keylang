@@ -2,6 +2,10 @@
 // «Blind spots» (business-flows/13): what keylang does not see in the
 // current snapshot, read-only. One text for the CLI and the F6 report, one
 // JSON shape for `--json` and MCP. A view (ADR 0014): `check` never reads it.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over source →
+// FileFacts → snapshot; entry point: `runCoverage`. The report itself is
+// built in `coverage-report.ts`.
 
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -39,6 +43,9 @@ export async function runCoverage(request: CoverageRequest, context: OperationCo
   let report;
 
   try {
+    // Logic hidden in data (config files, tables) is found by scanning the
+    // code with the shipped signals; the discovered-flow views under the spec
+    // dir are read lazily, only for the files the report asks about.
     const signals = loadDataLogic();
     const sites = await findDataLogic(analyzed.config, snapshot, signals);
     const specDir = rootRelative(request.root, analyzed.config.dir);
@@ -54,6 +61,7 @@ export async function runCoverage(request: CoverageRequest, context: OperationCo
   }
 }
 
+/** The text of a file, or null when it is missing or unreadable: a view that is not there yet is no error. */
 function readOrNull(abs: string): string | null {
   try {
     return readFileSync(abs, "utf8");

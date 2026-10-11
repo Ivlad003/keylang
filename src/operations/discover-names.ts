@@ -5,6 +5,12 @@
 // result is the README of the view; `runFlowsDiscover` writes it with the
 // layer files, through the same gate. A dry run only counts and estimates.
 // Without a model: `algo` and `hybrid` are offline only (a note), `llm` is 2.
+//
+// Place in the pipeline: a helper of the `flows discover` operation
+// (`operations/discover.ts`) over the snapshot's discovered flows; the
+// grouping, prompts and answer checking live in `src/discover-names.ts`.
+// Entry point: `nameProcesses`. Key term: business process (a named group
+// of discovered flows of one layer).
 
 import type { Analysis } from "../analyze.ts";
 import { errorText } from "../diag.ts";
@@ -16,13 +22,19 @@ import { selectedAgent } from "../agent-cli.ts";
 import type { FlowsDiscoverRequest, FlowsNamesPayload, OperationContext, OperationMessage } from "./types.ts";
 import type { LlmCallOptions } from "../llm.ts";
 
+/** What naming yields: a failure (exit 2), a cancellation, or the payload, messages and the README text to write (null when nothing changes). */
 export type NamesOutcome = { fail: string } | { cancelled: true } | { payload: FlowsNamesPayload; messages: OperationMessage[]; file: { path: string; text: string } | null; failed: boolean };
 
+/** Names the business processes of the discovered flows with the model, layer group by layer group; see the file header for the modes. */
 export async function nameProcesses(analyzed: Analysis, discovery: Discovery, specDir: string, names: NonNullable<FlowsDiscoverRequest["names"]>, layer: string | undefined, context: OperationContext): Promise<NamesOutcome> {
+  // Validate the numeric flags before any work.
   for (const [flag, value] of [["--limit", names.limit], ["--jobs", names.jobs]] as const) {
     if (value !== undefined && (!Number.isInteger(value) || value < 1)) return { fail: `${flag} must be a positive whole number, got \`${value}\`` };
   }
 
+  // Plan which layer groups to ask (all, one layer, only stale ones, at most
+  // `limit`) and build each group's request up front, so a dry run can
+  // estimate tokens without asking.
   const snapshot = analyzed.snapshot!;
   const config = analyzed.config;
   const saved = readProcesses(config.root, specDir);
@@ -57,6 +69,8 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
     return { payload, messages, file: null, failed: false };
   }
 
+  // From here on a model is needed: `algo` never asks, and an empty plan
+  // has nothing to ask.
   messages.push(...staleLines.map((text) => ({ level: "info" as const, text })));
 
   if (names.mode === "algo") return { payload, messages: [...messages, { level: "info", text: "--mode algo: offline descriptions only, no model asked" }], file: null, failed: false };
@@ -71,6 +85,7 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
     return { fail: errorText(error) };
   }
 
+  // No model configured: `llm` fails, the other modes keep the offline text.
   if ("missing" in setup) {
     if (names.mode === "llm") return { fail: setup.missing };
 
@@ -86,6 +101,10 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
   let done = 0;
   context.onProgress?.({ text: `asking ${client.agent}: ${requests.length} process group(s), ${jobs} at a time` });
 
+  // One request per group: a provider error or an invalid answer marks the
+  // group failed (it keeps its saved processes); a valid answer replaces
+  // them, each process stamped with the answering model, the date and the
+  // baseline of its steps' code (a later change there makes it stale).
   const one = async (group: NameGroup, request: (typeof requests)[number]["request"]): Promise<void> => {
     let answer: string;
     let reported: string | null = null;
@@ -124,6 +143,8 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
     );
   };
 
+  // A small worker pool: `jobs` workers drain a shared queue, so at most
+  // `jobs` requests are in flight at once.
   const workers = Array.from({ length: Math.min(jobs, queue.length) }, async () => {
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) await one(next.group, next.request);
   });
@@ -131,6 +152,8 @@ export async function nameProcesses(analyzed: Analysis, discovery: Discovery, sp
   await Promise.all(workers);
 
   if (context.signal?.aborted) return { cancelled: true };
+  // Failures sorted by layer so the report does not depend on which answer
+  // arrived first.
   payload.failed.sort((a, b) => (a.layer < b.layer ? -1 : a.layer > b.layer ? 1 : 0));
   messages.push(...payload.failed.map((f) => ({ level: "error" as const, text: `${f.layer}: ${f.reason}` })));
   // The groups that answered replace their processes; the others keep what was saved.

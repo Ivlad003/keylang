@@ -20,6 +20,7 @@ export interface EdgeEvidence {
  */
 export type EdgeConclusion = "edges" | "complete" | "unresolved";
 
+/** The answer to `--explain-edge`: the two ids, the evidence and the verdict. */
 export interface EdgeExplanation {
   from: string;
   to: string;
@@ -35,10 +36,13 @@ export function edgeIdKnown(snapshot: AnalysisSnapshot, id: string): boolean {
   return snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`));
 }
 
+/** Whether `id` is `scope` or a node below it. */
 const under = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
 
 /** The edges and the coverage between two known ids (see `edgeIdKnown`). */
 export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string): EdgeExplanation {
+  // An edge links `a` to `b` when its source is under `a` and its target, or
+  // any candidate of an ambiguous edge, is under `b`.
   const between =
     (a: string, b: string) =>
     (edge: SnapshotEdge): boolean =>
@@ -47,6 +51,8 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
   const forward = between(from, to);
   const backward = between(to, from);
 
+  // Forward edges first, then a stable order by kind and position, so the
+  // CLI output is the same on every run.
   const edges = snapshot.edges
     .filter((edge) => forward(edge) || backward(edge))
     .sort((a, b) => Number(!forward(a)) - Number(!forward(b)) || compareText(a.kind, b.kind) || compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || compareText(a.source, b.source))
@@ -54,6 +60,8 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
 
   if (edges.length > 0) return { from, to, edges, holes: [], conclusion: "edges" };
 
+  // No edge: the absence is proven only when nothing under `from` was left
+  // unresolved; otherwise list the constructs that might hide an edge.
   const holes = snapshot.coverage
     .filter((item) => item.source !== null && under(item.source, from) && leavesUnresolved(item))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
@@ -65,6 +73,8 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
 export function edgeLine(edge: SnapshotEdge): string {
   const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
 
+  // How the call reached its target when it was not a direct call: a hook's
+  // default, an injected value, a callable or closure argument, or config.
   const hook =
     edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)`
     : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})`

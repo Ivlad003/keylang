@@ -9,6 +9,9 @@
 // under `operations/` — the contract is `types.ts`, the steps several
 // operations take are `shared.ts` — and every name a caller uses is
 // exported from here.
+//
+// Place in the pipeline: the layer between the transports (CLI, TUI, MCP,
+// web) and the language core (parser, resolve/rules, snapshot, map).
 
 import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, EntriesRequest, CoverageRequest, IntegrationsRequest, MigrationStatusRequest, SystemRequest, TourRequest, FlowsAdoptRequest, FlowsDiscoverRequest, FlowExportRequest, FlowImportRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
 import { runAgents, runBaseline, runInit, runMap, runMapCheck, runWire } from "./operations/generate.ts";
@@ -87,6 +90,8 @@ export function runOperation(request: ExportC4Request, context?: OperationContex
 export function runOperation(request: AssistantReplyRequest, context?: OperationContext): Promise<OperationEnvelope<"assistant-reply">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
+  // One case per request kind; the switch is exhaustive over
+  // `OperationRequest["kind"]`, so TypeScript flags a kind with no handler.
   switch (request.kind) {
     case "doctor":
       return runDoctor(request, context);

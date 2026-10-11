@@ -13,6 +13,11 @@
 // Next.js add their routes, middleware and server actions
 // (`src/framework-code/web-entries.ts`). The adapters themselves
 // only parse (`src/frameworks/`); everything that needs the graph is here.
+//
+// Pipeline: framework configs + FileFacts + graph → snapshot entry points,
+// holes and warnings (source → FileFacts → graph → map/index). Entry point:
+// `frameworkEntries`; key terms: entry point, hole (`unsupported` gap),
+// cartridge path, global prefix, supersedes.
 
 import type { Config } from "./config.ts";
 import { compareEntries, entryScope, fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
@@ -28,6 +33,7 @@ import { probeCandidates } from "./imports.ts";
 import { pythonWebEntries } from "./python-web-entries.ts";
 import type { EntryPoint } from "./snapshot.ts";
 
+/** What placing framework entries needs: config, the built graph, all file facts and the active adapters. */
 export interface FrameworkEntryInputs {
   config: Config;
   graph: Graph;
@@ -45,6 +51,7 @@ export interface FrameworkEntryOutputs {
   supersedes: Set<string>;
 }
 
+/** All entry points the active frameworks add, sorted, with their holes, warnings and superseded language-level routes. */
 export function frameworkEntries({ config, graph, facts, frameworks }: FrameworkEntryInputs): FrameworkEntryOutputs {
   const scope = entryScope(graph, facts);
   const sources = new Set(facts.map((f) => f.path));
@@ -54,6 +61,8 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
   const warnings: string[] = [];
   const classes = phpClassFiles(facts);
 
+  // Entry facts every adapter's configs carry: config holes pass through; each
+  // entry is placed on a class method (PHP) or on the fn/module of a script.
   for (const framework of frameworks) {
     for (const { facts: file } of framework.configs) {
       for (const hole of file.holes ?? []) holes.push({ kind: "unsupported", file: file.path, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col, text: hole.text, reason: hole.reason, source: graph.byPath.get(file.path)?.id ?? null });
@@ -71,6 +80,7 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
           continue;
         }
 
+        // A script entry: the first candidate path that is an analysed file, then its fn by name, else the module.
         const script = fact.files.map(probe).find((found) => found !== null) ?? null;
         const module = script === null ? undefined : graph.byPath.get(script);
 
@@ -89,6 +99,7 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     }
   }
 
+  // SFCC: warn about a guessed or incomplete cartridge path, hole the requires the guess decided, add controllers.
   if (frameworks.some((f) => f.name === "sfcc")) {
     const layout = cartridgeLayout(config.root, sources, config.sfcc.cartridgePath);
 
@@ -107,6 +118,7 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     entries.push(...controllerEntries(graph, facts, scope));
   }
 
+  // Then the adapters whose entries are read from code facts rather than config facts.
   const nest = frameworks.find((f) => f.name === "nestjs");
 
   if (nest !== undefined) entries.push(...nestEntries(facts, scope, new Set(nest.configs.map((c) => c.facts.path))));
@@ -137,6 +149,7 @@ export function frameworkEntries({ config, graph, facts, frameworks }: Framework
     supersedes = found.supersedes;
   }
 
+  // Entries sorted by the shared entry order so the snapshot is stable.
   return { entries: entries.sort(compareEntries), holes, warnings, supersedes };
 }
 
@@ -155,6 +168,7 @@ function withExtras(entry: EntryPoint, fact: EntryConfigFact): EntryPoint {
 function phpClassFiles(facts: readonly FileFacts[]): Map<string, { file: string; name: string; facts: FileFacts }> {
   const out = new Map<string, { file: string; name: string; facts: FileFacts }>();
 
+  // Files in path order, so when two files declare one name the first by path wins, deterministically.
   for (const file of [...facts].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
     for (const symbol of file.symbols ?? []) if (symbol.table === "class" && !out.has(lower(symbol.qualified))) out.set(lower(symbol.qualified), { file: file.path, name: symbol.name, facts: file });
   }
@@ -162,6 +176,7 @@ function phpClassFiles(facts: readonly FileFacts[]): Map<string, { file: string;
   return out;
 }
 
+/** A PHP class name's lookup key: no leading `\`, ASCII lower case. */
 function lower(name: string): string {
   return name.replace(/^\\+/, "").replace(/[A-Z]+/g, (s) => s.toLowerCase());
 }
@@ -176,6 +191,7 @@ function placeMethod(scope: EntryScope, classes: ReadonlyMap<string, { file: str
 
   if (at === undefined) return { reason: `it names \`${type.name}\`, which no analysed file declares` };
 
+  // Walk the class and its bases; `seen` stops on an inheritance cycle.
   while (at !== undefined && !seen.has(at.file + at.name)) {
     seen.add(at.file + at.name);
     const decl = at.facts.decls.find((d) => d.kind === "class" && d.name === at!.name);
@@ -213,6 +229,7 @@ function guessedOrder(layout: CartridgeLayout, graph: Graph, facts: readonly Fil
   for (const file of facts) {
     const module = graph.byPath.get(file.path);
 
+    // Only `*/…` requires answered by two or more cartridges, and every `module.superModule`, depend on the order.
     for (const imp of file.imports) {
       if (!imp.source.startsWith("*/") && imp.source !== SUPER_MODULE) continue;
       const answers = cartridgeAnswers(layout, file.path, imp.source, probe);
@@ -226,6 +243,7 @@ function guessedOrder(layout: CartridgeLayout, graph: Graph, facts: readonly Fil
   return holes;
 }
 
+/** An SFRA controller file; group 1 is the controller name (`Cart`). */
 const CONTROLLER = /^(?:.*\/)?cartridges\/[^/]+\/cartridge\/controllers\/([^/]+)\.js$/;
 
 /** The HTTP method of a registration, by the method or verb the code calls. */
@@ -233,6 +251,7 @@ interface HttpMethods {
   readonly [call: string]: string;
 }
 
+/** SFRA `server.get`/`server.post` → HTTP method; `use`, `append`… name none. */
 const HTTP_METHODS: HttpMethods = { get: "GET", post: "POST" };
 
 /**
@@ -274,8 +293,10 @@ function controllerEntries(graph: Graph, facts: readonly FileFacts[], scope: Ent
   return out;
 }
 
+/** NestJS HTTP method decorators → the method they register. */
 const NEST_HTTP: HttpMethods = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Options: "OPTIONS", Head: "HEAD", All: "ALL", Search: "SEARCH" };
 
+/** NestJS GraphQL operation decorators, read only on a `@Resolver()` class. */
 const NEST_GRAPHQL = new Set(["Query", "Mutation", "Subscription"]);
 
 /**
@@ -293,6 +314,7 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
   const prefixes = new Set<string>();
   let computedPrefix: string | null = null;
 
+  // One global prefix applies only when every `setGlobalPrefix` call is the same literal; otherwise the paths go without it, with a note.
   for (const file of facts) {
     for (const call of allCalls(file)) {
       if (!call.callee.endsWith(".setGlobalPrefix") || call.literal === undefined) continue;
@@ -306,6 +328,7 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
   const prefix = prefixNote === null && prefixes.size === 1 ? [...prefixes][0]! : "";
   const out: EntryPoint[] = [];
 
+  // Each decorated method of a config file's classes; parameter decorators are skipped.
   for (const file of facts) {
     if (!files.has(file.path)) continue;
 
@@ -337,9 +360,11 @@ function nestEntries(facts: readonly FileFacts[], scope: EntryScope, files: Read
             if (prefixNote !== null) extra.note = prefixNote;
 
             for (const base of controllerPaths) {
+              // Each controller path × each method path (both may be lists).
               for (const path of pathsOf(d.args[0], "path") ?? [""]) add("route", `${method} ${joinPath(prefix, base, path)}`, extra);
             }
           } else if (d.name === "Cron" || d.name === "Interval" || d.name === "Timeout") {
+            // `@Cron` keeps its expression; `@Interval`/`@Timeout` take the milliseconds from their last argument.
             const schedule = d.name === "Cron" ? argText(d.args[0]) : `${d.name === "Interval" ? "every" : "after"} ${argText(d.args.at(-1))}ms`;
             add("cron", `${cls.name}.${member.name} ${schedule}`);
           } else if (d.name === "MessagePattern" || d.name === "EventPattern") {
@@ -445,6 +470,7 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
       const at = { file: file.path, line: fact.line };
 
       if (fact.kind === "page") {
+        // The component: a fn the file names, else the default export of a lazily imported page, else the routes module.
         let id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
 
         if (id === null && fact.source !== undefined) id = lazyDefault(scope, module, file.path, fact.source);
@@ -457,6 +483,7 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
 
         if (note !== null) point.note = note;
         out.push(point);
+      // The catch-all `app.get('*', …)` of `ssr.*`: the server render of every route.
       } else if (ssr && fact.kind === "route" && fact.label.endsWith(" *")) {
         const id = fact.callee === null ? null : fnIn(scope, file.path, fact.callee);
         const found = frameworkEntry(scope, "pwa-kit", "route", id ?? module.id, fact.label, `${file.path}:${fact.line}`, at);
@@ -483,6 +510,7 @@ function pwaEntries(facts: readonly FileFacts[], scope: EntryScope, files: Reado
 
 /** The default export of the module a routes file loads with `import('<source>')` when it is a fn, else that module; null when the import does not resolve. */
 function lazyDefault(scope: EntryScope, module: { deps: readonly { file: string; text: string; target: string }[] }, file: string, source: string): string | null {
+  // The graph's dependency for that import, found by the specifier in its text.
   const dep = module.deps.find((d) => d.file === file && (d.text.includes(`"${source}"`) || d.text.includes(`'${source}'`) || d.text.includes(`\`${source}\``)));
 
   if (dep === undefined) return null;

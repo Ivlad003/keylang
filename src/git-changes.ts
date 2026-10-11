@@ -9,6 +9,11 @@
 // Windows) git keeps the index's spelling of a file renamed by case only;
 // the paths here are spelled as the disk spells them, which is how the
 // analysis names a module's file.
+//
+// Sits at the I/O edge of the CLI/web: it narrows what `check`, `feature` and
+// `code-to-spec` look at; it never builds IR or a graph itself. Entry points:
+// `gitChangedFiles`, `gitChangedLines`, `gitFileAt`, `gitSpecFilesAt`,
+// `readFeatureBase`, `featureBaseOrigin`, `gitSummary`.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -74,6 +79,7 @@ function assertRef(ref: string, label: string): void {
 // `--no-renames`: a moved file is all new lines (its fns have new IDs); fixed prefixes, whatever `diff.mnemonicPrefix` says.
 const diffArgs = (base: string): string[] => ["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base, "--"];
 
+/** Files git does not track and does not ignore, as NUL-separated paths so any file name survives. */
 const untracked = (git: (args: string[]) => string): string[] =>
   git(["ls-files", "-z", "--others", "--exclude-standard"])
     .split("\0")
@@ -94,6 +100,7 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   const unborn = ref === "HEAD" && run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0;
   // `--stdin` reads the null device: the empty tree of this repository's hash.
   const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"]).trim() : ref;
+  // Every file with a hunk counts as changed, deleted ones included; keylang's own state never does.
   const diff = git(diffArgs(base));
   let deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
   let paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
@@ -101,6 +108,7 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   for (const file of untracked(git)) if (!ownState(file)) paths.add(file);
 
   // Unset, the option is false: `--get` exits 1 and prints nothing.
+  // On a case-insensitive file system, respell every path the way the disk has it.
   if (run(["config", "--type=bool", "--get", "core.ignorecase"]).stdout.trim() === "true") {
     const onDisk = diskCaseResolver(root);
     paths = new Set([...paths].map((path) => onDisk(path) ?? path));
@@ -120,6 +128,7 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
 export function diskCaseResolver(root: string): (path: string) => string | null {
   const listings = new Map<string, readonly string[] | null>();
 
+  // One directory listing per directory per resolver; an unreadable directory is cached as null.
   const entries = (dir: string): readonly string[] | null => {
     if (!listings.has(dir)) {
       try {
@@ -138,6 +147,7 @@ export function diskCaseResolver(root: string): (path: string) => string | null 
     const spelled: string[] = [];
     let dir = root;
 
+    // Walk the path segment by segment, picking the exact name first, then a case/normalisation-insensitive match.
     for (const part of path.split("/")) {
       const names = entries(dir);
 
@@ -159,6 +169,7 @@ export function gitChangedLines(root: string, ref: string, label = "code-to-spec
   const { git } = gitIn(root, label);
   const changed: Map<string, readonly (readonly [number, number])[] | "all"> = diffHunks(git(diffArgs(ref)));
 
+  // Untracked files have no diff: every line of them is new.
   for (const file of untracked(git)) changed.set(file, "all");
 
   return changed;
@@ -186,6 +197,7 @@ export function gitFileAt(root: string, ref: string, path: string, label: string
   const { run, git } = gitIn(root, label);
   git(["rev-parse", "--is-inside-work-tree"]);
 
+  // An unborn HEAD simply has no files; any other ref that is not a commit is a caller error.
   if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
     if (ref === "HEAD") return null;
     throw new Error(`${label}: \`${ref}\` is not a commit`);
@@ -211,6 +223,7 @@ export function gitSpecFilesAt(root: string, ref: string, dir: string, label: st
   git(["rev-parse", "--is-inside-work-tree"]);
   const files = new Map<string, string>();
 
+  // Same rule as `gitFileAt`: an unborn HEAD yields no spec files, another bad ref throws.
   if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
     if (ref === "HEAD") return files;
     throw new Error(`${label}: \`${ref}\` is not a commit`);
@@ -220,6 +233,7 @@ export function gitSpecFilesAt(root: string, ref: string, dir: string, label: st
   const listed = git(["ls-tree", "-r", "-z", "--name-only", ref, "--", dir === "" ? "." : dir])
     .split("\0")
     .filter((path) => path.endsWith(".md") && !skip(path))
+    // Sorted so the spec files are read and reported in a stable order.
     .sort(compareText);
 
   for (const path of listed) files.set(path, git(["show", `${ref}:./${path}`]));
@@ -254,6 +268,7 @@ export function readFeatureBase(root: string, path: string, since: string | unde
     return { ...origin, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
 
+  // Sorted so the feature report does not depend on git's or the Set's order.
   const changes = { files: [...changed.paths].sort(compareText), deleted: [...changed.deleted].sort(compareText) };
   const atHead = headText === undefined ? {} : { head: headText === null ? null : parse(path, headText) };
 
@@ -320,6 +335,7 @@ export function featureBaseOrigin(root: string, label: string): BaseOrigin {
   const { run, git } = gitIn(root, label);
   git(["rev-parse", "--is-inside-work-tree"]);
 
+  // The commit a ref points at, or null when the ref does not exist or is not a commit.
   const commit = (ref: string): string | null => {
     const out = run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
 
@@ -329,6 +345,7 @@ export function featureBaseOrigin(root: string, label: string): BaseOrigin {
   // A dangling `origin/HEAD` (the remote branch was deleted) is passed over like a missing one.
   const remote = run(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
   const target = remote.status === 0 ? remote.stdout.trim() : "";
+  // Try `origin/HEAD`'s target first, then the fixed list; the first ref that exists is the main branch.
   const candidates = target.startsWith("refs/remotes/") ? [[target, target.slice("refs/remotes/".length)] as const, ...MAIN_BRANCHES] : MAIN_BRANCHES;
   const main = candidates.find(([ref]) => commit(ref) !== null);
 
@@ -348,6 +365,7 @@ export function featureBaseOrigin(root: string, label: string): BaseOrigin {
 export function deletedModuleIds(config: Config, files: readonly string[]): string[] {
   const ids: string[] = [];
 
+  // A deleted file's module ID is its layer plus module segments; files no layer places are skipped.
   for (const file of files) {
     const placed = placeFile(config, file);
 

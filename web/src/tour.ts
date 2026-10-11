@@ -1,3 +1,4 @@
+// Web page (web/src), the «Огляд» (project tour) tab; entry point `mountTour`.
 // «Огляд» of the diagram page (business-flows/15): the project tour of
 // `GET /api/tour` — the data of `keylang tour --json` — over the canvas,
 // in the order of the CLI's page: what the system is, layers and modules,
@@ -8,6 +9,7 @@
 
 import { ApiError, replyJson, transport } from "./api.ts";
 
+/** A flow as the tour lists it: its trigger, file and the diagram link of the page. */
 interface TourFlow {
   name: string;
   description: string | null;
@@ -30,6 +32,7 @@ interface Tour {
   startHere: { id: string; file: string; line: number; flows: number; callers: number; brief: string | null }[];
 }
 
+// The tour's own styles, injected once by `mountTour`, so the module brings its look with it.
 const STYLE = `
 #tour-tab { margin-right: 6px; border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; cursor: pointer; height: 26px; padding: 0 10px; }
 #tour-tab.active { background: #cfe3f7; border-color: #1565c0; }
@@ -46,6 +49,7 @@ const STYLE = `
 #tour td, #tour th { border-bottom: 1px solid #eceff1; padding: 2px 10px 2px 0; text-align: left; }
 `;
 
+/** An element with optional text and class: a lighter local variant of dom.ts `make`. */
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
 
@@ -72,6 +76,7 @@ function diagramLink(href: string, close: () => void): HTMLAnchorElement {
   const a = make("a", "diagram");
   // Relative: the page may sit under a prefix (`web --hub`).
   a.href = href.replace(/^\//, "");
+  // Handle the click in-page: close the tour, then set only the fragment, which the page's hashchange handler follows.
   a.addEventListener("click", (event) => {
     event.preventDefault();
     close();
@@ -81,6 +86,7 @@ function diagramLink(href: string, close: () => void): HTMLAnchorElement {
   return a;
 }
 
+/** The tour's seven sections as nodes, in the order of the CLI's `keylang tour` page; `close` is wired into each diagram link. */
 function render(tour: Tour, close: () => void): Node[] {
   const out: Node[] = [];
 
@@ -101,6 +107,7 @@ function render(tour: Tour, close: () => void): Node[] {
 
   out.push(make("h2", "2. Layers and modules"));
 
+  // Each layer: a heading with its size and dependency counts, its brief, then its top modules as a table.
   for (const layer of tour.layers) {
     out.push(make("h3", `${layer.name} — ${layer.files} file(s), ${layer.fns} fn, deps in ${layer.deps.in} · out ${layer.deps.out} · packages ${layer.deps.packages}`));
 
@@ -127,10 +134,12 @@ function render(tour: Tour, close: () => void): Node[] {
 
   out.push(make("h2", "3. Business processes"));
 
+  // `source` says where the processes came from: named ones, discovered flows only, or nothing to show.
   if (tour.processes.source === "discovered") out.push(make("p", "No business processes named yet (`keylang flows discover --names`): the discovered flows by layer.", "muted"));
 
   if (tour.processes.source === "none") out.push(make("p", "No entry point to draft a flow from.", "muted"));
 
+  // Processes by domain; each lists its flows with the trigger, a diagram link and the file.
   for (const domain of tour.processes.domains) {
     out.push(make("h3", domain.name));
 
@@ -180,6 +189,7 @@ export function mountTour(): void {
   const toolbar = document.getElementById("toolbar");
   const stage = document.getElementById("stage");
 
+  // A page without the toolbar or the canvas stage (another page bundling this) gets no tour.
   if (!toolbar || !stage) return;
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -203,11 +213,13 @@ export function mountTour(): void {
     panel.hidden = false;
     tab.classList.add("active");
 
+    // Record `#tour` without a history entry, so a reload reopens the tour and Back does not step through it.
     if (!tourHash()) history.replaceState(null, "", `${location.pathname}#tour`);
     panel.replaceChildren(make("p", "loading the tour…", "muted"));
 
     try {
       const tour = replyJson<Tour>(await transport().send("GET", "/api/tour", new URLSearchParams()));
+      // A `reason` means the server had no code to read (no `languages` configured): show it instead of the sections.
       panel.replaceChildren(...(tour.reason ? [make("p", tour.reason)] : render(tour, close)));
     } catch (error) {
       const text = error instanceof ApiError && error.status === 403 ? "No access: open the URL printed by `keylang web` (it carries the access token)." : error instanceof Error ? error.message : String(error);

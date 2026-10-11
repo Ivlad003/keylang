@@ -4,6 +4,7 @@
 
 import { layerName } from "./config.ts";
 
+/** The ID prefix every external package lives under. */
 export const EXTERNAL = "external";
 
 /** ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. */
@@ -24,6 +25,8 @@ export interface ExternalIds {
  * The IDs depend only on the set of names, not on their order.
  */
 export function assignExternalIds(names: Iterable<string>): ExternalIds {
+  // Group the distinct names by sanitized segment. Names are sorted first so
+  // each group lists its members in name order, whatever order they came in.
   const bySegment = new Map<string, string[]>();
 
   for (const pkg of [...new Set(names)].sort()) {
@@ -34,6 +37,9 @@ export function assignExternalIds(names: Iterable<string>): ExternalIds {
   const ids = new Map<string, string>();
   const warnings: string[] = [];
 
+  // In each group the name equal to the segment keeps the plain ID (else the
+  // first name); the rest get numbered suffixes that skip any number another
+  // group already owns as its plain segment.
   for (const [segment, group] of bySegment) {
     const keeper = group.find((n) => n === segment) ?? group[0]!;
     ids.set(keeper, `${EXTERNAL}.${segment}`);

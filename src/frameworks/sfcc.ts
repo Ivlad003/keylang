@@ -9,6 +9,10 @@
 // Requires resolve along the cartridge path in `src/imports.ts` through
 // `./cartridges.ts`. Composable Storefront (PWA Kit) has an adapter of its own
 // (`./pwa-kit.ts`); Apex (B2B Commerce) is not read.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse);
+// entry facts go on to `src/framework-entries.ts`. Entry points: `sfcc`,
+// `parseSfccConfig`; key terms: cartridge, hook (observer), step type (cron).
 
 import { posix } from "node:path";
 import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.ts";
@@ -28,6 +32,8 @@ export const sfcc: FrameworkAdapter = {
       if (!out.some((f) => f.path === path) && context.analysed(path) && context.read(path) !== null) out.push({ path, owner });
     };
 
+    // Per cartridge: `package.json`, the hooks file it names (or the two usual
+    // places when it names none), and `steptypes.json` at either level.
     for (const { dir } of cartridgeDirs(context.sources)) {
       add(`${dir}/package.json`, dir);
       const hooks = hooksFileOf(dir, context);
@@ -38,6 +44,7 @@ export const sfcc: FrameworkAdapter = {
       add(`${dir}/cartridge/steptypes.json`, dir);
     }
 
+    // Sorted by path (code units) so the config file order is stable.
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse: parseSfccConfig,
@@ -50,6 +57,7 @@ function hooksFileOf(dir: string, context: Pick<FrameworkContext, "read">): stri
   return isJsonString(hooks) ? posix.normalize(posix.join(dir, hooks)) : null;
 }
 
+/** Splits a path at `…/cartridges/<name>/`: group 1 is the cartridges directory, group 2 the cartridge. */
 const CARTRIDGE_ROOT = /^((?:.*\/)?cartridges)\/([^/]+)(?:\/|$)/;
 
 /**
@@ -68,10 +76,13 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
   const parsed = readJson(text);
 
   if (parsed.error !== null) return { ...facts, error: { line: 1, reason: `\`${path}\` is no JSON: ${parsed.error}` } };
+  // Script paths are tried from the cartridges directory and from the cartridge
+  // itself; a file outside any `cartridges/` falls back to its own directory.
   const root = CARTRIDGE_ROOT.exec(path);
   const cartridges = root === null ? posix.dirname(path) : root[1]!;
   const cartridge = root === null ? posix.dirname(path) : `${root[1]}/${root[2]}`;
 
+  // Position of the first occurrence of `needle` in the text, for diagnostics; the file start when absent.
   const at = (needle: string): ConfigAt => {
     const offset = text.indexOf(needle);
 
@@ -83,6 +94,7 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
 
   const entries: EntryConfigFact[] = facts.entries!;
 
+  // `step-types` maps each step kind to a list of steps; an array is accepted too.
   if (posix.basename(path) === "steptypes.json") {
     const kinds = field(parsed.value, "step-types");
 
@@ -96,6 +108,7 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
         entries.push({ kind: "cron", label: id, files: [posix.normalize(posix.join(cartridges, module)), posix.normalize(posix.join(cartridge, module))], fn: isJsonString(fn) ? fn : null, ...at(`"${id}"`) });
       }
     }
+  // Any other config file is a hooks file; `package.json` yields no entries.
   } else if (posix.basename(path) !== "package.json") {
     const hooks = field(parsed.value, "hooks");
 
@@ -104,6 +117,7 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
       const script = field(hook, "script");
 
       if (!isJsonString(name) || !isJsonString(script)) continue;
+      // The script is tried from the cartridge root and from the hooks file's directory, deduplicated.
       const files = [posix.normalize(posix.join(cartridge, script)), posix.normalize(posix.join(posix.dirname(path), script))];
       entries.push({ kind: "observer", label: name, files: [...new Set(files)], fn: name.slice(name.lastIndexOf(".") + 1), ...at(`"${name}"`) });
     }
@@ -112,6 +126,7 @@ export function parseSfccConfig(path: string, text: string): ConfigFacts {
   return facts;
 }
 
+/** `value[key]` when `value` is a JSON object, else undefined. */
 function field(value: JsonValue | undefined, key: string): JsonValue | undefined {
   return isJsonObject(value) ? value[key] : undefined;
 }
@@ -122,6 +137,7 @@ interface ParsedConfig {
   error: string | null;
 }
 
+/** Parse a JSON file, tolerating a BOM; the parse error message is kept for the config fact. */
 function readJson(text: string | null): ParsedConfig {
   if (text === null) return { value: null, error: null };
 

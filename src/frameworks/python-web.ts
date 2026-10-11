@@ -10,6 +10,10 @@
 // own: the files are inputs of the snapshot (manifest, `snapshotId`) and, with
 // the adapter turned off, `skipped-file` holes (`framework:<name>`). Placing
 // the registrations on the graph is `src/python-web-entries.ts`.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse);
+// entry points `django`, `fastapi`, `flask`, `celery` and
+// `PYTHON_WEB_FRAMEWORKS`.
 
 import { posix } from "node:path";
 import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.ts";
@@ -17,6 +21,7 @@ import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.
 /** Root manifests that may name a Python dependency. */
 const MANIFESTS = ["pyproject.toml", "requirements.txt", "requirements-dev.txt", "requirements/base.txt", "requirements/production.txt", "setup.py", "setup.cfg", "Pipfile"];
 
+/** What tells one Python framework apart; the adapter itself is the same for all four. */
 interface PythonWebSpec {
   name: string;
   /** The import name of the package (`django`), which is also its distribution name. */
@@ -27,7 +32,10 @@ interface PythonWebSpec {
   marker?: RegExp;
 }
 
+/** Build the adapter of one Python framework from its spec. */
 function pythonWebAdapter(spec: PythonWebSpec): FrameworkAdapter {
+  // `dependency`: the package name as a whole word in a manifest (not `django-environ`, not `pytest-django`).
+  // `imports`: a line starting with `from <pkg>` or `import <pkg>`.
   const dependency = new RegExp(`(?:^|[^A-Za-z0-9_.-])${spec.pkg}(?:$|[^A-Za-z0-9_.-])`, "im");
   const imports = new RegExp(`^[ \\t]*(?:from|import)[ \\t]+${spec.pkg}\\b`, "m");
   const python = (context: FrameworkContext): string[] => context.sources.filter((path) => path.endsWith(".py"));
@@ -43,6 +51,9 @@ function pythonWebAdapter(spec: PythonWebSpec): FrameworkAdapter {
     files(context) {
       const out: { path: string; owner: string | null }[] = [];
 
+      // A config file is an analysed Python file that imports the framework, is one
+      // the framework runs by its path, or carries the framework's marker text. Its
+      // directory owns it; a file at the root has no owner.
       for (const path of python(context)) {
         if (!context.analysed(path)) continue;
         const text = context.read(path);

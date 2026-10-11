@@ -4,6 +4,12 @@
 // it would write before anything runs; Enter starts the session's
 // operation, through the save step when it reads dirty buffers.
 
+//
+// Layer: TUI forms. `app.ts` opens them from the palette and routes the
+// prompt's keys through `keys()`; each form ends in a shared operation from
+// `../../operations.ts`, the same code the CLI command runs. Forms only read
+// (disk, config, the session's analysis) while they are open.
+
 import { existsSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { within } from "../../analyze.ts";
@@ -26,6 +32,7 @@ import type { FormHost } from "./host.ts";
 /** Why a typed selection or path is not one, in the CLI's words. */
 type Refusal = { error: string };
 
+/** Whether a parsed value is a refusal rather than the value itself. */
 function isRefusal<T>(value: T | Refusal): value is Refusal {
   return typeof value === "object" && value !== null && "error" in value;
 }
@@ -33,6 +40,7 @@ function isRefusal<T>(value: T | Refusal): value is Refusal {
 /** What an agents selection would write now, and the form's note about it. */
 type AgentsPreview = { changed: string[]; note: string };
 
+/** The run forms of a session, reaching it only through its `FormHost`. */
 export class RunForms {
   private readonly host: FormHost;
 
@@ -45,6 +53,7 @@ export class RunForms {
   }
 
   /** The keys of these forms. */
+  // One `PromptKeys` per prompt kind; a kind this class does not own gets null.
   keys(prompt: Prompt): PromptKeys | null {
     switch (prompt.kind) {
       case "feature":
@@ -94,6 +103,7 @@ export class RunForms {
   /** The feature form: the slug of the current feature file, else typed or chosen from the feature files. */
   openFeaturePrompt(): void {
     const prefix = `${this.host.specDir()}/features/`;
+    // Prefill only when the open file is a feature file directly under `features/`.
     const current = this.state.current;
     const initial = current !== null && current.startsWith(prefix) && current.endsWith(".md") && !current.slice(prefix.length).includes("/") ? current.slice(prefix.length, -3) : "";
     this.state.prompt = { kind: "feature", text: initial, items: [], ids: [], index: 0 };
@@ -106,6 +116,7 @@ export class RunForms {
 
     if (prompt?.kind !== "feature") return;
     const prefix = `${this.host.specDir()}/features/`;
+    // The candidate slugs: the feature files directly under `features/`, without `.md`.
     const slugs = this.state.files.filter((path) => path.startsWith(prefix) && path.endsWith(".md") && !path.slice(prefix.length).includes("/")).map((path) => path.slice(prefix.length, -3));
     const query = prompt.text.toLowerCase();
     // The exact slug first, then the other matches in file order.
@@ -123,6 +134,7 @@ export class RunForms {
     return prompt.ids?.[prompt.index] ?? prompt.text.trim();
   }
 
+  /** The note under the feature form: what Enter would check, or why the slug is refused. */
   private featureNote(): void {
     const prompt = this.state.prompt!;
     const slug = this.featureSlug();
@@ -190,6 +202,7 @@ export class RunForms {
   /** What a selection would do now: the read-only plan of the shared operation, or why it cannot be planned. */
   private agentsPreview(choice: HarnessChoice): AgentsPreview {
     try {
+      // The plan reads the disk and may throw; any error becomes the note.
       const plan = planAgents(this.state.root, choice);
 
       if (plan.error !== null) return { changed: [], note: `${plan.error.file}: ${plan.error.message}: nothing can be written until it is fixed` };
@@ -198,6 +211,7 @@ export class RunForms {
       const who =
         choice === "auto" ? `auto: ${harnesses === "" ? "no harness detected, the AGENTS.md block only" : `detected ${harnesses}`}` : choice === "none" ? "none: keylang's harness files are stripped" : harnesses;
 
+      // Summarise the files that would change by category, so the note stays one line.
       const changed = plan.targets.filter((target) => target.action !== "keep");
       const counts = new Map<string, number>();
 
@@ -216,18 +230,21 @@ export class RunForms {
     const text = this.state.prompt?.text.trim() ?? "";
 
     try {
+      // Empty means auto; anything else is parsed as `--agents` would parse it.
       return text === "" || text === "auto" ? "auto" : harnessChoice(text);
     } catch (error) {
       return { error: errorText(error) };
     }
   }
 
+  /** The agents form's rows and note: the files the typed selection would write, or why it is refused. */
   private refreshAgentsPrompt(): void {
     const prompt = this.state.prompt;
 
     if (prompt?.kind !== "agents") return;
     const choice = this.agentsChoice();
 
+    // A refused selection keeps generic rows and puts the CLI's message in the note.
     if (isRefusal(choice)) {
       prompt.items = ["Write the harness files", "Check the harness files (writes nothing)"];
       prompt.note = `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor`;
@@ -271,17 +288,20 @@ export class RunForms {
     this.refreshInitPrompt();
   }
 
+  /** The init form's details: what was found, what is kept, and what each mode writes. */
   private refreshInitPrompt(): void {
     const prompt = this.state.prompt;
 
     if (prompt?.kind !== "init") return;
     const root = this.state.root;
+    // Describe the repository: a broken source setup is reported as init would report it.
     const sources = initSources(root);
     const existed = existsSync(join(root, CONFIG_FILE));
     let found: string;
 
     if ("error" in sources) found = `${sources.error}: init stops with code 2 and writes nothing`;
     else {
+      // An existing keylang.json is kept, so its layers are shown; otherwise the layout init would guess.
       const layers = existed ? [...sources.config.layers.keys()] : [...guessLayout(root, sources.config.exclude).layers.keys()];
       found = `${sources.config.languages.join(", ")} · layers: ${layers.length > 0 ? layers.join(", ") : "none"}`;
     }
@@ -330,6 +350,7 @@ export class RunForms {
 
   /** The typed paths of the fmt or parse form, relative to the root, or why they cannot be used. */
   private promptPaths(): string[] | { error: string } {
+    // Paths split on whitespace; each must resolve inside the repository.
     const paths = (this.state.prompt?.text ?? "").trim().split(/\s+/).filter((path) => path !== "");
 
     if (paths.length === 0) return { error: "type a spec file or a directory, relative to the root" };
@@ -354,6 +375,7 @@ export class RunForms {
 
     const selection = this.markdownSelection(paths);
 
+    // A path that does not expand (missing, not Markdown) refuses the form.
     if ("error" in selection) {
       prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
       prompt.note = selection.error;
@@ -370,6 +392,7 @@ export class RunForms {
     let files: string[];
 
     try {
+      // Expand directories to Markdown files, then normalise to root-relative POSIX paths.
       files = collectMdFiles(paths, this.state.root).map((file) => toPosix(relative(this.state.root, resolve(this.state.root, file))));
     } catch (error) {
       return { error: `${errorText(error)} · a new spec is saved first` };
@@ -377,6 +400,7 @@ export class RunForms {
 
     const shown = files.length > 3 ? `${files.slice(0, 3).join(", ")}, …` : files.join(", ");
 
+    // Unsaved buffers among them are saved before the operation runs.
     const dirty = files.filter((file) => {
       const buffer = this.state.buffers.get(file);
 
@@ -435,6 +459,7 @@ export class RunForms {
       return;
     }
 
+    // The selected row is the view: JSON or the tree.
     const format: ParseFormat = prompt.ids?.[prompt.index] === "json" ? "json" : "tree";
     this.state.prompt = null;
     this.host.requestOperation("parse", { kind: "parse", root: this.state.root, paths, format });
@@ -455,6 +480,7 @@ export class RunForms {
     if (out === "") return { error: "type the generated file, relative to the root (keylang.gen.ts)" };
     const problem = wireOutProblem(this.state.root, out);
 
+    // The CLI's own message, without its `wire: ` prefix, which the form adds itself.
     return problem === null ? out : { error: problem.replace(/^wire: /, "") };
   }
 
@@ -472,6 +498,7 @@ export class RunForms {
       return;
     }
 
+    // Say whether the file is generated (has the marker, may be replaced) or written by hand (never replaced).
     const current = readText(resolve(this.state.root, out));
     const onDisk = current === null ? "not on disk yet" : current.startsWith(WIRE_MARKER) ? "generated file on disk" : "a manual file on disk: never written over";
     const dirty = this.host.dirtyInputs().length;
@@ -517,6 +544,7 @@ export class RunForms {
 
     if (prompt?.kind !== "full-check" || !prompt.checkOptions) return;
     const options = prompt.checkOptions;
+    // The configured static mode, read from the saved keylang.json; an unreadable config means the default.
     let configured: StaticMode | undefined;
 
     try {
@@ -541,6 +569,7 @@ export class RunForms {
       return;
     }
 
+    // Expand the paths (the spec directory when none) to count files and unsaved buffers.
     let files: string[];
 
     try {
@@ -563,6 +592,7 @@ export class RunForms {
 
     if (!prompt || !options) return;
 
+    // Strict and changed are toggles; static cycles from "as configured" (null) through the modes.
     if (prompt.ids?.[prompt.index] === "strict") options.strict = !options.strict;
 
     if (prompt.ids?.[prompt.index] === "changed") options.changed = !options.changed;
@@ -613,6 +643,7 @@ export class RunForms {
 
   /** The edge form: the id under the cursor fills only the first field; the second is typed. */
   openEdgePrompt(): void {
+    // No prefill in the merge view or while a selection is active.
     const from = this.state.mode === "merge" || this.state.start !== null ? null : this.host.idAtCursor();
     this.state.prompt = { kind: "explain-edge", text: "", items: [], ids: ["from", "to", "run"], index: from === null ? 0 : 1, edge: { from: from ?? "", to: "" } };
     this.refreshEdgePrompt();
@@ -627,6 +658,7 @@ export class RunForms {
     const field = prompt.ids?.[prompt.index];
     const caret = caretAt(field ?? "");
     prompt.items = [`from: ${from}${caret("from")}`, `to: ${to}${caret("to")}`, "Explain the edge (reads the saved code, writes nothing)"];
+    // The note looks up the selected field's ID in the session's snapshot, as a hint only.
     const id = field === "from" ? from.trim() : field === "to" ? to.trim() : "";
     const snapshot = this.state.analysis?.snapshot ?? null;
 
@@ -648,6 +680,7 @@ export class RunForms {
     const from = prompt.edge.from.trim();
     const to = prompt.edge.to.trim();
 
+    // Select the empty field so the person can type it.
     if (from === "" || to === "") {
       prompt.index = from === "" ? 0 : 1;
       this.refreshEdgePrompt();
@@ -677,9 +710,11 @@ export class RunForms {
     // The flows of the current documents (dirty buffers included), not the file names; the operation reads them saved.
     const declared = new Map<string, string>();
 
+    // The first declaration of a name wins, matching the order of the analysis.
     for (const flow of this.state.analysis?.spec.flows ?? []) if (!declared.has(flow.name)) declared.set(flow.name, flow.file);
     const typed = prompt.text.trim();
     const query = typed.toLowerCase();
+    // Exact name first, then by name, so the list is stable.
     const names = [...declared.keys()].filter((name) => name.toLowerCase().includes(query)).sort((a, b) => Number(b === typed) - Number(a === typed) || compareText(a, b));
     prompt.ids = names;
     prompt.items = names.map((name) => `${name}  ${declared.get(name)}`);
@@ -694,6 +729,7 @@ export class RunForms {
     return prompt.ids?.[prompt.index] ?? prompt.text.trim();
   }
 
+  /** The note under the trace-plan form: the flow and whether the current documents declare it. */
   private tracePlanNote(): void {
     const prompt = this.state.prompt!;
     const flow = this.tracePlanFlow();

@@ -5,6 +5,12 @@
 // cannot run yet; nothing runs before Enter. A proposal is written by the
 // operation only, and merged hunk by hunk in MERGE.
 
+//
+// Layer: TUI forms. `app.ts` opens them from the palette and keys, and routes
+// the prompt's keys through `keys()`; each form ends in a shared draft
+// operation (`../../operations.ts`) that writes a proposal under
+// `.keylang/proposals/`, never the spec itself.
+
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { contextText } from "../../agent-context.ts";
@@ -21,8 +27,10 @@ import { caretAt, cycle, fieldOf, selectedRow, selectProblem, selectRow, showRow
 import type { CodeDraftForm, DraftForm, Prompt, RulesDraftForm, SpecCodeForm, State } from "../state.ts";
 import type { FormHost } from "./host.ts";
 
+/** How a draft is made: from the snapshot alone, snapshot plus model, or by the model. */
 type Mode = "algo" | "hybrid" | "llm";
 
+/** Where a draft goes: a proposal file for MERGE, or a preview in F6 that writes nothing. */
 type Output = "proposal" | "preview";
 
 /** Why a form cannot run now: the row to select and the reason. */
@@ -47,6 +55,7 @@ function outputRow(output: Output): FormRow {
   return { id: "output", text: `output:  ${output} · ←→ ${otherOutput(output)}` };
 }
 
+/** The output ←→ switches to. */
 function otherOutput(output: Output): Output {
   return output === "proposal" ? "preview" : "proposal";
 }
@@ -58,6 +67,7 @@ function runRow(output: Output, target: string, preview: string): FormRow {
 
 /** The note of a mode row: what algo does, what the model does, and without one what hybrid falls back to or why llm cannot run. */
 function modeNote(mode: Mode, agent: string | null, problem: string | undefined, says: { algo: string; fallback?: string; model: (agent: string, mode: Mode) => string }): string {
+  // Algo needs no model; without one, hybrid may fall back and llm reports why it cannot run.
   if (mode === "algo") return says.algo;
 
   if (agent === null) return mode === "hybrid" && says.fallback !== undefined ? says.fallback : (problem ?? "");
@@ -70,10 +80,12 @@ function problemOn(problem: Problem | null, row: string): string | null {
   return problem !== null && (problem.field === row || row === "run" || row === "output") ? problem.text : null;
 }
 
+/** The flow name and target file a flow draft would use. */
 type FlowDraftTarget = { name: string; target: string };
 
 /** The name and target a flow draft would use: the typed ones, else the CLI's defaults. `specDir` is relative to the root, POSIX. */
 export function flowDraftTarget(specDir: string, form: { trigger: string; name: string; into: string }): FlowDraftTarget {
+  // The default name is the trigger's last segment, as the CLI derives it.
   const trigger = form.trigger.trim();
   const name = form.name.trim() !== "" ? form.name.trim() : trigger.slice(trigger.lastIndexOf(".") + 1);
   const into = form.into.trim();
@@ -95,11 +107,13 @@ export function rulesDraftTarget(specDir: string, into: string): string {
 function codePosition(snapshot: Analysis["snapshot"] | null, form: CodeDraftForm): { name: string; triggers: string[] } | { error: string; field: "file" | "line" } | null {
   const file = toPosix(form.file.trim());
 
+  // A git-change source, no snapshot or no file: nothing to say yet.
   if (form.source !== "file" || !snapshot || file === "") return null;
   const line = form.line.trim() === "" ? null : Number(form.line.trim());
 
   try {
     return codeToSpecTriggers(snapshot, file, line);
+  // The CLI's own refusal; blame the line when the file declares fns, else the file itself.
   } catch (error) {
     const declares = Object.values(snapshot.nodes).some((node) => node.kind === "fn" && node.file === file);
 
@@ -142,6 +156,7 @@ export function specCodePlace(analysis: Analysis | null, form: SpecCodeForm): Re
   return plannedCodeTarget(analysis, id, into !== "" ? toPosix(into) : undefined);
 }
 
+/** The draft forms of a session, reaching it only through its `FormHost`. */
 export class DraftForms {
   private readonly host: FormHost;
 
@@ -222,10 +237,12 @@ export class DraftForms {
 
   /** Why a draft may not propose into `target` now: the proposal rules, a proposal waiting there, unsaved edits of it. */
   private targetProblem(target: string, field: string): Problem | null {
+    // The shared proposal rules first (inside the spec dir, not generated, no link out).
     const problem = proposalProblem(this.state.root, this.host.proposalDir(), target, (path) => this.host.generatedDoc(path));
 
     if (problem !== null) return { field, text: `${target}: ${problem}` };
 
+    // One proposal per target at a time: an older one must be merged first.
     if (this.host.proposalWaiting(target)) return { field: "into", text: `a proposal for ${target} is waiting: merge it first (m, or Proposals)` };
     const buffer = this.state.buffers.get(target);
 
@@ -252,6 +269,7 @@ export class DraftForms {
   openFlow(): void {
     const snapshot = this.state.analysis?.snapshot ?? null;
     const id = this.state.mode === "merge" ? null : this.host.idAtCursor();
+    // The fn under the cursor is the trigger; else the `trigger` of the flow section the cursor is in.
     const trigger = id !== null && snapshot?.nodes[id]?.kind === "fn" ? id : (this.host.triggerAtCursor() ?? "");
     this.state.prompt = { kind: "draft-flow", text: "", items: [], ids: [], index: 0, draft: { trigger, name: "", into: "", mode: this.firstMode(), output: "proposal" } };
     this.refreshFlow();
@@ -261,9 +279,11 @@ export class DraftForms {
   private triggerMatches(typed: string): string[] {
     const nodes = this.state.analysis?.snapshot?.nodes ?? {};
 
+    // An exact fn needs no list of matches.
     if (nodes[typed]?.kind === "fn") return [];
     const query = typed.toLowerCase();
 
+    // Project fns only (not external), sorted for a stable list, capped so the form stays short.
     return Object.keys(nodes)
       .filter((id) => nodes[id]!.kind === "fn" && nodes[id]!.layer !== "external" && id.toLowerCase().includes(query))
       .sort(compareText)
@@ -277,6 +297,7 @@ export class DraftForms {
     if (trigger === "") return { field: "trigger", text: "a trigger id is required" };
     const snapshot = this.state.analysis?.snapshot ?? null;
 
+    // With a snapshot, the trigger must be one of its fns; without one the operation checks it.
     if (snapshot !== null && snapshot.nodes[trigger]?.kind !== "fn") {
       const hint = this.state.analysis?.index.suggest(trigger);
 
@@ -285,6 +306,7 @@ export class DraftForms {
 
     if (form.mode === "llm" && this.host.agentName() === null) return { field: "mode", text: "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts from the snapshot without one)" };
 
+    // A preview writes nothing, so the target rules do not apply.
     if (form.output === "preview") return null;
 
     return this.targetProblem(flowDraftTarget(this.host.proposalDir(), form).target, form.into.trim() === "" ? "name" : "into");
@@ -299,6 +321,7 @@ export class DraftForms {
     const selected = selectedRow(prompt, "trigger");
     const caret = caretAt(selected);
     const { name, target } = flowDraftTarget(this.host.proposalDir(), form);
+    // Rows: the trigger with its matches under it, name, target, mode, output, run.
     showRows(
       prompt,
       [
@@ -316,6 +339,7 @@ export class DraftForms {
     const now = prompt.ids![prompt.index]!;
     const problem = this.flowProblem(form);
 
+    // The note follows the selected row: a match, the mode, the trigger lookup, or the target's state.
     if (now.startsWith("fn:")) prompt.note = `Enter takes ${now.slice(3)} as the trigger`;
     else if (now === "mode")
       prompt.note = modeNote(form.mode, this.host.agentName(), problem?.text, {
@@ -362,6 +386,7 @@ export class DraftForms {
     if (prompt?.kind !== "draft-flow" || !form) return;
     const row = prompt.ids?.[prompt.index] ?? "";
 
+    // A match row fills the trigger and moves on to the name instead of running.
     if (row.startsWith("fn:")) {
       form.trigger = row.slice(3);
 
@@ -378,6 +403,7 @@ export class DraftForms {
     this.state.prompt = null;
     const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger: form.trigger.trim(), output: form.output, pending: "refuse" };
 
+    // Only the fields the person set go into the request; the rest take the CLI's defaults.
     if (name !== "") request.name = name;
 
     if (into !== "") request.into = toPosix(into);
@@ -433,6 +459,7 @@ export class DraftForms {
     const now = prompt.ids![prompt.index]!;
     const problem = this.rulesProblem(form);
 
+    // The note follows the selected row: the mode's meaning, else a problem or the target's state.
     if (now === "mode")
       prompt.note = modeNote(form.mode, this.host.agentName(), problem?.text, {
         algo: "algo: the rules the code keeps now; no model",
@@ -488,6 +515,7 @@ export class DraftForms {
    */
   openCode(): void {
     const code = this.state.mode === "code" ? this.state.code : null;
+    // Prefill: the code viewer's position, else the file (and line, for a fn) of the ID under the cursor.
     let file = code?.file ?? "";
     let line = code ? String(code.line) : "";
 
@@ -510,8 +538,10 @@ export class DraftForms {
     const nodes = this.state.analysis?.snapshot?.nodes ?? {};
     const files = new Set<string>();
 
+    // Distinct project files that declare at least one fn.
     for (const node of Object.values(nodes)) if (node.kind === "fn" && node.file && node.layer !== "external") files.add(node.file);
 
+    // An exact file needs no list of matches.
     if (files.has(typed)) return [];
     const query = typed.toLowerCase();
 
@@ -522,6 +552,7 @@ export class DraftForms {
   private codeProblem(form: CodeDraftForm): Problem | null {
     let position: ReturnType<typeof codePosition> = null;
 
+    // The source's own fields first: a git ref, or a file with an optional positive line.
     if (form.source === "since") {
       if (form.since.trim() === "") return { field: "since", text: "a git ref is required (HEAD: the changes not committed yet)" };
     } else {
@@ -531,6 +562,7 @@ export class DraftForms {
       if (line !== "" && !(/^\d+$/.test(line) && Number(line) >= 1)) return { field: "line", text: `line \`${line}\`: a whole number from 1, or empty for every exported fn of the file` };
       position = codePosition(this.state.analysis?.snapshot ?? null, form);
 
+      // With a snapshot, the CLI's own check of what the position names.
       if (position !== null && "error" in position) return { field: position.field, text: position.error };
     }
 
@@ -582,9 +614,11 @@ export class DraftForms {
     prompt.details = [`root: ${this.state.root} · ${scope} · ${how}`];
     const now = prompt.ids![prompt.index]!;
     const problem = this.codeProblem(form);
+    // What the snapshot says the source names, for the notes below.
     const position = codePosition(snapshot, form);
     const named = position !== null && "triggers" in position ? (form.line.trim() === "" ? `${position.triggers.length} exported fn(s): ${position.triggers.join(", ")}` : `line ${form.line.trim()} is in ${position.triggers[0]}`) : null;
 
+    // The note follows the selected row: a match, the source, the mode, else a problem or the target's state.
     if (now.startsWith("src:")) prompt.note = `Enter takes ${now.slice(4)} as the file`;
     else if (now === "source") prompt.note = form.source === "file" ? "the fn at a line, or every exported fn of a file" : "every fn changed since the ref, untracked files whole; a fn already in a hand-written flow is named, not drafted again";
     else if (now === "file" && form.file.trim() === "") prompt.note = "type a source file · ↓ picks a match";
@@ -630,6 +664,7 @@ export class DraftForms {
     const line = form.line.trim();
     const into = form.into.trim();
     const pack = form.mode === "algo" ? null : this.host.contextPack();
+    // One source only: a git ref, or a file with or without its line.
     const source: CodeToSpecSource = form.source === "since" ? { since: form.since.trim() } : line !== "" ? { file: toPosix(form.file.trim()), line: Number(line) } : { file: toPosix(form.file.trim()) };
     const request: CodeToSpecRequest = { kind: "code-to-spec", root: this.state.root, ...source, output: form.output, pending: "refuse" };
 
@@ -654,6 +689,7 @@ export class DraftForms {
     if (prompt?.kind !== "code-to-spec" || !form) return;
     const row = prompt.ids?.[prompt.index] ?? "";
 
+    // A match row fills the file and moves on to the line instead of running.
     if (row.startsWith("src:")) {
       form.file = row.slice(4);
 
@@ -681,6 +717,7 @@ export class DraftForms {
   openSpecCode(id?: string): void {
     let initial = id ?? "";
 
+    // A caller (a feature's planned gap) may name the ID; else the planned fn under the cursor.
     if (id === undefined && this.state.mode !== "merge") {
       const at = this.host.idAtCursor();
 
@@ -695,6 +732,7 @@ export class DraftForms {
   private plannedMatches(typed: string): string[] {
     const planned = this.host.plannedFns();
 
+    // An exact planned ID needs no list of matches.
     if (planned.includes(typed)) return [];
     const query = typed.toLowerCase();
 
@@ -704,6 +742,7 @@ export class DraftForms {
   /** Why spec-to-code may not start now, or null: an ID, spec-to-code's own checks, a model llm needs, then (a proposal only) a proposal waiting for the code file. */
   private specCodeProblem(form: SpecCodeForm): Problem | null {
     if (form.id.trim() === "") return { field: "id", text: "a planned fn id is required" };
+    // Spec-to-code's own placement checks (planned, not implemented, module has a file).
     const placed = specCodePlace(this.state.analysis, form);
 
     if (placed !== null && "error" in placed) return { field: placed.field, text: placed.error };
@@ -750,6 +789,7 @@ export class DraftForms {
     const now = prompt.ids![prompt.index]!;
     const problem = this.specCodeProblem(form);
 
+    // The note follows the selected row: a match, the mode, the ID, the target, else a problem or what Enter does.
     if (now.startsWith("planned:")) prompt.note = `Enter takes ${now.slice(8)}`;
     else if (now === "mode")
       prompt.note = modeNote(form.mode, this.host.agentName(), problem?.text, {
@@ -796,6 +836,7 @@ export class DraftForms {
     if (prompt?.kind !== "spec-to-code" || !form) return;
     const row = prompt.ids?.[prompt.index] ?? "";
 
+    // A match row fills the ID and moves on to the target instead of running.
     if (row.startsWith("planned:")) {
       form.id = row.slice(8);
 
@@ -828,6 +869,7 @@ export class DraftForms {
     return mode === "llm" && this.host.agentName() === null ? "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts as algo without one)" : null;
   }
 
+  /** The layout form's rows, details and note; reading only. */
   private refreshLayout(): void {
     const prompt = this.state.prompt;
     const form = prompt?.layoutDraft;
@@ -849,6 +891,7 @@ export class DraftForms {
     else prompt.note = problem ?? "Enter drafts; nothing is written, not even a proposal";
   }
 
+  /** ←→ on the mode row only. */
   private changeLayout(delta: -1 | 1): void {
     const prompt = this.state.prompt;
 
@@ -857,6 +900,7 @@ export class DraftForms {
     this.refreshLayout();
   }
 
+  /** Enter: a missing model keeps the form; else the layout draft runs and its result shows in F6. */
   private submitLayout(): void {
     const prompt = this.state.prompt;
     const form = prompt?.layoutDraft;

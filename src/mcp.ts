@@ -6,6 +6,11 @@
 // inputs (`currentAnalysis`), so an answer never describes code that changed
 // since; the local fact cache follows the snapshot, best-effort, as for
 // `check`. No spec is written. stdout carries the protocol only.
+//
+// Place in the pipeline: a transport, like the CLI and the TUI. Each tool
+// reads the current analysis (source → snapshot, specs → IR → rules) or
+// calls a shared operation (`operations.ts`) and returns JSON. Entry
+// points: `serveMcp`, `mcpServer`, `currentAnalysis`.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -32,11 +37,13 @@ import { searchNodes } from "./node-search.ts";
 import { lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 import { ENTRY_KINDS } from "./snapshot.ts";
 
+/** What a tool returns: text content, flagged as an error when the call failed. */
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 // Any payload `JSON.stringify` takes: the tools return their operations' own result types.
 const json = <Payload>(value: Payload): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 
+/** A tool error whose text is the message the agent reads. */
 const failure = (message: string): ToolResult => ({ content: [{ type: "text", text: message }], isError: true });
 
 /**
@@ -54,12 +61,17 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
   let last: { key: string; analysis: Analysis } | null = null;
 
   return async () => {
+    // Rebuild the snapshot (cheap thanks to the fact cache), and save the
+    // cache when the facts changed.
     const configFile = join(root, CONFIG_FILE);
     const raw = existingText(configFile);
     const config = loadConfig(root);
     const map = config.languages.length > 0 ? await generateMap(config, keepsFactCache(root) ? { persist: "changed" } : {}) : null;
 
     if (map?.factCache) saveFactCache(root, map.factCache);
+    // The cache key: keylang.json's text, the snapshot ID, and the hashes of
+    // every spec and evidence file. Only when one of them changes is the
+    // rest of the analysis (specs, rules, verdicts) redone.
     const specDir = join(root, config.dir);
     const specs = existsSync(specDir) ? collectMdFiles([specDir]) : [];
     const evidence = [...(evidenceFiles(config, "tests") ?? []), ...(evidenceFiles(config, "trace") ?? [])].map((file) => join(root, file));
@@ -89,6 +101,7 @@ function explanationJson(e: NodeExplanation | null): ExplanationJson | null {
   return row;
 }
 
+/** The JSON shape of an explanation in tool answers. */
 interface ExplanationJson {
   text: string;
   origin: "doc" | "llm";
@@ -106,6 +119,7 @@ function diagnosticJson(diag: Diagnostic): DiagnosticJson {
   return row;
 }
 
+/** The JSON shape of a diagnostic in tool answers. */
 interface DiagnosticJson {
   code: Diagnostic["code"];
   file: string;
@@ -115,6 +129,10 @@ interface DiagnosticJson {
   reason?: NonNullable<Diagnostic["reason"]>;
 }
 
+/**
+ * The MCP server with every keylang tool registered. Each call re-reads the
+ * current analysis, so answers never describe code that changed since.
+ */
 export function mcpServer(root: string, version: string): McpServer {
   const server = new McpServer({ name: "keylang", version });
   const fresh = currentAnalysis(root);
@@ -146,6 +164,7 @@ export function mcpServer(root: string, version: string): McpServer {
 
       if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
 
+      // Every edge that starts or ends at the ID, with its position.
       const edges = (analysis.snapshot?.edges ?? [])
         .filter((e) => e.source === id || e.target === id)
         .map((e) => ({ kind: e.kind, source: e.source, target: e.target, resolution: e.resolution, file: e.file, line: e.line, text: e.text }));
@@ -172,6 +191,7 @@ export function mcpServer(root: string, version: string): McpServer {
 
       if (!existsSync(abs)) return failure(`${node.file} is not on disk`);
       const lines = readFileSync(abs, "utf8").split("\n");
+      // The node's line range, widened by `context` lines and clamped to the file.
       const from = Math.max(1, node.line - (context ?? 0));
       const to = Math.min(lines.length, (node.endLine ?? node.line) + (context ?? 0));
 
@@ -189,6 +209,8 @@ export function mcpServer(root: string, version: string): McpServer {
       const analysis = await fresh();
       const flows: { name: string; file: string; steps: { kind: string; id: string; line: number; verdicts: { criterion: string; verdict: string; message: string }[] }[] }[] = [];
 
+      // Walk every flow section (or the one named): each trigger and step
+      // ref with the verdicts recorded on its line for that ID.
       for (const doc of analysis.docs) {
         for (const section of doc.sections) {
           if (section.kind !== "flow" || !section.name || (name !== undefined && section.name.value !== name)) continue;
@@ -256,6 +278,8 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ path, text }) => {
       const analysis = await fresh();
+      // Only a hand-written spec under the spec dir may be proposed; the
+      // proposal goes to `.keylang/proposals/`, never into the spec.
       const target = toPosix(path);
       const specDir = toPosix(relative(root, resolve(root, analysis.config.dir)));
       const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
@@ -277,6 +301,8 @@ export function mcpServer(root: string, version: string): McpServer {
       inputSchema: { id: z.string().min(1).optional(), feature: z.string().min(1).optional() },
     },
     async ({ id, feature }) => {
+      // Exactly one of `id` or `feature`: a feature bundles every ID its
+      // file names.
       if ((id === undefined) === (feature === undefined)) return failure("pass exactly one of id or feature");
       const analysis = await fresh();
 
@@ -314,6 +340,8 @@ export function mcpServer(root: string, version: string): McpServer {
       const notRead = specPathProblem(loadConfig(root), abs);
 
       if (notRead !== null) return failure(`${rel}: ${notRead}`);
+      // Re-analyse with the text overlaid on the file, then keep only what
+      // concerns that file.
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
 
       const diagnostics = analysis.diagnostics
@@ -403,6 +431,7 @@ export function mcpServer(root: string, version: string): McpServer {
       inputSchema: { kind: z.enum(ENTRY_KINDS).optional(), layer: z.string().min(1).optional(), limit: z.number().int().min(1).optional(), depth: z.number().int().min(0).optional() },
     },
     async ({ kind, layer, limit, depth }) => {
+      // The shared `flows discover` operation in print mode: nothing written.
       const request: FlowsDiscoverRequest = { kind: "flows-discover", root, output: "print" };
 
       if (kind !== undefined) request.only = kind;
@@ -417,6 +446,7 @@ export function mcpServer(root: string, version: string): McpServer {
       if (result.payload === null) return failure(result.messages[0]?.text ?? "flows discover failed");
       const { snapshotId, summary, flows, specified, files } = result.payload;
 
+      // The view's per-flow Markdown is left out; the file texts carry it.
       return json({ snapshotId, summary, flows: flows.map(({ text: _text, ...flow }) => flow), specified, files });
     },
   );
@@ -495,6 +525,7 @@ export function mcpServer(root: string, version: string): McpServer {
   return server;
 }
 
+/** Serves the MCP tools over stdio until the client closes stdin; returns the exit code. */
 export async function serveMcp(root: string, version: string): Promise<number> {
   const server = mcpServer(root, version);
   await server.connect(new StdioServerTransport());

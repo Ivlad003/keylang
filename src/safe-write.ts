@@ -8,11 +8,17 @@
 // atomic: a temporary file next to the target, renamed over it, with the
 // permissions of the file it replaces; a file with CRLF on every line keeps
 // CRLF. Computing what to write stays with the caller.
+//
+// The I/O boundary at the end of every writing pipeline (map/index, proposals,
+// CLI and TUI edits). Entry points: `safeWrite`/`safeWriteAll` (checked writes),
+// `targetProblem`/`writeProblem` (checks alone), `writeAtomic`, `landing`
+// (where a path ends up after links) and `keepLineEndings`.
 
 import { randomBytes } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, type Stats } from "node:fs";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 
+/** Guards a write: where it may land, who may replace a generated file, and what the file must still hold. */
 export interface WriteOptions {
   /** A directory, relative to the root and POSIX, the file must stay under with links followed. Default: the root. */
   under?: string;
@@ -26,6 +32,7 @@ export interface WriteOptions {
   expect?: string | null;
 }
 
+/** One write of a batch for `safeWriteAll`. */
 export interface PlannedWrite {
   /** Relative to the root, POSIX. */
   path: string;
@@ -33,6 +40,7 @@ export interface PlannedWrite {
   options?: WriteOptions;
 }
 
+// How many links `landing` follows before it calls the chain a loop.
 const LINK_HOPS = 32;
 
 /**
@@ -44,9 +52,13 @@ const LINK_HOPS = 32;
  * `.cursor` to wherever it points.
  */
 export function targetProblem(root: string, path: string, options: Pick<WriteOptions, "under"> = {}): string | null {
+  // Reject anything but a plain relative POSIX path: no backslashes, no
+  // absolute path in either OS's sense, no `..`, `.` or empty segments.
   if (path === "" || path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
 
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return "not a plain relative path";
+  // Follow links to where the bytes would land, then require that place to be
+  // inside the real repository root (and inside `under`, itself resolved).
   const target = landing(join(root, path));
 
   if (target === null) return "leads through a loop of links";
@@ -67,6 +79,8 @@ export function writeProblem(root: string, path: string, options: WriteOptions =
   const place = targetProblem(root, path, options);
 
   if (place !== null) return place;
+  // The place is fine; now check what is there: no directory, no generated
+  // file unless the writer is its generator, and the text the caller expects.
   const target = landing(join(root, path))!;
   const entry = statOrNull(target);
 
@@ -93,12 +107,14 @@ export function safeWrite(root: string, path: string, text: string, options: Wri
 
 /** Every write is checked before the first one happens: either all land, or (short of an I/O error) none does. */
 export function safeWriteAll(root: string, writes: readonly PlannedWrite[]): string[] {
+  // Check all writes first, so one bad target refuses the whole batch.
   for (const w of writes) {
     const problem = writeProblem(root, w.path, w.options);
 
     if (problem !== null) throw new Error(`${w.path}: ${problem}`);
   }
 
+  // Write at the link target, so a symlinked file stays a link.
   return writes.map((w) => {
     writeAtomic(landing(join(root, w.path))!, w.text);
 
@@ -119,9 +135,12 @@ type TemporaryWriteOptions = { flag: "wx"; mode?: number };
  */
 export function writeAtomic(abs: string, text: string, options: { exact?: boolean } = {}): void {
   mkdirSync(dirname(abs), { recursive: true });
+  // Carry over the replaced file's permission bits and, unless `exact`, its CRLF endings.
   const existing = statOrNull(abs);
   const mode = existing?.isFile() ? existing.mode & 0o7777 : undefined;
   const out = options.exact !== true && existing?.isFile() && allCrlf(readFileSync(abs, "utf8")) ? text.replace(/\r?\n/g, "\r\n") : text;
+  // A hidden, unique name in the same directory, so the rename stays on one
+  // filesystem and is atomic.
   const temporary = join(dirname(abs), `.${basename(abs)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
 
   try {
@@ -131,9 +150,11 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
     if (mode !== undefined) writeOptions.mode = mode;
     writeFileSync(temporary, out, writeOptions);
 
+    // `mode` at creation is masked by the umask; chmod sets the exact bits.
     if (mode !== undefined) chmodSync(temporary, mode);
     renameSync(temporary, abs);
   } catch (error) {
+    // Leave no temporary file behind on failure.
     rmSync(temporary, { force: true });
     throw error;
   }
@@ -145,6 +166,8 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
  * Mermaid diagram of `keylang export c4`.
  */
 export function isGeneratedText(text: string): boolean {
+  // Skip a BOM, then test the first non-blank line for a comment opener
+  // (`<!--`, `//`, `'`, `%%`) followed somewhere by `keylang:generated`.
   const first = text.replace(/^﻿/, "").split(/\r?\n/).find((line) => line.trim() !== "");
 
   return first !== undefined && /^\s*(?:<!--|\/\/|'|%%).*keylang:generated/.test(first);
@@ -152,6 +175,7 @@ export function isGeneratedText(text: string): boolean {
 
 /** Every line ends with CRLF (at least one does): the file keeps them when it is rewritten. */
 export function allCrlf(text: string): boolean {
+  // Count CRLFs and LFs: every LF must be part of a CRLF.
   const crlf = text.split("\r\n").length - 1;
 
   return crlf > 0 && crlf === text.split("\n").length - 1;
@@ -169,6 +193,8 @@ export function keepLineEndings(before: string, next: string): string {
   if (!before.includes("\r\n")) return next;
 
   if (allCrlf(before)) return next.replace(/\n/g, "\r\n");
+  // Mixed endings: work on lines without their `\r`, remembering per old line
+  // whether it had one, and default new lines to the majority ending.
   const old = before.split("\n");
   // A line has an ending when a `\n` follows it; its `\r` is part of that ending.
   const oldCr = old.map((line, i) => i < old.length - 1 && line.endsWith("\r"));
@@ -180,6 +206,7 @@ export function keepLineEndings(before: string, next: string): string {
   // The last piece (after the last `\n`) is no line with an ending: it pairs only with the other last piece, in the tail.
   let head = 0;
 
+  // Common head: identical leading lines keep their old ending.
   while (head < lines.length - 1 && head < oldText.length - 1 && lines[head] === oldText[head]) {
     cr[head] = oldCr[head]!;
     head++;
@@ -188,6 +215,7 @@ export function keepLineEndings(before: string, next: string): string {
   let tailNew = lines.length;
   let tailOld = oldText.length;
 
+  // Common tail, matched from the end and never past the head.
   while (tailNew > head && tailOld > head && lines[tailNew - 1] === oldText[tailOld - 1]) {
     tailNew--;
     tailOld--;
@@ -197,6 +225,9 @@ export function keepLineEndings(before: string, next: string): string {
   const midNew = Math.min(tailNew, lines.length - 1);
   const midOld = Math.min(tailOld, oldText.length - 1);
 
+  // Middle: a greedy in-order match. Each new line that equals the next
+  // unmatched old line takes that line's ending; other new lines keep the
+  // majority ending.
   for (let i = head, j = head; i < midNew && j < midOld; i++) {
     if (lines[i] !== oldText[j]) continue;
     cr[i] = oldCr[j]!;
@@ -216,6 +247,7 @@ export function landing(abs: string, hops = 0): string | null {
   let entry = abs;
   const rest: string[] = [];
 
+  // Climb to the longest prefix that exists, collecting the missing tail.
   while (lstatOrNull(entry) === null) {
     const parent = dirname(entry);
 
@@ -224,11 +256,14 @@ export function landing(abs: string, hops = 0): string | null {
     entry = parent;
   }
 
+  // That prefix is a link (maybe dangling): follow one hop and start over, since
+  // the link target may itself be missing or another link.
   if (lstatOrNull(entry)!.isSymbolicLink()) return landing(join(resolve(dirname(entry), readlinkSync(entry)), ...rest), hops + 1);
 
   return join(realpathSync(entry), ...rest);
 }
 
+/** `abs` is `dir` itself or below it. */
 function inside(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
 

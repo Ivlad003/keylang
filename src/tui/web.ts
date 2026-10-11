@@ -14,6 +14,13 @@
 // WebSocket subprotocol. No cookie: cookies are not scoped by port, so any
 // other server on localhost would receive it.
 
+//
+// Layer: TUI/web, the browser transport of the TUI. The CLI's `keylang web`
+// calls `serveWeb`; the hub (`hub.ts`) mounts `createWebApp` per repository;
+// `web-export.ts` reuses `diagramsPage`, `BUILT_DIR` and `ensureClient`. The
+// diagram page's JSON API is answered by `read-api.ts` plus the write
+// endpoints below (proposals, layouts, bundles, greenfield).
+
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -60,6 +67,7 @@ function withoutControls(text: string): string {
   let out = "";
 
   for (const char of text) {
+    // Replace per code point, so a multi-unit character is kept whole.
     const code = char.charCodeAt(0);
     out += code < 0x20 || code === 0x7f ? " " : char;
   }
@@ -70,14 +78,17 @@ function withoutControls(text: string): string {
 /** Close codes the page understands: another tab took the session; the session ended. */
 export const CLOSE_TAKEN = 4000;
 
+/** Close code: the session ended (`q`, or no session could be opened); the page does not reconnect. */
 export const CLOSE_ENDED = 4001;
 
+/** The xterm.js files the terminal page loads, resolved from their npm packages. */
 const ASSETS = {
   "xterm.js": { pkg: "@xterm/xterm", file: "lib/xterm.js", type: "text/javascript" },
   "xterm.css": { pkg: "@xterm/xterm", file: "css/xterm.css", type: "text/css" },
   "addon-fit.js": { pkg: "@xterm/addon-fit", file: "lib/addon-fit.js", type: "text/javascript" },
 } as const;
 
+/** The name of an xterm.js asset under `/assets/`. */
 type AssetName = keyof typeof ASSETS;
 
 /** The diagram client, bundled by scripts/build-web.mjs (ADR 0024): it exists only as built files, never in a package. */
@@ -86,12 +97,15 @@ const BUILT = {
   "diagrams.css": "text/css",
 } as const;
 
+/** The name of a built diagram-client file under `/assets/`. */
 type BuiltName = keyof typeof BUILT;
 
+/** Whether `/assets/<name>` is a built diagram-client file. */
 function isBuiltName(name: string): name is BuiltName {
   return Object.hasOwn(BUILT, name);
 }
 
+/** Whether `/assets/<name>` is an xterm.js file. */
 function isAssetName(name: string): name is AssetName {
   return Object.hasOwn(ASSETS, name);
 }
@@ -99,6 +113,7 @@ function isAssetName(name: string): name is AssetName {
 // Literal directory URLs: `dist/tui/web.js` and `src/tui/web.ts` both sit two levels below the package root.
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
+/** Where `scripts/build-web.mjs` writes the diagram client. */
 export const BUILT_DIR = join(PACKAGE_ROOT, "dist", "web");
 
 /** Only a checkout has the client's sources; the published package has the built files alone. */
@@ -108,6 +123,7 @@ const CLIENT_SOURCES = join(PACKAGE_ROOT, "web", "src");
 function newestUnder(dir: string): number {
   let newest = 0;
 
+  // Walk the whole tree; only files count, since a directory's mtime says nothing about edits inside existing files.
   for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
     if (entry.isFile()) newest = Math.max(newest, statSync(join(entry.parentPath, entry.name)).mtimeMs);
   }
@@ -117,17 +133,20 @@ function newestUnder(dir: string): number {
 
 /** Whether a built file is missing or older than the client's sources (the page's, the worker's and the keylang modules the worker bundles) or its build script. */
 function clientStale(): boolean {
+  // A published package has no sources, so its built files are never stale.
   if (!existsSync(CLIENT_SOURCES)) return false;
   const built = ["diagrams.js", "analysis.js", "site.json"].map((name) => join(BUILT_DIR, name));
 
   if (built.some((file) => !existsSync(file))) return true;
   const script = join(PACKAGE_ROOT, "scripts", "build-web.mjs");
+  // Stale when the oldest built file predates the newest source file or the build script.
   const sources = [CLIENT_SOURCES, join(PACKAGE_ROOT, "web", "worker"), join(PACKAGE_ROOT, "src")].filter((dir) => existsSync(dir));
   const oldest = Math.min(...built.map((file) => statSync(file).mtimeMs));
 
   return oldest < Math.max(...sources.map(newestUnder), existsSync(script) ? statSync(script).mtimeMs : 0);
 }
 
+/** The build in progress, shared by every request that needs the client meanwhile. */
 let building: Promise<void> | null = null;
 
 /** In a checkout, builds the diagram client when it is missing or stale (esbuild takes about a second); concurrent requests share one build. */
@@ -152,6 +171,7 @@ export function assetPath(name: AssetName): string | null {
 
   if (existsSync(packaged)) return packaged;
 
+  // A checkout: resolve the npm package's directory and the file inside it.
   try {
     const asset = ASSETS[name];
     const dir = dirname(createRequire(import.meta.url).resolve(`${asset.pkg}/package.json`));
@@ -163,6 +183,7 @@ export function assetPath(name: AssetName): string | null {
   }
 }
 
+/** A running `keylang web` server: its printed URL and port, unsaved specs, and shutdown. */
 export interface WebServer {
   url: string;
   port: number;
@@ -174,8 +195,10 @@ export interface WebServer {
 /** The subprotocol the page speaks; the token rides along as `keylang.t.<token>`. */
 export const PROTOCOL = "keylang";
 
+/** The prefix of the subprotocol that carries the token. */
 const TOKEN_PROTOCOL = `${PROTOCOL}.t.`;
 
+/** One TUI session: its `App`, the socket driving it (null while detached), and the expiry timer. */
 interface Session {
   app: App;
   connection: WebSocket | null;
@@ -206,6 +229,7 @@ class AudioQueue {
   private failure: Error | null = null;
   private samples = 0;
 
+  /** Adds a chunk; chunks after `end` or past `MAX_SAMPLES` are dropped. */
   push(chunk: Int16Array): void {
     if (this.ended || this.samples + chunk.length > MAX_SAMPLES) return;
     this.samples += chunk.length;
@@ -213,12 +237,14 @@ class AudioQueue {
     this.wake();
   }
 
+  /** Ends the stream; a failure is thrown to the reader once the queued chunks are read. */
   end(failure: Error | null = null): void {
     this.ended = true;
     this.failure ??= failure;
     this.wake();
   }
 
+  /** Resolves the reader waiting for a chunk, if any. */
   private wake(): void {
     const waiting = this.waiting;
     this.waiting = null;
@@ -227,6 +253,7 @@ class AudioQueue {
 
   /** The chunks as they come, until `end`. */
   async *chunks(): AsyncGenerator<Int16Array> {
+    // Yield queued chunks first; only when the queue is empty does a failure or the end stop the reader, else wait for `wake`.
     for (;;) {
       const chunk = this.pending.shift();
 
@@ -251,6 +278,7 @@ function pcmOf(data: JsonValue | undefined): Int16Array | null {
   if (bytes.length === 0 || bytes.length % 2 !== 0) return null;
   const pcm = new Int16Array(bytes.length / 2);
 
+  // Little-endian 16-bit samples, read explicitly so the host's byte order does not matter.
   for (let i = 0; i < pcm.length; i++) pcm[i] = bytes.readInt16LE(i * 2);
 
   return pcm;
@@ -263,6 +291,7 @@ export function clampSize(value: JsonValue | undefined, fallback: number, max: n
   return Math.max(1, Math.min(max, Math.floor(value)));
 }
 
+/** Whether `given` equals the token, compared in constant time so timing tells nothing about it. */
 function sameSecret(given: string | null | undefined, token: string): boolean {
   if (given === null || given === undefined) return false;
   const a = Buffer.from(given);
@@ -273,6 +302,7 @@ function sameSecret(given: string | null | undefined, token: string): boolean {
 
 /** The token a socket offers among its subprotocols. */
 function offeredToken(request: IncomingMessage): string | null {
+  // The header lists the offered subprotocols comma-separated; the token is the one with the token prefix.
   for (const protocol of String(request.headers["sec-websocket-protocol"] ?? "").split(",")) {
     const name = protocol.trim();
 
@@ -282,6 +312,7 @@ function offeredToken(request: IncomingMessage): string | null {
   return null;
 }
 
+/** How `createWebApp` and `serveWeb` run one repository. */
 export interface WebOptions {
   root: string;
   port: number;
@@ -331,9 +362,14 @@ function flowNamesOf(value: JsonValue | undefined): string[] | undefined | null 
   if (!Array.isArray(value)) return null;
   const names = value.filter(isJsonString);
 
+  // Only plain flow names: letters, digits, `_`, `.` and `-`.
   return names.length === value.length && names.every((name) => /^[\p{L}\p{N}_.-]+$/u.test(name)) ? names : null;
 }
 
+/**
+ * The page, API and socket handlers of one repository's `keylang web`, with
+ * its token, sessions and shared analysis; `serveWeb` and the hub put it on a port.
+ */
 export function createWebApp(options: WebOptions): WebApp {
   const host = options.host ?? "127.0.0.1";
   const token = randomBytes(16).toString("hex");
@@ -350,12 +386,14 @@ export function createWebApp(options: WebOptions): WebApp {
   // On loopback the Host header stops DNS rebinding; on another address the token alone guards access.
   const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
 
+  /** Whether the Host header names this server; anything goes off loopback, where the token is the guard. */
   const allowedHost = (header: string | undefined): boolean => {
     if (!header) return false;
 
     return !loopback || [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`].includes(header);
   };
 
+  /** Whether the socket offered the right token. */
   const authorized = (request: IncomingMessage): boolean => sameSecret(offeredToken(request), token);
   // A page of another origin may send a request but must not read the answer: the Origin a browser sets is checked as for the socket.
   const sameOrigin = (request: IncomingMessage): boolean => request.headers.origin === undefined || request.headers.origin === `http://${request.headers.host}`;
@@ -369,6 +407,7 @@ export function createWebApp(options: WebOptions): WebApp {
   const analysis = (): Promise<Analysis> => {
     // While the first analysis runs its inputs are unknown: requests meanwhile share it.
     if (cached !== null && (cached.inputs === null || stampOf(options.root, cached.inputs) === cached.stamp)) return cached.done;
+    // Otherwise start a new analysis and make it the cached one at once, so concurrent requests share it.
     const done = Promise.resolve().then(() => analyzer({ root: options.root }));
     const entry: CachedAnalysis = { inputs: null, stamp: "", done };
     cached = entry;
@@ -396,6 +435,7 @@ export function createWebApp(options: WebOptions): WebApp {
    * origin can set without a preflight this server never answers), a JSON body and the same origin guard it.
    */
   const flowProposal = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    // Parse the explorer's ticked branches and draft a flow from them over the snapshot.
     const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const body = await jsonBody(request, response, "flow-proposal", "POST", MAX_BODY);
 
@@ -409,6 +449,7 @@ export function createWebApp(options: WebOptions): WebApp {
     const draft = explorerFlow(done.snapshot, wanted);
 
     if (isRefusal(draft)) return json(400, { error: draft });
+    // Where the flow would land, given the spec directory and the documents that are generated.
     const specDir = rootRelative(options.root, done.config.dir);
     const generated = generatedIn(done.docs);
     let candidate;
@@ -424,6 +465,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     if (refusal !== null) return json(409, { error: refusal.error, target: candidate.target });
 
+    // Write the proposal under `.keylang/proposals/`; the spec itself changes only when a person merges it.
     const committed = await commitProposal(
       { root: options.root, specDir, generated, target: candidate.target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: done.config, inputs: sourceInputs(done.config, done.snapshot.manifest.files) },
       {},
@@ -454,6 +496,7 @@ export function createWebApp(options: WebOptions): WebApp {
     const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
     const view = query.get("view") ?? "";
 
+    // Only GET (answered by the read API) and PUT (a write) are allowed.
     if (request.method !== "GET" && request.method !== "PUT") {
       response.setHeader("Allow", "GET, PUT");
 
@@ -464,6 +507,7 @@ export function createWebApp(options: WebOptions): WebApp {
     const body = await jsonBody(request, response, "layout", "PUT", MAX_LAYOUT_BODY);
 
     if (body === NO_BODY) return;
+    // The view must exist, and an existing layout file must be readable, before anything is written.
     const done = await analysis();
     const diagram = read.keyedDiagram(done, view);
 
@@ -477,6 +521,7 @@ export function createWebApp(options: WebOptions): WebApp {
       return json(409, { error: error instanceof Error ? error.message : String(error) });
     }
 
+    // Validate the posted layout, convert it to the file's form, and skip the write when nothing changed.
     const layout = parseClientLayout(body);
 
     if (isRefusal(layout)) return json(400, { error: layout });
@@ -506,6 +551,7 @@ export function createWebApp(options: WebOptions): WebApp {
     if (body === NO_BODY) return;
 
     if (!isJsonObject(body)) return json(400, { error: "the body: {model, specHash}" });
+    // Validate the body's shape here; the operation validates the model itself.
     const { model, specHash: hash } = body;
     const modelView = isJsonObject(model) ? model.view : undefined;
     const view = isJsonString(modelView) ? modelView : null;
@@ -514,6 +560,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     if (hash !== undefined && hash !== null && !isJsonString(hash)) return json(400, { error: "specHash: the string /api/diagram answered" });
     const done = await runDiagramPropose({ root: options.root, view, model, specHash: hash ?? null }, { analyze: () => analysis() });
+    // Map the operation's status to HTTP: invalid 400, conflict or refused 409, failed 500.
     const status = done.status === "invalid" ? 400 : done.status === "conflict" || done.status === "refused" ? 409 : done.status === "failed" ? 500 : 200;
 
     return json(status, done);
@@ -528,6 +575,7 @@ export function createWebApp(options: WebOptions): WebApp {
   const greenfieldRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
+    // GET: whether a project may be started here, and which languages it may use.
     if (request.method === "GET") return json(200, { root: options.root, ...greenfieldAvailability(options.root), languages: Object.keys(GREENFIELD_LANGUAGES) });
     const body = await jsonBody(request, response, "greenfield", "POST", MAX_MODEL_BODY);
 
@@ -535,6 +583,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     if (!isJsonObject(body)) return json(400, { error: "the body: {model, languages, idea}" });
     const { model, languages, idea } = body;
+    // Map the operation's status to HTTP: invalid 400, conflict 409, failed 500.
     const done = runGreenfield({ root: options.root, model, languages, idea });
     const status = done.status === "invalid" ? 400 : done.status === "conflict" ? 409 : done.status === "failed" ? 500 : 200;
 
@@ -555,6 +604,7 @@ export function createWebApp(options: WebOptions): WebApp {
     if (body === NO_BODY) return;
 
     if (!isJsonObject(body)) return json(400, { error: "the body: {view?, flows?, shapes?, edges?, withCallees?}" });
+    // Validate the request fields: the view key, the flow names, the callee depth and the selection.
     const raw = body;
     const view = isJsonString(raw.view) ? raw.view : "";
     const named = flowNamesOf(raw.flows);
@@ -569,6 +619,7 @@ export function createWebApp(options: WebOptions): WebApp {
     const done = await analysis();
 
     if (!done.snapshot) return json(409, { error: "no code to read (`languages` in keylang.json is empty)" });
+    // The flows: the names given, else the flow of an open `flow:` view, else none.
     const wanted = viewOfKey(view);
     const names = named ?? (wanted?.view.kind === "flow" ? [wanted.view.name] : []);
     const flows: ExportFlow[] = [];
@@ -587,6 +638,7 @@ export function createWebApp(options: WebOptions): WebApp {
       flows.push({ name, origin: "spec", source: `web:${view || "canvas"}`, text, process: null });
     }
 
+    // The selection's layout rides along so a paste can draw the shapes where they were.
     const layout = selection.shapes.length === 0 ? "" : clipLayoutText(clipLayout(view, selection.shapes, selection.edges));
     const bundle = await exportBundle(options.root, done, flows, withCallees, keylangVersion(), layout);
 
@@ -608,6 +660,7 @@ export function createWebApp(options: WebOptions): WebApp {
     if (body === NO_BODY) return;
 
     if (!isJsonObject(body)) return json(400, { error: "the body: {text, layerMap?, mode?, output?}" });
+    // Validate the paste and its options; each wrong field gets its own error.
     const raw = body;
     const pastedText = raw.text;
 
@@ -620,6 +673,7 @@ export function createWebApp(options: WebOptions): WebApp {
     if (output !== "preview" && output !== "proposal") return json(400, { error: "output: preview or proposal" });
     let layerMap: string | undefined;
 
+    // The layer map arrives as an object and goes on as `from=to,…`, the CLI's form; layer names may not contain `=`, `,` or spaces.
     if (raw.layerMap !== undefined) {
       const map = raw.layerMap;
 
@@ -630,17 +684,20 @@ export function createWebApp(options: WebOptions): WebApp {
       layerMap = layers.join(",");
     }
 
+    // The bundle text is parsed as data, never run.
     const bundle = parseBundle(pastedText);
 
     if ("error" in bundle) return json(400, { error: bundle.error });
     const here = gitOf(options.root);
 
+    // From this repository: nothing to import, only the shapes to draw as copies.
     if (bundle.header.repo === here.repo) {
       const pasted = pastedShapes(bundle, [], []);
 
       return json(200, { sameRepo: true, header: bundle.header, flows: bundle.flows.map((f) => f.name), ...pasted });
     }
 
+    // From another repository: `flow import`, with the paste as the bundle's text.
     const importRequest: FlowImportRequest = { kind: "flow-import", root: options.root, bundle: "clipboard.bundle.md", source: pastedText, mode, output, pending: "refuse" };
 
     if (layerMap !== undefined) importRequest.layerMap = layerMap;
@@ -653,6 +710,7 @@ export function createWebApp(options: WebOptions): WebApp {
       return json(done.exitCode === 1 ? 409 : 400, { error: errors.join("; ") || `the import ${done.status}`, notes });
     }
 
+    // Imported: the shapes to draw with the IDs and layers the import assigned.
     const payload = done.payload;
     const pasted = pastedShapes(bundle, payload.ids, payload.layers);
 
@@ -681,6 +739,7 @@ export function createWebApp(options: WebOptions): WebApp {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
     if (!API_PATHS.has(path)) return reply(response, 404, "text/plain", "not found\n");
 
+    // Then the guards, in order: same origin and the Bearer token; read-only mode; a cross-site write.
     if (!sameOrigin(request) || !sameSecret(bearerToken(request), token)) return reply(response, 403, "text/plain", "forbidden\n");
 
     if (readOnly && (request.method !== "GET" || !READ_PATHS.has(path))) return reply(response, 403, "application/json", `${JSON.stringify({ error: "read-only: this keylang web (--read-only) writes nothing" })}\n`);
@@ -692,6 +751,7 @@ export function createWebApp(options: WebOptions): WebApp {
       if (site !== undefined && site !== "same-origin" && site !== "none") return reply(response, 403, "text/plain", "forbidden\n");
     }
 
+    // The write endpoints have handlers of their own; every other path is a read.
     if (path === "/api/flow-proposal") return flowProposal(request, response);
 
     if (path === "/api/diagram-proposal") return diagramProposal(request, response);
@@ -709,6 +769,7 @@ export function createWebApp(options: WebOptions): WebApp {
     return send(response, await read.answer(path, query));
   };
 
+  /** Routes one HTTP request: the API, the built and xterm assets, the diagram page and the terminal page. */
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
     // A request line the socket accepts may still be no URL (`GET //[`): that is the client's error, not the server's end.
     const path = pathOf(request.url);
@@ -717,6 +778,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
 
+    // The API runs async; a failure answers 500, or cuts a reply already under way.
     if (path === "/api" || path.startsWith("/api/")) {
       api(request, response, path, new URL(request.url ?? "/", "http://localhost").searchParams).catch((cause: unknown) => {
         process.stderr.write(`keylang web: ${cause instanceof Error ? cause.message : String(cause)}\n`);
@@ -730,6 +792,7 @@ export function createWebApp(options: WebOptions): WebApp {
 
     const assetName = path.startsWith("/assets/") ? path.slice("/assets/".length) : null;
 
+    // A built diagram-client file: built first in a checkout when missing or stale.
     if (assetName !== null && isBuiltName(assetName)) {
       const name = assetName;
       ensureClient()
@@ -748,6 +811,7 @@ export function createWebApp(options: WebOptions): WebApp {
       return;
     }
 
+    // An xterm.js asset, from the package or `node_modules`.
     if (assetName !== null) {
       if (!isAssetName(assetName)) return reply(response, 404, "text/plain", "not found\n");
       const file = assetPath(assetName);
@@ -779,6 +843,7 @@ export function createWebApp(options: WebOptions): WebApp {
     return reply(response, 200, "text/html; charset=utf-8", page());
   };
 
+  /** `handle` of `WebApp`: `serve` with every throw turned into a 500. */
   const handle = (request: IncomingMessage, response: ServerResponse): void => {
     // One request failing (an asset that cannot be read) answers 500; the server and its sessions go on.
     try {
@@ -791,10 +856,12 @@ export function createWebApp(options: WebOptions): WebApp {
     }
   };
 
+  /** Refuses a socket upgrade with a plain HTTP status. */
   const refuse = (socket: Duplex, status = "403 Forbidden"): void => {
     socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
   };
 
+  /** `upgrade` of `WebApp`: only `/ws`, with the token, the right Host and the same origin, and never in read-only mode. */
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
     // A reset from the client must not become an uncaught error of the server.
     socket.on("error", () => socket.destroy());
@@ -807,6 +874,7 @@ export function createWebApp(options: WebOptions): WebApp {
     wss.handleUpgrade(request, socket, head, (connection) => connect(connection));
   };
 
+  /** Wires one accepted socket: liveness for the heartbeat, its messages, and its close. */
   const connect = (connection: WebSocket): void => {
     alive.set(connection, true);
     connection.on("pong", () => alive.set(connection, true));
@@ -823,9 +891,11 @@ export function createWebApp(options: WebOptions): WebApp {
       }
     });
 
+    /** Applies one message from the page: `hello` opens or rejoins a session; the rest drive it. */
     const receive = (text: string): void => {
       let parsed: JsonValue;
 
+      // A message that is no JSON is ignored, not an error.
       try {
         parsed = parseJson(text);
       } catch {
@@ -835,6 +905,7 @@ export function createWebApp(options: WebOptions): WebApp {
       // Every message is an object; an array or a scalar is ignored.
       if (!isJsonObject(parsed)) return;
       const message = parsed;
+      // Sizes from the page are clamped to the grid limits; absent or bad sizes fall back to 80×24.
       const cols = clampSize(message.cols, 80, MAX_COLS);
       const rows = clampSize(message.rows, 24, MAX_ROWS);
 
@@ -854,6 +925,7 @@ export function createWebApp(options: WebOptions): WebApp {
       // A connection whose session moved to another tab no longer drives it.
       if (!session || session.connection !== connection) return;
 
+      // Keys and pastes, resizes, and the microphone's PCM and its end or failure.
       if (message.type === "input" && isJsonString(message.data)) session.app.input(message.data, true);
       else if (message.type === "resize") session.app.resize(cols, rows);
       else if (message.type === "audio") {
@@ -869,6 +941,7 @@ export function createWebApp(options: WebOptions): WebApp {
       }
     };
 
+    // A closed socket detaches its session and starts the expiry timer; a reconnect within `keepMs` resumes it.
     connection.on("close", () => {
       const current = session;
 
@@ -887,8 +960,10 @@ export function createWebApp(options: WebOptions): WebApp {
     });
   };
 
+  /** Opens session `requested` (a fresh ID when absent or malformed), or rejoins it, and attaches `connection` to it. */
   const hello = (connection: WebSocket, requested: JsonValue | undefined, cols: number, rows: number): Session => {
     const id = isJsonString(requested) && /^[\w-]{8,64}$/.test(requested) ? requested : randomBytes(8).toString("hex");
+    // A new session: a fresh `App` whose quit closes the socket and forgets the session.
     let found = sessions.get(id);
 
     if (!found) {
@@ -929,6 +1004,7 @@ export function createWebApp(options: WebOptions): WebApp {
       sessions.set(id, found);
     }
 
+    // A rejoined session no longer expires.
     if (found.timer) clearTimeout(found.timer);
     found.timer = null;
     // A newer tab of the same session takes it over. The session points at the
@@ -943,6 +1019,7 @@ export function createWebApp(options: WebOptions): WebApp {
     return found;
   };
 
+  // Every `PING_MS`: drop sockets that did not answer the last ping, then ping the rest.
   const heartbeat = setInterval(() => {
     for (const connection of wss.clients) {
       if (alive.get(connection) === false) {
@@ -965,6 +1042,7 @@ export function createWebApp(options: WebOptions): WebApp {
       port = value;
     },
     unsaved: () => [...sessions.values()].flatMap((session) => session.app.unsaved()),
+    // Shutdown: stop the heartbeat, close every session's `App`, drop sockets and the analysis worker.
     close: async () => {
       clearInterval(heartbeat);
 
@@ -999,11 +1077,13 @@ export function shownHost(host: string): string {
   return host === "127.0.0.1" || host === "::1" || host === "localhost" ? "localhost" : host.includes(":") ? `[${host}]` : host;
 }
 
+/** Starts `keylang web` for one repository on `options.port` (0: any free port); the URL carries the token in its fragment. */
 export async function serveWeb(options: WebOptions): Promise<WebServer> {
   const host = options.host ?? "127.0.0.1";
   const app = createWebApp(options);
   const server: Server = createServer(app.handle);
   server.on("upgrade", app.upgrade);
+  // Wait until the server listens; a taken port rejects here.
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, host, () => resolve());
@@ -1049,6 +1129,7 @@ const NO_BODY: unique symbol = Symbol("no body");
  * form cannot send it), a body over `max` 413, no JSON 400.
  */
 async function jsonBody(request: IncomingMessage, response: ServerResponse, name: string, method: string, max: number): Promise<JsonValue | typeof NO_BODY> {
+  /** Answers an error as JSON and returns `NO_BODY`. */
   const json = (status: number, body: { error: string }): typeof NO_BODY => {
     reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
@@ -1081,6 +1162,7 @@ function parseClientLayout(body: JsonValue): ClientLayout | string {
   const out: ClientLayout = {};
   const finite = (value: JsonValue | undefined): value is number => isJsonNumber(value) && Number.isFinite(value);
 
+  // Copy only known fields with the right types, so the file gets no stray data from the page.
   for (const [key, entry] of Object.entries(layout)) {
     if (!isJsonObject(entry)) return `layout.${key}: an object`;
 
@@ -1091,6 +1173,7 @@ function parseClientLayout(body: JsonValue): ClientLayout | string {
 
     if (finite(entry.h)) clean.h = entry.h;
 
+    // Optional edge waypoints; one bad point refuses the whole layout.
     if (Array.isArray(entry.points)) {
       const points: { x: number; y: number }[] = [];
 
@@ -1120,6 +1203,7 @@ function readBody(request: IncomingMessage, max: number): Promise<string | null>
     const chunks: Buffer[] = [];
     let size = 0;
     let over = false;
+    // Count bytes as they come and stop collecting past `max`; the rest of the body is ignored, not buffered.
     request.on("data", (chunk: Buffer) => {
       if (over) return;
       size += chunk.length;
@@ -1162,6 +1246,7 @@ function send(response: ServerResponse, answer: ReadAnswer): void {
   reply(response, answer.status, answer.type, answer.body);
 }
 
+/** Writes a whole reply: no caching, and no MIME sniffing of the body. */
 function reply(response: ServerResponse, status: number, type: string, body: string | Buffer): void {
   response.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
   response.end(body);
@@ -1176,10 +1261,12 @@ function reply(response: ServerResponse, status: number, type: string, body: str
  */
 export function diagramsPage(options: { readOnly?: boolean; source?: "server" | "static" | "local"; assets?: string; title?: string; shards?: number } = {}): string {
   const source = options.source ?? "server";
+  // The pages a static export writes have no server to write to, so they are read-only too.
   const readOnly = options.readOnly === true || source !== "server";
   // Relative to the page, so a server mounted under `/r/<id>/` (`web --hub`) serves the same markup.
   const assets = options.assets ?? "assets/";
   const title = options.title ?? "keylang · діаграми";
+  // The title is the only value put in the markup that may come from outside (a repository name), so it is escaped.
   const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   return `<!doctype html>

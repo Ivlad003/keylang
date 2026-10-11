@@ -1,3 +1,4 @@
+// Web page (web/src), the «Карта» (docs) mode; entry points `Docs` and `docItems`.
 // «Карта» of the diagram page: the Markdown of the specs as keylang reads it —
 // the map as `keylang map` renders it now, the explained map, the flows, the
 // discovered flows and the rest of the spec directory (`GET /api/docs`,
@@ -12,6 +13,7 @@ import type { Api, DocList } from "./api.ts";
 import { button, make } from "./dom.ts";
 import type { ListItem } from "./list.ts";
 
+/** The list group of each doc kind the server reports; its key order is the list's group order. */
 export const DOC_GROUP: Record<DocList["files"][number]["group"], string> = {
   map: "Карта",
   "map-explained": "Пояснена карта",
@@ -35,6 +37,7 @@ const OPEN_DEPTH = 2;
 function explainGroup(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
 
+  // A brief's file name starts with its layer, so the first dot-separated segment names the group.
   if (/\/explain\/brief\//.test(path)) return `${DOC_GROUP.explain} · ${name.split(".")[0]}`;
 
   return `${DOC_GROUP.explain} · шари`;
@@ -45,6 +48,7 @@ export function docItems(list: DocList): ListItem[] {
   const order = Object.keys(DOC_GROUP);
 
   return [...list.files]
+    // Stable sort by group: within a group the server's order is kept.
     .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
     .map((file) => {
       const name = file.path.slice(file.path.lastIndexOf("/") + 1);
@@ -58,6 +62,7 @@ export function docItems(list: DocList): ListItem[] {
 function normalise(path: string): string | null {
   const out: string[] = [];
 
+  // Resolve segment by segment: empty and `.` vanish, `..` drops the previous one.
   for (const part of path.split("/")) {
     if (part === "" || part === ".") continue;
 
@@ -70,6 +75,7 @@ function normalise(path: string): string | null {
   return out.join("/");
 }
 
+/** Opens a listed doc at an anchor (null: at the top). */
 type Open = (path: string, at: string | null) => void;
 
 /** A line of the file and, for a list item, the lines under it. `drawn`: how many children are on the page. */
@@ -89,9 +95,11 @@ interface Block {
 /** Inline Markdown of one line: code spans and links marked, HTML anchors and comments dimmed, the rest as text. */
 function inline(text: string, from: string, known: ReadonlySet<string>, open: Open): Node[] {
   const nodes: Node[] = [];
+  // Matches, in turn: a code span; a link `[text](target)` (groups: text, target); an HTML anchor `<a id="…"></a>` with an optional `<br>`; an HTML comment.
   const pattern = /`[^`]+`|\[([^\]]+)\]\(([^)\s]+)\)|<a id="[^"]*"><\/a>(?:<br>)?|<!--[\s\S]*?-->/g;
   let last = 0;
 
+  // Walk the matches, keeping the plain text between them as text nodes.
   for (const match of text.matchAll(pattern)) {
     if (match.index > last) nodes.push(document.createTextNode(text.slice(last, match.index)));
     last = match.index + match[0].length;
@@ -111,6 +119,7 @@ function inline(text: string, from: string, known: ReadonlySet<string>, open: Op
     // A link of this file (`#base.brief`) or of another listed one (`base.md#base.brief`).
     const resolved = /^[a-z]+:/i.test(target) ? null : file === "" ? from : normalise(`${from.slice(0, from.lastIndexOf("/") + 1)}${decodeURI(file)}`);
 
+    // Only a link to a listed doc becomes clickable; an external URL or an unknown file stays marked text.
     if (resolved !== null && known.has(resolved) && (file !== "" || anchor !== "")) {
       const link = make("a", { text: match[0], title: anchor ? `${resolved}#${anchor}` : resolved });
       link.href = "#";
@@ -127,6 +136,7 @@ function inline(text: string, from: string, known: ReadonlySet<string>, open: Op
   return nodes;
 }
 
+/** The «Карта» viewer: draws one Markdown file as a foldable tree of lines, with search and anchor jumps. */
 export class Docs {
   private readonly container: HTMLElement;
   private readonly api: Api;
@@ -138,9 +148,11 @@ export class Docs {
   private request = 0;
   /** Every line of the open file, drawn or not: search and anchors look here. */
   private blocks: Block[] = [];
+  /** The search's matching blocks and the index of the current one (-1: none yet). */
   private hits: Block[] = [];
   private hit = -1;
   private path = "";
+  /** Whether the open file is long enough to open folded. */
   private fold = false;
 
   constructor(container: HTMLElement, api: Api, host: { status(text: string): void; open(path: string, at: string | null): void }) {
@@ -155,6 +167,7 @@ export class Docs {
     this.known = new Set(list.files.map((file) => file.path));
   }
 
+  /** Opens `path` ("" shows the hint) and scrolls to anchor `at`; an answer superseded by a newer `show` is dropped. */
   async show(path: string, at: string | null = null): Promise<void> {
     const request = ++this.request;
 
@@ -188,12 +201,14 @@ export class Docs {
     }
   }
 
+  /** The path of the file on the page, "" when none. */
   current(): string {
     return this.shown;
   }
 
   /** A block drawn and in sight: every item above it unfolded (their nested items drawn first), centred. */
   private bringOut(block: Block): HTMLElement {
+    // Unfold from the outermost ancestor down: each unfold draws the next level the block lives in.
     const chain: Block[] = [];
 
     for (let up = block.parent; up; up = up.parent) chain.unshift(up);
@@ -207,6 +222,7 @@ export class Docs {
 
   /** The line of an `<a id="…">` (the explained map's anchors), unfolded, centred and marked. */
   private reveal(at: string): void {
+    // Only one target is marked at a time.
     for (const old of this.container.querySelectorAll(".md-target")) old.classList.remove("md-target");
     const block = this.blocks.find((b) => b.anchors.includes(at));
 
@@ -219,6 +235,7 @@ export class Docs {
     this.bringOut(block).classList.add("md-target");
   }
 
+  /** Finds the case-insensitive needle in every line, marks the hits and jumps to the first; `count` shows the tally. */
   private search(needle: string, count: HTMLElement): void {
     for (const old of this.hits) old.row?.classList.remove("md-hit", "md-hit-now");
     this.hits = [];
@@ -238,6 +255,7 @@ export class Docs {
     if (this.hits.length > 0) this.next(count);
   }
 
+  /** Moves to the next hit (`step` -1: the previous), wrapping round, and brings it into sight. */
   private next(count: HTMLElement, step = 1): void {
     if (this.hits.length === 0) return;
     this.hits[this.hit]?.row?.classList.remove("md-hit-now");
@@ -273,6 +291,7 @@ export class Docs {
     block.row = row;
     const line = block.line;
 
+    // Code and fences stay verbatim; a heading gets its level class; an item's marker is set apart from its text.
     if (block.kind === "fence" || block.kind === "code") row.textContent = line;
     else if (block.kind === "heading") {
       row.classList.add(`md-h${/^#+/.exec(line)![0].length}`);
@@ -284,11 +303,13 @@ export class Docs {
 
     if (block.anchors.length > 0) row.dataset["anchors"] = block.anchors.join(" ");
 
+    // Only list items get a box with children; any other line is just its row.
     if (block.kind !== "item") return row;
     const children = make("div", { className: "md-children" });
     const box = make("div", { className: "md-item" }, row, children);
     block.box = box;
 
+    // A toggle only for an item that has nested items: plain continuation lines are not worth folding.
     if (block.children.some((child) => child.kind === "item")) {
       box.classList.add("has-items");
       const toggle = make("button", { className: "md-toggle", title: "згорнути / розгорнути" });
@@ -301,6 +322,7 @@ export class Docs {
     const folded = this.fold && block.depth >= OPEN_DEPTH && box.classList.contains("has-items");
 
     if (folded) box.classList.add("folded");
+    // A folded item draws its leading non-item lines (its description) and stops at the first nested item; `drawn` remembers where.
     const until = folded ? block.children.findIndex((child) => child.kind === "item") : block.children.length;
 
     for (const child of block.children.slice(0, until === -1 ? block.children.length : until)) children.append(this.draw(child));
@@ -311,6 +333,7 @@ export class Docs {
 
   /** Draws the file; returns its number of lines. */
   private render(path: string, text: string): number {
+    // One trailing newline is not an extra empty line.
     const all = text.replace(/\n$/, "").split("\n");
     this.path = path;
     this.fold = all.length > FOLD_LINES;
@@ -322,12 +345,16 @@ export class Docs {
 
     for (const line of all) {
       const indent = /^\s*/.exec(line)![0].length;
+      // Classify the line. A fence line toggles code mode; inside it every line is code, whatever it looks like.
       const opens = /^\s*(```|~~~)/.test(line);
       const kind: Block["kind"] = opens ? "fence" : fence ? "code" : /^#{1,6}\s/.test(line) ? "heading" : /^(\s*)([-*+]|\d+\.)(\s)/.test(line) ? "item" : line.startsWith(">") ? "quote" : "text";
 
       if (opens) fence = !fence;
 
+      // A non-blank line closes the items it is not indented under. Code lines and the closing fence keep the stack,
+      // so a fence stays inside the item that opened it; blank lines never close an item.
       if (line.trim() !== "" && kind !== "code" && !(kind === "fence" && !fence)) while (stack.length > 0 && indent <= stack[stack.length - 1]!.indent) stack.pop();
+      // Depth counts list items only, which is what `OPEN_DEPTH` folds by; anchors are the `<a id>` names on the line.
       const parent = stack[stack.length - 1];
       const block: Block = { line, kind, indent, anchors: [...line.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]!), children: [], depth: (parent?.depth ?? 0) + (kind === "item" ? 1 : 0), drawn: 0 };
 
@@ -338,6 +365,7 @@ export class Docs {
       if (kind === "item") stack.push(block);
     }
 
+    // Draw the tree, then the bar: path, fold-all/unfold-all and the in-document search (Enter: next, Shift+Enter: previous).
     const pre = make("pre", { className: "md" });
 
     for (const block of roots) pre.append(this.draw(block));
@@ -352,6 +380,7 @@ export class Docs {
       if (event.key === "Enter") this.next(count, event.shiftKey ? -1 : 1);
     });
 
+    // `blocks` is in document order, so a parent is unfolded (and its children drawn) before the children are visited.
     const unfoldAll = (): void => {
       for (const block of this.blocks) if (block.box?.classList.contains("has-items") || (block.kind === "item" && block.box)) this.unfold(block);
 

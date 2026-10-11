@@ -16,6 +16,7 @@ export interface ExactFs {
   readdirSync(path: string): string[];
 }
 
+/** The real file system. */
 export const nodeFs: ExactFs = { existsSync, readdirSync: (path) => readdirSync(path) };
 
 /**
@@ -27,6 +28,8 @@ export function exactExistence(root: string, fs: ExactFs = nodeFs): (file: strin
   const listings = new Map<string, ReadonlySet<string> | null>();
 
   const entries = (dir: string): ReadonlySet<string> | null => {
+    // Each directory is listed at most once; an unreadable one is cached as
+    // null so the predicate answers false without retrying.
     let names = listings.get(dir);
 
     if (names === undefined) {
@@ -43,8 +46,13 @@ export function exactExistence(root: string, fs: ExactFs = nodeFs): (file: strin
   };
 
   return (file) => {
+    // Cheap rejection first: a path missing even case-insensitively is missing.
     if (!fs.existsSync(join(root, file))) return false;
     let dir = "";
+
+    // Walk the path one segment at a time and require each segment to appear
+    // verbatim in its parent's listing. `..` is refused: it would make the
+    // listing walk leave the path keylang derived.
 
     for (const segment of file.split("/")) {
       if (segment === "" || segment === ".") continue;

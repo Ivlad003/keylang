@@ -4,6 +4,9 @@
 // line, speech, a draft) can tell whether the text it was made for is still
 // there. Lines and their layouts are cached per text: a key costs one pass
 // over the line it changes, not a pass per column (review 2026-09-28).
+//
+// Layer: TUI. The editor, view and session read buffers through these helpers;
+// the parse step reuses the core `parse` (Markdown -> IR).
 
 import { extname } from "node:path";
 import type { Document } from "../ir.ts";
@@ -33,18 +36,21 @@ export function isDirty(buffer: Buffer): boolean {
   return buffer.newFile || buffer.text !== buffer.saved;
 }
 
+/** Replaces the buffer's text, reparses it and bumps `version` so late work can notice the change. */
 export function setText(buffer: Buffer, text: string): void {
   buffer.text = text;
   buffer.doc = docOf(buffer.path, text);
   buffer.version++;
 }
 
+/** The split lines and per-line layouts of one buffer text. */
 interface Cached {
   text: string;
   lines: string[];
   layouts: Map<number, LineLayout>;
 }
 
+// Keyed weakly by buffer, so a closed buffer's cache goes with it.
 const cache = new WeakMap<Buffer, Cached>();
 
 function cached(buffer: Buffer): Cached {
@@ -58,6 +64,7 @@ function cached(buffer: Buffer): Cached {
   return fresh;
 }
 
+/** The buffer's text split on `\n`, cached until the text changes. */
 export function bufferLines(buffer: Buffer): readonly string[] {
   return cached(buffer).lines;
 }

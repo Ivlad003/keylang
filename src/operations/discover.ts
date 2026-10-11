@@ -4,6 +4,12 @@
 // the map: only files that changed, only over files with the generated
 // marker, removing generated files no entry needs. Adopt writes one proposal
 // through the proposals mechanism, as `draft flow` does.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over source →
+// FileFacts → snapshot; the drafting itself is `src/discover.ts`, the model
+// naming `./discover-names.ts`. Entry points: `runFlowsDiscover`,
+// `runFlowsAdopt`. Key terms: discovered flow (a draft walked from an entry
+// point), adopt (turn one into a hand-written flow via a proposal).
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -28,6 +34,8 @@ async function discoveryOf(root: string, options: DiscoverOptions, context: Oper
     return { error: errorText(error) };
   }
 
+  // Flows already written by hand are passed in, so their triggers are not
+  // drafted again.
   const snapshot = analyzed.snapshot;
 
   if (snapshot === null) return { error: "no code to read (`languages` in keylang.json is empty)" };
@@ -48,6 +56,7 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
 
   if (context.signal?.aborted) return empty("flows-discover", "cancelled", null);
 
+  // Validate the flag combinations before any analysis.
   if (request.names !== undefined && request.output !== "write") return empty("flows-discover", "failed", 2, "flows discover: --names writes the view; it takes no --print or --check (--dry-run writes nothing)");
 
   if (request.names !== undefined && request.only !== undefined) return empty("flows-discover", "failed", 2, "flows discover: --names groups the flows of whole layers; it takes no --kind");
@@ -70,6 +79,8 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
 
   if ("error" in found) return empty("flows-discover", "failed", 2, `flows discover: ${found.error}`);
   const { analyzed, discovery, specDir } = found;
+  // The view: one generated file per layer, plus the processes README when
+  // `--names` produced one.
   const dir = `${specDir === "" ? "" : `${specDir}/`}${DISCOVERED_DIR}`;
   const files = [...discovery.files].map(([name, text]) => ({ path: `${dir}/${name}`, text }));
   const named = request.names === undefined ? null : await nameProcesses(analyzed, discovery, specDir, request.names, request.layer, context);
@@ -82,6 +93,9 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   // A filtered run is a partial view: it removes nothing.
   const filtered = Object.keys(options).some((key) => key !== "depth");
   const extra = filtered ? [] : extraGenerated(join(root, dir), discovery.files).map((name) => `${dir}/${name}`);
+  // Compare with the disk: `changed` are files whose text differs, `extra`
+  // generated files no longer produced; together they are what `--check`
+  // calls stale. A changed path holding a hand-written file is a conflict.
   const changed = files.filter((file) => readOrNull(join(root, file.path)) !== file.text);
   const conflicts = changed.flatMap((file) => (existsSync(join(root, file.path)) && !isGeneratedText(readFileSync(join(root, file.path), "utf8")) ? [file.path] : []));
   const stale = [...changed.map((file) => file.path), ...extra];
@@ -104,6 +118,7 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
     removed,
   });
 
+  // Modes that write nothing: print (or a `--names` dry run) and check.
   if (request.output === "print" || request.names?.dryRun === true) return done(0, []);
 
   if (request.output === "check") {
@@ -112,6 +127,8 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
     return done(1, stale.map((path) => ({ level: "error" as const, text: `${path}: stale; run \`keylang flows discover\`` })));
   }
 
+  // Write mode: refuse the whole run if any target is a hand-written file,
+  // then pass the commit gate.
   if (conflicts.length > 0) return done(1, [...conflicts.map((path) => ({ level: "error" as const, text: `${path}: manual file without keylang:generated marker` })), { level: "info", text: "nothing was written" }]);
   const targets = [...changed.map((file) => file.path), ...extra];
 
@@ -129,6 +146,8 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
     }
   }
 
+  // Re-check every target against the write policy just before writing;
+  // `expect` makes a file that changed since it was read a problem.
   const problems = [
     ...changed.map((file) => [file.path, writeProblem(root, file.path, { under: dir, generated: true, expect: readOrNull(join(root, file.path)) })] as const),
     ...extra.map((path) => [path, writeProblem(root, path, { under: dir, generated: true })] as const),
@@ -138,6 +157,8 @@ export async function runFlowsDiscover(request: FlowsDiscoverRequest, context: O
   const written: string[] = [];
   const removed: string[] = [];
 
+  // Write the changed files atomically, then remove the obsolete ones; on
+  // an I/O error report what was already done.
   try {
     for (const file of changed) {
       const abs = join(root, file.path);
@@ -180,6 +201,9 @@ export async function runFlowsAdopt(request: FlowsAdoptRequest, context: Operati
 
   if ("error" in found) return empty("flows-adopt", "failed", 2, `flows adopt: ${found.error}`);
   const { analyzed, discovery, specDir } = found;
+  // The name must be a discovered flow; when it is not, say whether it is
+  // already specified by hand (by flow name or trigger) or list the
+  // discovered names.
   const flow = discovery.flows.find((f) => f.name === name);
 
   if (flow === undefined) {
@@ -191,6 +215,9 @@ export async function runFlowsAdopt(request: FlowsAdoptRequest, context: Operati
     return empty("flows-adopt", "failed", 2, `flows adopt: no discovered flow \`${name}\`${names.length > 0 ? `; discovered: ${names.join(", ")}` : ""}`);
   }
 
+  // Build the candidate (the flow as Markdown in its target spec), refuse
+  // early when a proposal may not be written, then commit it through the
+  // shared proposal gate.
   const draft = adoptedFlow(flow, specDir);
   const generated = generatedIn(analyzed.docs);
   const inputs = sourceInputs(analyzed.config, analyzed.snapshot!.manifest.files);
@@ -232,6 +259,7 @@ function extraGenerated(dir: string, files: ReadonlyMap<string, string>): string
     .sort();
 }
 
+/** The file's text, or null when it is missing or unreadable. */
 function readOrNull(abs: string): string | null {
   try {
     return readFileSync(abs, "utf8");

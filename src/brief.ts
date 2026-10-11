@@ -1,6 +1,8 @@
 // Plain-language text → a brief: its first paragraph cut to two sentences.
 // Doc comments (once an extractor strips their syntax) and model answers go
 // through the same rule, so a brief reads the same whatever wrote it.
+// Used wherever keylang shows a one-line description: the map, the tour and
+// flow drafts. Entry points: `briefOf`, `firstSentence`, `readmeBrief`, `capText`.
 
 /** Past this many characters a brief is cut at a word and ends with `…`. */
 export const BRIEF_MAX = 280;
@@ -14,6 +16,7 @@ export const BRIEF_MAX = 280;
  * plain code-point matching, so the result does not depend on ICU or the Node version.
  */
 export function briefOf(text: string): string | null {
+  // Paragraphs are separated by a blank line (whitespace allowed); take the first non-empty one.
   const paragraph = text
     .split(/\n[ \t]*\n/)
     .map((p) => p.replace(/\s+/g, " ").trim())
@@ -31,8 +34,11 @@ export function firstSentence(text: string): string | null {
   return brief === null ? null : firstSentences(brief, 1);
 }
 
+// A sentence end: `.`, `!` or `?`, optionally followed by closing quotes or
+// brackets, and then (lookahead) whitespace and an uppercase letter.
 const SENTENCE_END = /[.!?]["'»”’)\]]*(?=\s+\p{Lu})/gu;
 
+/** `text` up to the end of its `count`-th sentence, or all of it when it has fewer. */
 function firstSentences(text: string, count: number): string {
   let seen = 0;
 
@@ -58,6 +64,7 @@ export function readmeBrief(markdown: string): string | null {
   for (const paragraph of proseParagraphs(markdown)) {
     const text = plainInline(paragraph);
 
+    // Skip badge rows and language switchers: a real paragraph has some words and a sentence end.
     if (words(text) >= 4 && /[.!?](?:\s|$)/.test(text)) return briefOf(text);
   }
 
@@ -71,12 +78,17 @@ function proseParagraphs(markdown: string): string[] {
   let fence: string | null = null;
   let comment = false;
 
+  // Close the paragraph being collected, if any.
   const flush = (): void => {
     if (current.length > 0) out.push(current.join("\n"));
     current = [];
   };
 
+  // A line-by-line scanner with two skip states: inside a fenced code block,
+  // and inside a multi-line HTML comment. Any non-prose block ends the paragraph.
+  // A leading BOM is removed first so it cannot hide a heading on line one.
   for (const line of markdown.replace(/^﻿/, "").split(/\r?\n/)) {
+    // Inside a fence, wait for the closing fence that starts with the same marker.
     if (fence !== null) {
       if (line.trimStart().startsWith(fence)) fence = null;
       continue;
@@ -87,6 +99,7 @@ function proseParagraphs(markdown: string): string[] {
       continue;
     }
 
+    // A fence opens with three or more backticks or tildes, indented at most three spaces.
     const open = /^ {0,3}(`{3,}|~{3,})/.exec(line);
 
     if (open) {
@@ -100,6 +113,7 @@ function proseParagraphs(markdown: string): string[] {
       continue;
     }
 
+    // An HTML comment hides everything until `-->`, which may be on the same line.
     if (/^ {0,3}<!--/.test(line)) {
       flush();
       comment = !line.includes("-->");
@@ -131,16 +145,23 @@ function proseParagraphs(markdown: string): string[] {
 /** The words of an inline Markdown text: images and badges dropped, links as their text, no tags or emphasis marks. */
 function plainInline(text: string): string {
   return text
+    // A linked image (badge): `[![alt](img)](link)` is dropped entirely.
     .replace(/\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)/g, " ")
+    // A plain image, inline `![alt](src)` or reference `![alt][ref]`.
     .replace(/!\[[^\]]*\](?:\([^)]*\)|\[[^\]]*\])/g, " ")
+    // A link, inline or reference: keep its text.
     .replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, "$1")
+    // HTML tags.
     .replace(/<\/?[A-Za-z][^>]*>/g, " ")
+    // Strong emphasis `**x**` / `__x__`: keep the words.
     .replace(/(\*\*|__)(?=\S)([^\n]*?\S)\1/g, "$2")
+    // Single `*x*` / `_x_` emphasis, only at word boundaries so `snake_case` survives.
     .replace(/(^|[^\p{L}\p{N}*_])([*_])(?=\S)([^*_\n]*?\S)\2(?=[^\p{L}\p{N}*_]|$)/gu, "$1$3")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/** How many words `text` has: runs of letters and digits, with inner apostrophes and hyphens. */
 function words(text: string): number {
   return text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
 }
@@ -150,6 +171,7 @@ export function capText(text: string, max: number): string {
   const chars = [...text];
 
   if (chars.length <= max) return text;
+  // Leave room for the ellipsis, cut at the last space, and drop dangling punctuation before `…`.
   const head = chars.slice(0, max - 1).join("");
   const space = head.lastIndexOf(" ");
 

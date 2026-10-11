@@ -5,6 +5,10 @@
 // branch needs it. Disposers run newest first; a failed build disposes what
 // was built. The output depends only on specs and snapshot: same input,
 // same bytes.
+//
+// A generator downstream of both pipelines: SpecIR wires plus the snapshot's
+// nodes and exports. Entry point: `generateWire`; `WIRE_MARKER` is the first
+// line by which a generated file is recognised.
 
 import { createHash } from "node:crypto";
 import { dirname, join, posix } from "node:path";
@@ -14,8 +18,10 @@ import type { AnalysisSnapshot } from "./snapshot.ts";
 import type { Wire, WireDep } from "./spec-ir.ts";
 import { wireImport, wireOrder, type WiringView } from "./wiring.ts";
 
+/** The first line of a generated file: marks it as owned by `keylang wire`. */
 export const WIRE_MARKER = "// keylang:generated — не редагувати, `keylang wire`";
 
+/** What `generateWire` needs: the project root (for tsconfig), the output path, the wires and the snapshot. */
 export interface WireInput {
   root: string;
   /** Output path relative to root, POSIX. */
@@ -33,6 +39,7 @@ interface Names {
   value: string;
 }
 
+/** The text of the generated wiring file; throws on a cycle or a factory the file could not import. */
 export function generateWire(input: WireInput): string {
   const { snapshot, wires, out } = input;
   const order = wireOrder(wires);
@@ -45,6 +52,7 @@ export function generateWire(input: WireInput): string {
 
   for (const w of wires) for (const d of w.deps) for (const c of d.compose) decorators.add(c.target.target);
   const imports = [...new Set([...built, ...decorators])].sort();
+  // Kinds of every imported ID and of its parent, so `wireImport` can tell a static method from a fn.
   const kinds = new Map<string, string>();
 
   for (const id of [...imports, ...imports.map((id) => id.slice(0, id.lastIndexOf(".")))]) kinds.set(id, isClass(snapshot, id) ? "class" : (snapshot.nodes[id]?.kind ?? "missing"));
@@ -58,6 +66,7 @@ export function generateWire(input: WireInput): string {
   const members = new Map<string, string>();
   const callee = (id: string): string => `${name(id).local}${members.has(id) ? memberAccess(members.get(id)!) : ""}`;
 
+  // Resolve each ID to an import and group the imports by file.
   for (const id of imports) {
     if (!snapshot.nodes[id]?.file) throw new Error(`\`${id}\` is not in the snapshot`);
     // `check` reports the same as K302: the generator never writes an import that cannot load.
@@ -74,11 +83,13 @@ export function generateWire(input: WireInput): string {
     byFile.set(found.file, entry);
   }
 
+  // One import line per file, sorted by path (code-unit order, not locale) for byte-stable output.
   for (const [file, entry] of [...byFile].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     const named = entry.named.length > 0 ? `{ ${entry.named.map((n) => (n.name === n.local ? n.name : `${n.name} as ${n.local}`)).join(", ")} }` : null;
     lines.push(`import ${[entry.default, named].filter((part) => part !== null).join(", ")} from ${JSON.stringify(specifier(out, file, ext))};`);
   }
 
+  // The runtime prelude of `wire()`: disposer tracking and release.
   const classes = new Set(imports.filter((id) => kinds.get(id) === "class"));
   lines.push(
     "",
@@ -114,6 +125,8 @@ export function generateWire(input: WireInput): string {
     "  };",
   );
 
+  // One lazy builder per ID in dependency order: `cell` memoizes the promise,
+  // so a node shared by several dependents is built once.
   for (const id of order.order) {
     const w = byId.get(id);
     const n = name(id);
@@ -124,6 +137,7 @@ export function generateWire(input: WireInput): string {
     lines.push(`  const ${n.builder} = () => (${n.cell} ??= ${n.build}());`);
   }
 
+  // Build the wire targets in declaration order and return them by ID.
   const targets = wires.map((w) => w.target.target);
   lines.push(
     "  try {",
@@ -150,10 +164,12 @@ function depValue(d: WireDep, name: (id: string) => Names, callee: (id: string) 
   let value = `await ${name(d.target.target).builder}()`;
   const branches = d.when.map((when) => ({ env: when.env, value: when.value, id: when.target.target }));
 
+  // Nest the branches from the last outwards, so the first `when` is tested first.
   for (const c of [...branches].reverse()) value = `env[${JSON.stringify(c.env)}] === ${JSON.stringify(c.value)} ? await ${name(c.id).builder}() : ${value}`;
 
   if (branches.length > 0) value = `(${value})`;
 
+  // Each decorator wraps the previous result: the first listed is innermost.
   for (const c of d.compose) value = `${callee(c.target.target)}(${value})`;
 
   return value;
@@ -184,6 +200,7 @@ function localNames(ids: readonly string[]): Map<string, Names> {
     return /^[0-9]/.test(name) ? `_${name}` : name;
   };
 
+  // Count how many IDs map to each base name, to know which need a hash suffix.
   const shared = new Map<string, number>();
 
   for (const id of ids) shared.set(base(id), (shared.get(base(id)) ?? 0) + 1);
@@ -191,6 +208,8 @@ function localNames(ids: readonly string[]): Map<string, Names> {
   const used = new Set<string>();
   const out = new Map<string, Names>();
 
+  // Sorted so suffix choices do not depend on input order. Re-salt the hash
+  // until none of the five derived names clashes with one already taken.
   for (const id of [...ids].sort()) {
     let local = shared.get(base(id))! > 1 ? `${base(id)}_${shortHash(id)}` : base(id);
 
@@ -204,10 +223,12 @@ function localNames(ids: readonly string[]): Map<string, Names> {
   return out;
 }
 
+/** The first six hex digits of the SHA-256 of `text`: a stable disambiguator. */
 function shortHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 6);
 }
 
+/** An object key: bare when it is a JS identifier, else quoted. */
 function key(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
 }
@@ -225,6 +246,7 @@ function importExtension(root: string): "ts" | "js" | "none" {
   return NODE_RESOLUTION.test(moduleResolution(options)) ? "js" : "none";
 }
 
+/** The resolutions that require explicit runtime extensions in relative imports. */
 const NODE_RESOLUTION = /^node(16|next)$/;
 
 /** The module resolution tsc uses: the explicit one, else the one `module` implies (node16/node18/node20 → node16, nodenext → nodenext). */
@@ -239,6 +261,7 @@ function moduleResolution(options: JsonObject): string {
 function compilerOptions(file: string, depth: number): JsonObject {
   const config = readJsonc(file);
 
+  // An unreadable config, or an `extends` chain deeper than five (likely a loop), contributes nothing.
   if (!isJsonObject(config) || depth > 5) return {};
   const extended = config.extends;
   const parents = isJsonString(extended) ? [extended] : Array.isArray(extended) ? extended.filter(isJsonString) : [];
@@ -254,7 +277,9 @@ function compilerOptions(file: string, depth: number): JsonObject {
 /** What a relative import names at run time for each source extension (`.mts` → `.mjs`); a bundler resolves the plain ones itself. */
 const RUNTIME_EXTENSION = new Map(Object.entries({ ".ts": ".js", ".tsx": ".js", ".mts": ".mjs", ".cts": ".cjs", ".js": ".js", ".jsx": ".jsx", ".mjs": ".mjs", ".cjs": ".cjs" }));
 
+/** The import specifier for `file` as seen from the output file, with the extension the project's resolution expects. */
 function specifier(out: string, file: string, ext: "ts" | "js" | "none"): string {
+  // A relative specifier must start with `./` or `../`, or it would be read as a package name.
   let rel = posix.relative(posix.dirname(out), file);
 
   if (!rel.startsWith("./") && !rel.startsWith("../")) rel = `./${rel}`;
@@ -268,5 +293,6 @@ function specifier(out: string, file: string, ext: "ts" | "js" | "none"): string
 
   if (ext === "js") return `${stem}${runtime}`;
 
+  // Bundler resolution: drop the extensions a bundler adds itself; keep `.mjs`/`.cjs` style ones, which it does not.
   return source === ".ts" || source === ".tsx" || source === ".js" || source === ".jsx" ? stem : `${stem}${runtime}`;
 }

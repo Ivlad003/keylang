@@ -2,6 +2,9 @@
 // graph does not have, so a new edge between layers or a new package is K102.
 // The grammar is the ordinary `deny` / `allow`. Point `allow`s name packages
 // the layer already imports, and they beat `deny <layer> external`.
+// Pipeline: AnalysisSnapshot (source → FileFacts → graph) → rules text that
+// `check` reads like any hand-written rules. Entry points: `baselineText`,
+// then the plan/commit pair `planBaseline` → `baselinePlanProblems` → `commitBaseline`.
 
 import { join } from "node:path";
 import { specPath, type Config } from "./config.ts";
@@ -14,6 +17,7 @@ import { compareText } from "./span.ts";
 /** First line of the generated file. `check` still reads it: it is not under `map/`. */
 export const BASELINE_MARK = "<!-- keylang:generated — не редагувати, `keylang baseline` -->";
 
+// Edge kinds that count as a dependency between layers; other kinds (e.g. contains) do not.
 const EDGE_KINDS = new Set(["import", "call", "type", "reexport"]);
 
 /** Calls a framework makes by its config (ADR 0022): a dependency of the module whose config declares them. */
@@ -26,12 +30,16 @@ const CONFIG_VIA = new Set(["preference", "argument", "plugin:before", "plugin:a
  * `deny <layer> external` plus one `allow` per package.
  */
 export function baselineText(snapshot: AnalysisSnapshot): string {
+  // Sources are the configured layers (sorted by code unit for byte-stable
+  // output) plus `unassigned` when some module lands there; targets also
+  // always include `external` and `unassigned`.
   const configured = Object.keys(snapshot.manifest.config.layers).sort(compareText);
   const hasUnassigned = Object.values(snapshot.nodes).some((node) => node.kind === "module" && node.layer === "unassigned");
   const sources = hasUnassigned ? [...configured, "unassigned"].sort(compareText) : configured;
   const universe = [...new Set([...sources, "external", "unassigned"])].sort(compareText);
   const layerOf = new Map<string, string>();
 
+  // Every node's layer, so each edge end can be mapped to its layer.
   for (const [id, node] of Object.entries(snapshot.nodes)) layerOf.set(id, node.layer);
 
   const depends = new Map<string, Set<string>>(sources.map((layer) => [layer, new Set()]));
@@ -40,6 +48,9 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
   const inCode = new Set<string>();
   const byConfig = new Map<string, string>();
 
+  // Collect the layer pairs the graph already has. Only resolved dependency edges
+  // count; a config-made call (ADR 0022) is attributed to the module whose
+  // config declares it (`owner`), not to the framework code that makes the call.
   for (const edge of snapshot.edges) {
     if (!EDGE_KINDS.has(edge.kind) || edge.resolution !== "resolved" || edge.target === null) continue;
     const configured = edge.via !== undefined && CONFIG_VIA.has(edge.via);
@@ -50,9 +61,11 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
     depends.get(from)!.add(to);
     const pair = `${from} → ${to}`;
 
+    // Remember whether code makes the pair, else the first config site that does.
     if (!configured) inCode.add(pair);
     else if (!byConfig.has(pair)) byConfig.set(pair, `${edge.via} ${edge.site ?? "?"}`);
 
+    // For a dependency on a package, record which package, to emit one `allow` per package.
     if (to === "external") {
       const pkg = externalModule(snapshot, edge.target);
 
@@ -62,6 +75,8 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
 
   const lines = [BASELINE_MARK, "", "# rules", ""];
 
+  // Deny every target the layer does not use yet. A layer with packages gets a
+  // separate `deny external` with point `allow`s instead of `external` in the list.
   for (const source of sources) {
     const used = depends.get(source)!;
     const pkgs = [...packages.get(source)!].sort(compareText);
@@ -88,6 +103,7 @@ export function baselineText(snapshot: AnalysisSnapshot): string {
 function externalModule(snapshot: AnalysisSnapshot, id: string): string | null {
   let cur = id;
 
+  // Walk up the dotted ID until we reach the external module that contains it.
   for (;;) {
     const node = snapshot.nodes[cur];
 
@@ -133,6 +149,8 @@ export function planBaseline(config: Config, snapshot: AnalysisSnapshot): Baseli
   const path = baselinePath(config);
   const text = baselineText(snapshot);
   const current = readTextOrNull(join(config.root, path));
+  // No file → stale; no generated marker → hand-written, never overwritten;
+  // otherwise compare with line endings normalised, so a CRLF checkout is current.
   const state = current === null ? "stale" : !isGeneratedText(current) ? "manual" : current.replace(/\r\n/g, "\n") === text ? "current" : "stale";
   const before = new Set(ruleLines(current ?? ""));
   const after = new Set(ruleLines(text));
@@ -175,5 +193,6 @@ export function commitBaseline(plan: BaselinePlan): void {
 
 /** The `- deny` / `- allow` lines of a rules text, in order. */
 function ruleLines(text: string): string[] {
+  // Only list items that start with `- deny ` or `- allow `.
   return text.split(/\r?\n/).filter((line) => /^- (?:deny|allow) /.test(line));
 }

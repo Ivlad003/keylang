@@ -42,6 +42,14 @@
 // which writes proposals. A drawn shape a proposal took and a merge did not
 // put in the spec comes back dashed, «не прийнято» (or «очікує злиття» while
 // its proposal waits).
+//
+// Place in the pipeline: the web UI's end of the views. The server computes
+// the diagram from the snapshot and the specs; this module only draws it,
+// keeps its layout and drafts, and sends drawn changes back as proposals.
+// Entry points: the `Editor` class (`openDiagram`, `openEmpty`,
+// `currentModel`, `layout`, `propose`), `linkError`, `shapeStyle` and
+// `linkStyle`. Domain words: shape (a vertex with its keylang side),
+// link (an edge with its meaning), lane (a layer), planned ID, draft.
 
 import {
   BaseGraph,
@@ -120,10 +128,13 @@ export function isSystemView(view: string): boolean {
   return view.startsWith("system:");
 }
 
+/** Kinds that take part in a flow's sequence. */
 const FLOW: ReadonlySet<ShapeKind> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "fn"]);
 
+/** Kinds that dependency rules (allow, deny, dependency) connect. */
 const STRUCTURE: ReadonlySet<ShapeKind> = new Set(["lane", "layer", "module", "fn", "type"]);
 
+/** Kinds that act: they call, emit events and subscribe to them. */
 const ACTORS: ReadonlySet<ShapeKind> = new Set(["start", "task", "fn"]);
 
 /**
@@ -133,22 +144,27 @@ const ACTORS: ReadonlySet<ShapeKind> = new Set(["start", "task", "fn"]);
  * another flow's trigger.
  */
 export function linkError(kind: LinkKind, source: Shape | null, target: Shape | null): string | null {
+  // A dangling end: refused, with no message to show (maxGraph only needs a non-null).
   if (!source || !target) return "";
 
+  // Layout-only shapes never carry a meaning, whatever the kind of connection.
   if (source.kind === "note" || target.kind === "note") return "примітка — проза: з'єднань не має";
 
   if (source.kind === "group" || target.kind === "group") return "група — лише рамка розкладки: з'єднуйте фігури в ній";
 
+  // A loop: refused for every kind, with a sharper message for a layer rule on itself.
   if (source === target) {
     if (kind === "deny" || kind === "allow") return `${kind}: шар не може ${kind === "deny" ? "заборонити" : "дозволити"} залежність від самого себе`;
 
     return "фігура не з'єднується сама з собою";
   }
 
+  // A system's components and keylang's shapes do not mix: a relation joins two components, and nothing else touches a component.
   if (kind === "relation") return source.kind === "component" && target.kind === "component" ? null : "зв'язок системи — між компонентами системи";
 
   if (source.kind === "component" || target.kind === "component") return "компонент системи з'єднується зв'язком системи (calls, reads, writes…)";
 
+  // Otherwise each meaning checks the kinds of its two ends.
   switch (kind) {
     case "allow":
     case "deny":
@@ -195,6 +211,7 @@ const CONNECT_ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http:
 /** What a start event stands for: a trigger fn or an entry point's kind. */
 export const TRIGGERS = ["fn", "route", "cron", "webhook", "consumer", "cli", "event"] as const;
 
+/** The glyph a start event shows for its trigger kind; a plain `fn` trigger has none. */
 const TRIGGER_GLYPH = new Map(Object.entries({ route: "⇥", cron: "⏱", webhook: "✉", consumer: "✉", cli: "›", event: "⚡" }));
 
 /** The keylang side of a vertex: its value in the maxGraph model. A class with `clone()`, so a copied cell gets its own. */
@@ -235,17 +252,20 @@ export class Shape {
     this.label = label;
   }
 
+  /** A deep enough copy for maxGraph's clone of a cell: the tests array is not shared. */
   clone(): Shape {
     return Object.assign(new Shape(this.key, this.kind, this.id, this.label), this, { tests: [...this.tests] });
   }
 
   /** The text maxGraph draws: a proposed shape says what became of its proposal. */
   toString(): string {
+    // The proposal's state goes on its own first line, above the shape's text.
     const mark = this.status === "rejected" ? "✗ не прийнято\n" : this.status === "pending" ? "⧗ очікує злиття\n" : "";
 
     return `${mark}${this.text()}`;
   }
 
+  /** The label by kind: verdict glyph, kind marker, and a wrapped name. */
   private text(): string {
     const glyph = this.verdict ? `${VERDICT_GLYPH[this.verdict] ?? ""} ` : "";
 
@@ -289,6 +309,7 @@ export class Link {
     this.label = label;
   }
 
+  /** A copy for maxGraph's clone of an edge cell. */
   clone(): Link {
     return new Link(this.key, this.kind, this.label);
   }
@@ -325,6 +346,7 @@ export interface ModelNode {
   h: number;
 }
 
+/** One connection of `currentModel()`: its ends by shape key and keylang ID, and its bends in absolute model coordinates. */
 export interface ModelEdge {
   key: string;
   kind: LinkKind;
@@ -338,6 +360,7 @@ export interface ModelEdge {
   points: { x: number; y: number }[];
 }
 
+/** One lane of `currentModel()`: a layer (or a system's zone) and its box in model coordinates. */
 export interface ModelLane {
   key: string;
   /** The layer: `planned:<name>` for a lane drawn on the canvas. */
@@ -358,10 +381,13 @@ export interface EditorModel {
   lanes: ModelLane[];
 }
 
+/** The small round or diamond shapes: their caption sits under them, and they keep a size of their own. */
 const SMALL: ReadonlySet<ShapeKind> = new Set(["start", "event", "timer", "gateway", "parallel"]);
 
+/** The look of a lane: a swimlane with the layer's name in bold in its header. */
 const LANE_STYLE: CellStyle = { shape: "swimlane", horizontal: false, startSize: 26, fillColor: "#eef2f4", swimlaneFillColor: "#ffffff", strokeColor: "#b0bec5", fontColor: "#37474f", fontStyle: 1, fontSize: 12 };
 
+/** The grid step in model pixels: snapping, Shift+arrow nudges and the background dots. */
 const GRID = 10;
 
 /** The draft of a view in `sessionStorage`: `keylang-editor:<view>`. */
@@ -382,6 +408,7 @@ export interface PaletteItem {
   component?: string;
 }
 
+/** The palette of a keylang view (flows, layers, modules): one entry per shape a person can draw. */
 export const PALETTE: readonly PaletteItem[] = [
   { item: "layer", text: "▭ шар", title: "Шар: доріжка-контейнер", kind: "lane", stem: "layer", size: [720, 150], named: true },
   { item: "module", text: "▣ модуль", title: "Модуль", kind: "module", stem: "module", size: [180, 70], named: true },
@@ -400,6 +427,7 @@ export const PALETTE: readonly PaletteItem[] = [
 
 /** The palette of a system's view: its components by kind, a zone, a note. A component's name is local to the system. */
 export const SYSTEM_PALETTE: readonly PaletteItem[] = [
+  // Every component kind becomes a palette entry with the icon the viewer uses for it.
   ...(
     [
       ["client", "клієнт", "web"],
@@ -441,6 +469,7 @@ export interface ClipFragment {
   edges: ClipEdge[];
 }
 
+/** What `sessionStorage` keeps per view: the mode and every cell, so a reload of the tab comes back to the same canvas. */
 interface Draft {
   view: string;
   mode: EditorMode;
@@ -465,6 +494,7 @@ export function shapeStyle(shape: Shape): CellStyle {
     return style;
   }
 
+  // A keylang shape: the viewer's look for its kind; types and modules borrow the fn box, then adjust it below.
   const viewKind = shape.kind === "type" || shape.kind === "module" ? "fn" : shape.kind;
   const planned = shape.id.startsWith("planned:");
   const style: CellStyle = { ...nodeStyle({ kind: viewKind, verdict: planned ? "planned" : shape.verdict }) };
@@ -483,6 +513,7 @@ export function shapeStyle(shape: Shape): CellStyle {
 
   if (SMALL.has(shape.kind)) Object.assign(style, { verticalLabelPosition: "bottom", verticalAlign: "top", labelBackgroundColor: "none" });
 
+  // A drawn shape whose proposal waits (amber) or was not merged (grey) is dashed so it reads as not in the spec.
   if (shape.status !== null) Object.assign(style, { dashed: true, dashPattern: "4 3", strokeColor: shape.status === "rejected" ? "#9e9e9e" : "#b26a00", fontColor: shape.status === "rejected" ? "#757575" : "#8d5300" });
 
   if (shape.colour) style.fillColor = shape.colour;
@@ -509,6 +540,7 @@ export function linkStyle(link: Link): CellStyle {
     case "continues":
       return { ...base, dashed: true, dashPattern: "8 3 2 3", strokeColor: "#1565c0" };
     case "relation": {
+      // A relation's verb is its label's first word (`reads: SELECT` → `reads`); asynchronous verbs are dashed.
       const verb = link.label.split(/[:\s]/)[0] ?? "";
 
       if (verb === "publishes" || verb === "consumes" || verb === "replicates") return { ...base, dashed: true, endArrow: "open" };
@@ -521,8 +553,10 @@ export function linkStyle(link: Link): CellStyle {
   }
 }
 
+/** The node kinds of `/api/diagram` the editor draws as shapes of the same kind. */
 const NODE_KINDS: ReadonlySet<string> = new Set(["start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "module", "fn", "layer", "component"]);
 
+/** The edge kinds of `/api/diagram` and of a pasted bundle the editor knows as connection meanings. */
 const LINK_KINDS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues", "relation"]);
 
 /** A kind of the diagram model the editor draws as a shape of that kind. */
@@ -535,6 +569,7 @@ function isPastedKind(kind: string): kind is ShapeKind {
   return isNodeKind(kind) || kind === "note" || kind === "type";
 }
 
+/** A kind of connection the editor knows. */
 function isLinkKind(kind: string): kind is LinkKind {
   return LINK_KINDS.has(kind);
 }
@@ -551,18 +586,21 @@ function laneLayer(id: string): string | null {
   return bare.includes(".") ? bare.slice(0, bare.indexOf(".")) : null;
 }
 
+/** The keylang side of a vertex, or null for an edge, the root or a foreign value. */
 function shapeOf(cell: Cell | null | undefined): Shape | null {
   const value: unknown = cell?.getValue();
 
   return value instanceof Shape ? value : null;
 }
 
+/** The keylang side of an edge, or null for a vertex or a foreign value. */
 function linkOf(cell: Cell | null | undefined): Link | null {
   const value: unknown = cell?.getValue();
 
   return value instanceof Link ? value : null;
 }
 
+/** What the page gives the editor: a status line, the views list (trigger kinds of entries), and a way to redraw a view. */
 export interface EditorHost {
   status(text: string): void;
   views(): Views | null;
@@ -570,6 +608,10 @@ export interface EditorHost {
   reload?(key: string): Promise<void>;
 }
 
+/**
+ * The diagram editor: owns the maxGraph canvas, the toolbar, the palette and
+ * the properties panel, and keeps the open view's layout and draft in sync.
+ */
 export class Editor {
   readonly graph: BaseGraph;
   private readonly host: EditorHost;
@@ -602,6 +644,7 @@ export class Editor {
   private pasteDue = 0;
 
   constructor(root: HTMLElement, api: Api, host: EditorHost) {
+    // The custom shapes of canvas.ts must be known to maxGraph before the first cell is drawn.
     register();
     this.api = api;
     this.host = host;
@@ -622,6 +665,7 @@ export class Editor {
     this.result.id = "editor-result";
     this.result.setAttribute("role", "status");
     this.result.hidden = true;
+    // The page: the bar and the result strip on top, then the palette, the canvas, the panel and the tooltip side by side.
     root.replaceChildren(this.bar, this.result, make("div", { className: "editor-body" }, this.palette, this.canvas, panel, this.tipBox));
     this.properties = new Properties(panel, api, { mode: () => this.editMode, updateShape: (cell, patch) => this.updateShape(cell, patch), updateLink: (cell, patch) => this.updateLink(cell, patch) }, () => this.host.views());
     // Bends: a virtual handle in the middle of each segment adds a point, as in diagrams.net.
@@ -635,6 +679,7 @@ export class Editor {
     this.pasteEvents();
   }
 
+  /** Sets maxGraph's options and hooks: what may be edited, dropped, deleted and connected, and the listeners that keep the panel, the draft and undo current. */
   private configure(): void {
     const graph = this.graph;
     InternalEvent.disableContextMenu(this.canvas);
@@ -643,6 +688,7 @@ export class Editor {
     graph.setPanning(true);
     graph.setGridEnabled(true);
     graph.setGridSize(GRID);
+    // Editing goes through the panel and the palette, never in-place; connections are switched on by «чернетка» only.
     graph.setCellsEditable(false);
     graph.setCellsDisconnectable(false);
     graph.setConnectable(false);
@@ -685,6 +731,7 @@ export class Editor {
     graph.setAllowLoops(true);
     graph.setMultigraph(true);
     graph.getEdgeValidationError = (edge: Cell | null = null, source: Cell | null = null, target: Cell | null = null): string | null => {
+      // An edge already on the canvas (the model's own, being redrawn or moved) is fine in «з коду»; a new one is not.
       if (edge && linkOf(edge) && this.editMode === "code") return null;
 
       if (this.editMode === "code") return "«з коду» не змінює з'єднань: перейдіть у «чернетку»";
@@ -692,6 +739,7 @@ export class Editor {
       const refused = linkError(kind, shapeOf(source), shapeOf(target));
 
       if (refused !== null) return refused;
+      // A multigraph lets two meanings join the same shapes, but never the same meaning twice.
       const twin = this.graph.getDataModel().getEdgesBetween(source!, target!, true).some((other) => other !== edge && linkOf(other)?.kind === kind);
 
       return twin ? `таке з'єднання (${kind}) вже є` : null;
@@ -702,6 +750,7 @@ export class Editor {
 
     if (connect) {
       connect.connectImage = new ImageBox(CONNECT_ICON, 18, 18);
+      // A new connection carries the meaning picked in the bar; a relation starts as `calls`, a valid verb.
       connect.factoryMethod = (): Cell => {
         const link = new Link(this.newKey(), this.linkKind, this.linkKind === "relation" ? "calls" : "");
         const edge = new Cell(link, new Geometry(), linkStyle(link));
@@ -722,6 +771,7 @@ export class Editor {
       };
     }
 
+    // The last pointer position, captured before maxGraph sees the event: tooltips and pastes go there.
     this.canvas.addEventListener("pointermove", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
     this.canvas.addEventListener("pointerdown", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
     // The panel follows the selection, and the model under it (an undo, a move into another lane).
@@ -729,8 +779,10 @@ export class Editor {
     graph.getDataModel().addListener(InternalEvent.CHANGE, () => {
       const shown = this.properties.current();
 
+      // While a field of the panel has the focus, redrawing the panel would steal it mid-typing.
       if (document.activeElement && document.getElementById("editor-panel")?.contains(document.activeElement)) return;
 
+      // A cell removed from the model (no parent, and not an edge) empties the panel.
       if (shown) this.properties.show(shown.getParent() || shown.isEdge() ? (graph.getSelectionCount() === 1 ? graph.getSelectionCell() : null) : null);
     });
     // A planned shape moved into another lane takes that layer into its ID.
@@ -745,10 +797,12 @@ export class Editor {
       },
       { passive: false },
     );
+    // Any change of the model schedules a save of the layout and the draft.
     graph.getDataModel().addListener(InternalEvent.CHANGE, () => this.changed());
 
     // Every change of the model and the view is a step of undo.
     const undoable = (_sender: EventSource, event: EventObject): void => {
+      // Drawing a view (`loading`) is not an edit a person could undo.
       if (!this.loading) this.undoManager.undoableEditHappened(event.getProperty("edit"));
       this.undoButtons();
     };
@@ -767,6 +821,7 @@ export class Editor {
     for (const name of [InternalEvent.SCALE, InternalEvent.TRANSLATE, InternalEvent.SCALE_AND_TRANSLATE]) view.addListener(name, grid);
   }
 
+  /** Builds the bar above the canvas: mode, undo, the meaning of the next connection, align, group, export, bundles, reset and propose. */
   private toolbar(): void {
     const align = (value: "left" | "center" | "right" | "top" | "middle" | "bottom", text: string, title: string): HTMLButtonElement => {
       const b = button(text, () => this.align(value), { title });
@@ -791,6 +846,7 @@ export class Editor {
     const kind = make("select", { title: "Значення нового з'єднання" });
     kind.id = "editor-link-kind";
 
+    // One option per connection meaning, in the order of LINK_NAMES.
     for (const [value, text] of Object.entries(LINK_NAMES)) {
       const option = make("option", { text });
       option.value = value;
@@ -861,6 +917,7 @@ export class Editor {
     return isSystemView(this.viewKey) ? SYSTEM_PALETTE : PALETTE;
   }
 
+  /** Fills the palette of the open view's kind, and hooks the canvas's drop target once. */
   private fillPalette(): void {
     this.palette.replaceChildren(make("div", { className: "palette-head", text: isSystemView(this.viewKey) ? "Палітра системи" : "Палітра" }));
 
@@ -869,6 +926,7 @@ export class Editor {
       item.type = "button";
       item.draggable = true;
       item.dataset["item"] = entry.item;
+      // A drag carries a marked text, so the drop handler can tell a palette entry from any other dropped text.
       item.addEventListener("dragstart", (event) => {
         event.dataTransfer?.setData("text/plain", `keylang-palette:${entry.item}`);
 
@@ -882,6 +940,7 @@ export class Editor {
       this.palette.append(item);
     }
 
+    // The canvas listeners look the entry up by the current palette, so switching palettes needs no new ones.
     if (this.paletteListening) return;
     this.paletteListening = true;
     this.canvas.addEventListener("dragover", (event) => {
@@ -927,6 +986,7 @@ export class Editor {
     const used = new Set(this.allCells().map((cell) => shapeOf(cell)?.key ?? linkOf(cell)?.key));
     let key = "";
 
+    // The counter alone may collide with keys of a restored draft or a paste: skip any key in use.
     do key = `draft:${++this.counter}`;
     while (used.has(key));
 
@@ -935,6 +995,7 @@ export class Editor {
 
   /** `stem`, `stem2`, … : the first label no shape of the canvas has (a system's names are local to it). */
   private newLabel(stem: string): string {
+    // Try `stem`, then `stem2`, `stem3`… until a label is free; the loop always ends since the canvas is finite.
     const labels = new Set(this.allCells().map((cell) => shapeOf(cell)?.label));
 
     for (let n = 1; ; n++) {
@@ -947,6 +1008,7 @@ export class Editor {
   /** `stem`, `stem2`, … : the first name no shape of that layer uses. */
   private newName(layer: string | null, stem: string): string {
     const prefix = layer === null ? "planned:" : `planned:${layer}.`;
+    // IDs are unique per layer, so only the full `planned:<layer>.<name>` is checked.
     const ids = new Set(this.allCells().map((cell) => shapeOf(cell)?.id));
 
     for (let n = 1; ; n++) {
@@ -958,6 +1020,7 @@ export class Editor {
 
   /** Draws a palette shape at a model point: in the lane under it, with a planned ID of that lane's layer. */
   addFromPalette(entry: PaletteItem, at: { x: number; y: number }): Cell | null {
+    // «з коду» draws notes only: every other shape would change the model.
     if (this.editMode === "code" && entry.kind !== "note") {
       this.host.status("«з коду» змінює лише розкладку й примітки: перейдіть у «чернетку», щоб додати фігуру");
 
@@ -968,6 +1031,7 @@ export class Editor {
     const [w, h] = entry.size;
     let cell: Cell;
 
+    // A system's component: named locally, placed in the zone under the point (if any), centred and snapped to the grid.
     if (entry.kind === "component") {
       const lane = this.lanes().find((l) => at.x >= l.x && at.x <= l.x + l.w && at.y >= l.y && at.y <= l.y + l.h);
       const shape = new Shape(this.newKey(), "component", "", this.newLabel(entry.stem));
@@ -975,12 +1039,14 @@ export class Editor {
       const x = Math.round((at.x - w / 2 - (lane?.x ?? 0)) / GRID) * GRID;
       const y = Math.round((at.y - h / 2 - (lane?.y ?? 0)) / GRID) * GRID;
       cell = graph.insertVertex({ parent: lane?.cell ?? graph.getDefaultParent(), value: shape, position: [x, y], size: [w, h], style: shapeStyle(shape) });
+    // A lane is a new layer (`planned:<name>`) or a system's zone (a plain name); it always sits at the top level.
     } else if (entry.kind === "lane") {
       const name = isSystemView(this.viewKey) ? this.newLabel(entry.stem) : this.newName(null, entry.stem);
       const shape = new Shape(this.newKey(), "lane", isSystemView(this.viewKey) ? name : `planned:${name}`, name);
       cell = graph.insertVertex({ parent: graph.getDefaultParent(), value: shape, position: [Math.round(at.x / GRID) * GRID, Math.round(at.y / GRID) * GRID], size: [w, h], style: shapeStyle(shape) });
     } else {
       const lane = this.lanes().find((l) => at.x >= l.x && at.x <= l.x + l.w && at.y >= l.y && at.y <= l.y + l.h);
+      // Any other shape: the lane under the point gives the layer of its planned ID; outside every lane the ID has no layer.
       const layer = lane ? layerOf(lane.shape) : null;
       const name = entry.named ? this.newName(layer, entry.stem) : entry.stem;
       const id = entry.named ? `planned:${layer === null ? "" : `${layer}.`}${name}` : "";
@@ -1010,6 +1076,7 @@ export class Editor {
     this.host.status(mode === "draft" ? `editor · ${this.viewKey || "empty canvas"} · чернетка: everything changes; new shapes get planned IDs` : `editor · ${this.viewKey || "empty canvas"} · з коду: only the layout and notes change`);
   }
 
+  /** Makes the canvas, the bar and the palette match the mode: «з коду» locks everything but layout and notes. */
   private applyMode(): void {
     const draft = this.editMode === "draft";
     this.graph.setDropEnabled(draft);
@@ -1026,16 +1093,19 @@ export class Editor {
     this.canvas.dataset["mode"] = this.editMode;
   }
 
+  /** Undoes the last change, if any, and refreshes the undo buttons. */
   undo(): void {
     if (this.undoManager.canUndo()) this.undoManager.undo();
     this.undoButtons();
   }
 
+  /** Redoes the last undone change, if any, and refreshes the undo buttons. */
   redo(): void {
     if (this.undoManager.canRedo()) this.undoManager.redo();
     this.undoButtons();
   }
 
+  /** Enables the undo and redo buttons by what the undo manager can do. */
   private undoButtons(): void {
     const undo = document.getElementById("editor-undo");
     const redo = document.getElementById("editor-redo");
@@ -1052,10 +1122,12 @@ export class Editor {
       const target = event.target;
 
       if (target instanceof Element && (target.closest("input, textarea, select") || (target instanceof HTMLElement && target.isContentEditable))) return;
+      // Cmd on a Mac stands for Ctrl; one-character keys are lower-cased so Shift does not change `z` into `Z`.
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
       const done = (): void => event.preventDefault();
 
+      // The shortcuts of diagrams.net: each one takes the key from the browser and returns.
       if (mod && key === "z") return done(), event.shiftKey ? this.redo() : this.undo();
 
       if (mod && key === "y") return done(), this.redo();
@@ -1067,6 +1139,7 @@ export class Editor {
       if (mod && key === "v") {
         // A copy of this tab pastes at once; otherwise the browser's `paste` event brings the system clipboard (a bundle of another tab).
         if (this.clipboard) return done(), this.paste();
+        // Wait for the `paste` event; if it never comes (it bumps `pasteDue`), read the clipboard through the API.
         const due = ++this.pasteDue;
         window.setTimeout(() => {
           if (this.pasteDue === due) void this.pasteFromClipboard();
@@ -1092,6 +1165,7 @@ export class Editor {
       if (key === "Delete" || key === "Backspace") return done(), this.deleteSelection();
 
       if (key === "Escape") return this.graph.clearSelection();
+      // Arrows nudge the selection: 1 px, or a grid step with Shift.
       const arrows = new Map<string, [number, number]>([["ArrowLeft", [-1, 0]], ["ArrowRight", [1, 0]], ["ArrowUp", [0, -1]], ["ArrowDown", [0, 1]]]);
       const arrow = arrows.get(key);
 
@@ -1110,6 +1184,7 @@ export class Editor {
       const target = event.target;
 
       if (target instanceof Element && (target.closest("input, textarea, select") || (target instanceof HTMLElement && target.isContentEditable))) return;
+      // Cancels the `readText` fallback of the Ctrl+V that let this event through.
       this.pasteDue++;
       event.preventDefault();
       void this.pasteText(event.clipboardData?.getData("text/plain") ?? "");
@@ -1125,6 +1200,7 @@ export class Editor {
     if (cells.length > 0) this.graph.moveCells(cells, dx, dy);
   }
 
+  /** Selects every cell of the canvas, at every depth. */
   selectAll(): void {
     this.graph.setSelectionCells(this.allCells());
   }
@@ -1133,6 +1209,7 @@ export class Editor {
   private copySet(): Cell[] {
     const chosen = new Set(this.graph.getSelectionCells().filter((cell) => cell.isVertex()));
 
+    // Whether a cell is a chosen shape or sits, at any depth, in one.
     const inside = (cell: Cell | null): boolean => {
       for (let at = cell; at; at = at.getParent()) if (chosen.has(at)) return true;
 
@@ -1141,11 +1218,13 @@ export class Editor {
 
     // A shape inside a chosen lane or group comes with it.
     const top = [...chosen].filter((cell) => !inside(cell.getParent()));
+    // Edges between chosen shapes come too, unless a chosen container already brings them.
     const edges = this.allCells().filter((cell) => cell.isEdge() && inside(cell.getTerminal(true)) && inside(cell.getTerminal(false)) && !inside(cell.getParent()));
 
     return [...top, ...edges];
   }
 
+  /** Ctrl+C within the page: clones of the selection, kept with their common parent (if they share one) so a paste lands in the same lane. */
   copy(): void {
     const cells = this.copySet();
 
@@ -1155,11 +1234,13 @@ export class Editor {
     this.host.status(`copied ${cells.length} cell(s)`);
   }
 
+  /** Ctrl+X: a copy, then a delete as far as the mode lets. */
   cut(): void {
     this.copy();
     this.deleteSelection();
   }
 
+  /** Ctrl+V of an in-page copy: each paste lands two grid steps further than the last, so copies do not stack. */
   paste(): void {
     if (!this.clipboard) return;
     this.clipboard.times++;
@@ -1177,6 +1258,7 @@ export class Editor {
 
   /** Inserts copies of cells: new keys, and a planned shape gets a name its layer does not use yet. */
   private insertCopies(cells: Cell[], parent: Cell | null, offset: number): void {
+    // «з коду» pastes only notes: they are layout, every other shape changes the model.
     const notesOnly = cells.every((cell) => cell.isVertex() && shapeOf(cell)?.kind === "note");
 
     if (this.editMode === "code" && !notesOnly) {
@@ -1185,12 +1267,14 @@ export class Editor {
       return;
     }
 
+    // The original parent if it is still on the canvas (it has a parent itself), else the top level.
     const target = parent && parent.getParent() ? parent : this.graph.getDefaultParent();
     const graph = this.graph;
     const model = graph.getDataModel();
     graph.batchUpdate(() => {
       const added = graph.importCells(cells, offset, offset, target);
 
+      // Give every imported cell, children included, a fresh key; planned shapes get a free name in the lane they landed in.
       const walk = (cell: Cell): void => {
         const shape = shapeOf(cell);
         const link = linkOf(cell);
@@ -1229,6 +1313,7 @@ export class Editor {
     const model = this.currentModel();
     const chosen = new Set<string>();
 
+    // The keys of the chosen shapes and of everything inside a chosen lane or group.
     if (!all) {
       const mark = (cell: Cell): void => {
         const key = shapeOf(cell)?.key;
@@ -1244,6 +1329,7 @@ export class Editor {
     const nodes = all ? model.nodes : model.nodes.filter((n) => chosen.has(n.key));
     const keys = new Set(nodes.map((n) => n.key));
 
+    // Only the fields that are set travel, so the bundle stays small and stable.
     const shapes: ClipShape[] = nodes.map((n) => {
       const shape: ClipShape = { key: n.key, id: n.id, kind: n.kind, label: n.label, layer: n.layer, x: n.x, y: n.y, w: n.w, h: n.h };
 
@@ -1260,6 +1346,7 @@ export class Editor {
       return shape;
     });
 
+    // Only the edges whose both ends are in the fragment.
     const edges = model.edges.flatMap((e) => {
       if (!keys.has(e.from) || !keys.has(e.to)) return [];
       const edge: ClipEdge = { from: e.from, to: e.to, kind: e.kind };
@@ -1282,6 +1369,7 @@ export class Editor {
    */
   async copyBundle(fromButton: boolean): Promise<string | null> {
     const clip = this.selectionClip(fromButton && this.graph.getSelectionCount() === 0);
+    // A flow view (`flow:` or `discovered:`) can always be bundled as a whole.
     const flowView = /^(flow|discovered):/.test(this.viewKey);
 
     // Nothing a bundle could carry: no flow open and no shape with an ID.
@@ -1295,6 +1383,7 @@ export class Editor {
     let summary: string;
 
     try {
+      // The server builds the bundle text: the flows of the view, with the fragment as its layout block.
       const answer = await this.api.bundle({ view: this.viewKey, shapes: clip.shapes, edges: clip.edges });
       text = answer.text;
       summary = `${answer.flows.join(", ")} · ${answer.shapes} shape(s)`;
@@ -1304,13 +1393,16 @@ export class Editor {
       return null;
     }
 
+    // Remembered so the same text pasted back into this tab is recognised as the in-page copy.
     this.lastBundle = text;
+    // The button may fall back to a dialog with the text; Ctrl+C stays silent, since the in-page copy already worked.
     const way = fromButton ? await writeClipboard(text) : await this.quietWrite(text);
     this.host.status(way === "clipboard" ? `copied as a bundle: ${summary} — paste it with Ctrl+V in another keylang web tab` : way === "dialog" ? `the bundle of ${summary} is selected in the dialog: Ctrl+C copies it` : `copied ${summary} within the page; the browser refused the clipboard — «Копіювати як пакет» shows the bundle to copy`);
 
     return text;
   }
 
+  /** Writes the system clipboard without a fallback dialog: says whether the browser allowed it. */
   private async quietWrite(text: string): Promise<"clipboard" | "refused"> {
     try {
       await navigator.clipboard.writeText(text);
@@ -1345,6 +1437,7 @@ export class Editor {
 
   /** A text from the clipboard: a bundle is imported (or, the one this tab copied, pasted as the copy it is); anything else is not ours. */
   async pasteText(text: string): Promise<void> {
+    // Anything that is not a keylang bundle is refused: the text is never interpreted otherwise.
     if (!isBundle(text)) {
       this.host.status("the clipboard holds no keylang bundle: copy shapes with Ctrl+C or «Копіювати як пакет» in a keylang web tab");
 
@@ -1359,6 +1452,7 @@ export class Editor {
   /** Where the pointer was last over the canvas, in model coordinates; the canvas's middle when it never was. */
   private pointerModel(): { x: number; y: number } {
     const box = this.canvas.getBoundingClientRect();
+    // The pointer counts only while it is over the canvas; otherwise a third of the way in, clear of the edges.
     const inside = this.pointer.x >= box.left && this.pointer.x <= box.right && this.pointer.y >= box.top && this.pointer.y <= box.bottom;
 
     return inside ? this.modelPoint(this.pointer.x, this.pointer.y) : this.modelPoint(box.left + box.width / 3, box.top + box.height / 3);
@@ -1374,6 +1468,7 @@ export class Editor {
     let preview: BundleImport;
 
     try {
+      // First a preview: it tells whether the bundle comes from this repository and lists its layers.
       preview = await this.api.bundleImport({ text, output: "preview" });
     } catch (error) {
       this.host.status(`paste failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1381,12 +1476,14 @@ export class Editor {
       return null;
     }
 
+    // From this repository: no layer mapping and no proposals, just copies with new draft IDs.
     if (preview.sameRepo) {
       this.insertBundle(preview, at, true);
 
       return preview;
     }
 
+    // From another repository: the person maps its layers onto ours (or cancels); the dialog may ask the server for the hybrid preview.
     const map = await mapLayers(preview, () => this.api.bundleImport({ text, output: "preview", mode: "hybrid" }));
 
     if (map === null) {
@@ -1398,6 +1495,7 @@ export class Editor {
     let done: BundleImport;
 
     try {
+      // The real import: the server writes proposals and returns the re-homed shapes.
       done = await this.api.bundleImport({ text, layerMap: map, output: "proposal" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1419,6 +1517,7 @@ export class Editor {
     close.className = "editor-result-close";
     const items: Node[] = [close];
 
+    // A failure shows why; a success lists the proposals written, the IDs and layer mapping, the notes and how to merge.
     if (answer === null) {
       items.push(make("strong", { text: "Пакет не імпортовано" }), make("p", { text: error ?? "" }));
       this.result.dataset["status"] = "failed";
@@ -1455,6 +1554,7 @@ export class Editor {
    * `planned:<layer>.<name>-copy`.
    */
   insertBundle(answer: BundleImport, at: { x: number; y: number }, sameRepo: boolean): Cell[] {
+    // A pasted fragment changes the model, so it needs «чернетка».
     if (this.editMode !== "draft") this.setMode("draft");
     const graph = this.graph;
     const shapes = answer.shapes.filter((s) => isPastedKind(s.kind));
@@ -1464,10 +1564,12 @@ export class Editor {
       // The lanes: one per layer of the fragment, an existing one or a new one under the canvas.
       const layers = [...new Set(shapes.map((s) => s.layer).filter((l): l is string => l !== null))];
       const lanes = new Map<string, { cell: Cell; x: number; y: number; top: number }>();
+      // A missing layer's lane goes under all lanes on the canvas (or at the point, if lower).
       let below = Math.max(at.y, ...this.lanes().map((l) => l.y + l.h + 20));
 
       for (const layer of layers) {
         const own = shapes.filter((s) => s.layer === layer);
+        // `top` is the fragment's highest shape in this layer: shapes are placed relative to it.
         const top = Math.min(...own.map((s) => s.y));
         const existing = this.lanes().find((l) => layerOf(l.shape) === layer);
 
@@ -1476,6 +1578,7 @@ export class Editor {
           continue;
         }
 
+        // A new lane is sized to hold its shapes with some margin, never below 300 × 120.
         const width = Math.max(...own.map((s) => s.x + s.w)) + 120;
         const height = Math.max(...own.map((s) => s.y + s.h)) - top + 70;
         const lane = new Shape(this.newKey(), "lane", layer, layer);
@@ -1487,11 +1590,13 @@ export class Editor {
         below = y + Math.max(height, 120) + 20;
       }
 
+      // The shapes: each in its layer's lane (or at the top level), keeping the fragment's relative places.
       for (const item of shapes) {
         const lane = item.layer === null ? undefined : lanes.get(item.layer);
         let id = item.id;
         let label = item.label;
 
+        // A copy within this repository must not reuse the original ID: `<name>-copy` (or `-copy2`…) in the lane's layer.
         if (sameRepo && id !== "") {
           const layer = lane ? layerOf(shapeOf(lane.cell)!) : item.layer;
           const name = this.newName(layer, `${id.replace(/^planned:/, "").split(".").at(-1)}-copy`);
@@ -1515,6 +1620,7 @@ export class Editor {
         if (item.tests) shape.tests = [...item.tests];
 
         if (item.colour) shape.colour = item.colour;
+        // Inside a lane, coordinates are relative to it: x from the paste point, y below the 36 px lane header.
         const x = lane ? Math.max(10, at.x - lane.x + item.x) : at.x + item.x;
         const y = lane ? 36 + item.y - lane.top : at.y + item.y;
         const cell = graph.insertVertex({ parent: lane?.cell ?? graph.getDefaultParent(), value: shape, position: [Math.round(x), Math.round(y)], size: [item.w, item.h], style: shapeStyle(shape) });
@@ -1522,6 +1628,7 @@ export class Editor {
         added.push(cell);
       }
 
+      // The connections between pasted shapes, by the fragment's keys; an unknown meaning falls back to a sequence.
       for (const edge of answer.edges) {
         const source = byKey.get(edge.from);
         const target = byKey.get(edge.to);
@@ -1546,6 +1653,7 @@ export class Editor {
     const bounds = graph.getGraphBounds();
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
+    // The graph bounds are in screen pixels at the current zoom: divide by the scale to export at natural size.
     const width = Math.ceil(bounds.width / view.scale + 2 * border);
     const height = Math.ceil(bounds.height / view.scale + 2 * border);
     svg.setAttribute("xmlns", ns);
@@ -1558,6 +1666,7 @@ export class Editor {
     svg.append(background);
     const group = document.createElementNS(ns, "g");
     svg.append(group);
+    // Draw the cell states through an SVG canvas without foreignObject (labels as plain SVG text), shifted so the drawing starts at the border.
     const canvas = new SvgCanvas2D(group, false);
     canvas.foEnabled = false;
     canvas.translate(Math.floor(border - bounds.x / view.scale), Math.floor(border - bounds.y / view.scale));
@@ -1572,6 +1681,7 @@ export class Editor {
   /** The canvas as a PNG data URL, drawn from the SVG at twice its size. */
   async exportPng(): Promise<string> {
     const svg = this.exportSvg();
+    // Load the SVG as an image, then paint it on a canvas at 2× for a sharp PNG.
     const image = new Image();
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
@@ -1590,10 +1700,12 @@ export class Editor {
 
   /** Saves the canvas as a file of the browser: `<view>.svg` or `.png`. */
   async download(format: "svg" | "png"): Promise<void> {
+    // The file name from the view key, with anything outside word characters, dots and dashes replaced (`flow:checkout` → `flow-checkout`).
     const name = `${(this.viewKey || "diagram").replace(/[^\w.-]+/g, "-")}.${format}`;
 
     try {
       const href = format === "svg" ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(this.exportSvg())}` : await this.exportPng();
+      // A temporary link with `download` saves the data URL as a file.
       const link = make("a");
       link.href = href;
       link.download = name;
@@ -1611,6 +1723,7 @@ export class Editor {
     const body = this.tipBox.parentElement!.getBoundingClientRect();
     this.tipBox.textContent = text;
     this.tipBox.hidden = false;
+    // Next to the pointer, kept inside the editor's body.
     this.tipBox.style.left = `${Math.max(4, Math.min(body.width - 260, this.pointer.x - body.left + 12))}px`;
     this.tipBox.style.top = `${Math.max(4, this.pointer.y - body.top + 12)}px`;
     window.clearTimeout(this.tipTimer);
@@ -1630,6 +1743,7 @@ export class Editor {
     const next = shape.clone();
     Object.assign(next, patch);
 
+    // A new ID: no spaces, not empty; the label follows its last segment, and an ID from code drops the planned signature.
     if (patch.id !== undefined) {
       if (patch.id === "" || /\s/.test(patch.id)) return "ID — без пробілів і не порожній: planned:<шар>.<назва> чи ID з коду";
       next.label = next.kind === "lane" || !patch.id.startsWith("planned:") ? patch.id.replace(/^planned:/, "") : patch.id.slice(patch.id.lastIndexOf(".") + 1).replace(/^planned:/, "");
@@ -1639,6 +1753,7 @@ export class Editor {
 
     const model = this.graph.getDataModel();
     this.graph.batchUpdate(() => {
+      // A change of kind: a named kind gets a planned ID if it had none, an unnamed one loses its ID, and defaults fill in.
       if (patch.kind !== undefined && patch.kind !== shape.kind) {
         const named = PALETTE.find((p) => p.kind === patch.kind && p.named);
 
@@ -1677,6 +1792,7 @@ export class Editor {
 
     if (this.editMode === "code") return "«з коду»: зміст змінюється лише в «чернетці»";
 
+    // A new meaning is checked against both ends, as when the connection is drawn.
     if (patch.kind !== undefined && patch.kind !== link.kind) {
       const refused = linkError(patch.kind, shapeOf(cell.getTerminal(true)), shapeOf(cell.getTerminal(false)));
 
@@ -1712,6 +1828,7 @@ export class Editor {
 
   /** Deletes the selection, as far as the mode lets. */
   deleteSelection(): void {
+    // `isCellDeletable` filters by mode: an empty result with a selection means «з коду» refused it.
     const cells = this.graph.getDeletableCells(this.graph.getSelectionCells());
 
     if (cells.length === 0) {
@@ -1731,9 +1848,11 @@ export class Editor {
       for (const cell of this.allCells()) {
         const shape = shapeOf(cell);
 
+        // Only planned shapes follow their lane: an ID from code is fixed, and a lane is the layer itself.
         if (!shape || !cell.isVertex() || !shape.id.startsWith("planned:") || shape.kind === "lane") continue;
         const lane = this.laneOf(cell);
         const layer = lane ? layerOf(lane) : null;
+        // Keep the name (last segment) and swap the layer for the lane's; unchanged IDs are left alone so undo stays clean.
         const name = shape.id.slice(shape.id.lastIndexOf(".") + 1).replace(/^planned:/, "");
         const id = `planned:${layer === null ? "" : `${layer}.`}${name}`;
 
@@ -1765,6 +1884,7 @@ export class Editor {
       const shape = shapeOf(cell);
       const geometry = cell.getGeometry();
 
+      // Shapes first, in depth-first order, so `restore` meets every parent before its children and every end before its edges.
       if (shape && geometry) cells.push({ type: "shape", parent: keyOf(cell.getParent()), shape: { ...shape }, x: geometry.x, y: geometry.y, w: geometry.width, h: geometry.height });
     }
 
@@ -1788,9 +1908,11 @@ export class Editor {
       const byKey = new Map<string, Cell>();
 
       for (const item of draft.cells) {
+        // Parents come before children in a draft; an unknown parent puts the cell at the top level.
         const parent = (item.parent !== null ? byKey.get(item.parent) : undefined) ?? root;
 
         if (item.type === "shape") {
+          // Rebuild a real Shape (with its methods) from the stored fields.
           const shape = Object.assign(new Shape("", "task", "", ""), item.shape);
           byKey.set(shape.key, graph.insertVertex({ parent, value: shape, position: [item.x, item.y], size: [item.w, item.h], style: shapeStyle(shape) }));
         } else {
@@ -1813,6 +1935,7 @@ export class Editor {
     this.applyMode();
   }
 
+  /** This tab's draft of a view, or null when there is none, it is for another view, or storage is unavailable. */
   private readDraft(view: string): Draft | null {
     try {
       const text = sessionStorage.getItem(`${DRAFT_PREFIX}${view}`);
@@ -1827,6 +1950,7 @@ export class Editor {
     }
   }
 
+  /** Stores the draft of the open view; storage errors are swallowed. */
   private writeDraft(): void {
     try {
       sessionStorage.setItem(`${DRAFT_PREFIX}${this.viewKey}`, JSON.stringify(this.draft()));
@@ -1875,11 +1999,13 @@ export class Editor {
     }
 
     this.editMode = "code";
+    // A view opens «з коду» unless this tab's draft brings its own mode; with a draft, the layout store is not read.
     const draft = fresh ? null : this.readDraft(key);
     const layout = draft ? null : await layoutStore().load(key);
     this.loading = true;
 
     try {
+      // `loading` keeps the drawing out of undo and out of the save timer.
       if (draft) this.restore(draft);
       else this.build(diagram, layout);
     } finally {
@@ -1904,6 +2030,7 @@ export class Editor {
     this.host.status("editor · an empty canvas, чернетка: drag shapes from the palette, or pick a view on the left to open it «з коду»");
   }
 
+  /** Draws a diagram of the server: lanes, shapes, edges at the layout store's places where it has them, then the layout's own notes and proposed shapes. */
   private build(diagram: Diagram, layout: Layout | null): void {
     const graph = this.graph;
     const parent = graph.getDefaultParent();
@@ -1912,6 +2039,7 @@ export class Editor {
       graph.removeCells(graph.getChildCells(parent, true, true), true);
       const lanes = new Map<string, Cell>();
 
+      // The lanes first: shapes are placed relative to their lane.
       for (const group of diagram.groups) {
         const shape = new Shape(`lane:${group.id}`, "lane", group.id, group.label);
         shape.origin = "code";
@@ -1921,6 +2049,7 @@ export class Editor {
 
       const cells = new Map<string, Cell>();
 
+      // Shapes: the layout and the server both give absolute positions, so subtract the lane's origin.
       for (const node of diagram.nodes) {
         const shape = this.shapeFromNode(node, entries);
         const lane = node.group !== undefined ? lanes.get(node.group) : undefined;
@@ -1931,6 +2060,7 @@ export class Editor {
         cells.set(node.id, graph.insertVertex({ parent: lane ?? parent, value: shape, position: [x, y], size: [at?.w ?? node.w, at?.h ?? node.h], style: shapeStyle(shape) }));
       }
 
+      // Edge keys: `edge:<from>-><to>`, with `#n` for the n-th parallel edge, so the layout can find each one's bends again.
       const seen = new Map<string, number>();
 
       for (const edge of diagram.edges) {
@@ -1955,6 +2085,7 @@ export class Editor {
 
       // What the layout file keeps beside the code's shapes: colours, notes, and the drawn shapes a proposal took.
       for (const [key, at] of Object.entries(layout ?? {})) {
+        // A key of a shape drawn from the model: only its colour comes from the layout.
         const known = cells.get(key) ?? lanes.get(key.replace(/^lane:/, ""));
 
         if (known) {
@@ -1968,6 +2099,7 @@ export class Editor {
           continue;
         }
 
+        // Unknown keys: notes at the top level, and proposed shapes in the lane of their ID's layer; anything else is stale and skipped.
         if (at.kind === "note") this.insertSaved(key, at, null);
         else if (at.status && at.kind && NODE_KINDS.has(at.kind)) this.insertSaved(key, at, lanes.get(laneLayer(at.id ?? "") ?? "") ?? null);
       }
@@ -1996,6 +2128,7 @@ export class Editor {
     this.graph.insertVertex({ parent: lane ?? this.graph.getDefaultParent(), value: shape, position: [at.x - offset.x, at.y - offset.y], size: [at.w ?? size[0], at.h ?? size[1]], style: shapeStyle(shape) });
   }
 
+  /** The Shape of a diagram node: its kind, keylang ID, verdict, and for a start event the trigger kind of its entry point. */
   private shapeFromNode(node: DiagramNode, entries: Map<string, string>): Shape {
     const kind = isNodeKind(node.kind) ? node.kind : "task";
     const id = node.ref?.id ?? (kind === "layer" ? node.label : "");
@@ -2006,6 +2139,7 @@ export class Editor {
 
     if (kind === "start") shape.trigger = entries.get(id) ?? "fn";
 
+    // The server marks a parallel join by a `:join` suffix on the node ID.
     if (kind === "parallel") shape.role = node.id.endsWith(":join") ? "join" : "split";
 
     if (id.startsWith("planned:") || node.verdict === "planned") shape.signature = "";
@@ -2064,6 +2198,7 @@ export class Editor {
       if (shape && cell.isVertex()) {
         const geometry = cell.getGeometry()!;
         const at = this.origin(cell);
+        // Absolute model coordinates: a shape's geometry is relative to its parent.
         const box = { x: at.x, y: at.y, w: geometry.width, h: geometry.height };
 
         if (shape.kind === "lane") {
@@ -2078,6 +2213,7 @@ export class Editor {
         for (let up = cell.getParent(); up && up.isVertex(); up = up.getParent()) {
           const above = shapeOf(up);
 
+          // Up the parents: the nearest group is the shape's group, the first lane names its layer.
           if (above?.kind === "group" && group === undefined) group = above.key;
 
           if (above?.kind === "lane") {
@@ -2117,6 +2253,7 @@ export class Editor {
 
         if (!source || !target) continue;
         const offset = this.origin(cell.getParent());
+        // Bends are relative to the edge's parent: shift them to absolute model coordinates.
         const edge: ModelEdge = { key: link.key, kind: link.kind, from: source.key, to: target.key, fromId: source.id, toId: target.id, points: (cell.getGeometry()?.points ?? []).map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })) };
 
         if (link.label) edge.label = link.label;
@@ -2145,6 +2282,7 @@ export class Editor {
         const at = this.origin(cell);
         const entry: Position = { x: at.x, y: at.y, w: geometry.width, h: geometry.height };
 
+        // A shape not from the model needs its identity in the layout file, so «з коду» can draw it again.
         if (shape.origin !== "code" || shape.status !== null) Object.assign(entry, { id: shape.id, kind: shape.kind, label: shape.label });
 
         if (shape.kind === "note") entry.note = shape.description || shape.label;
@@ -2162,6 +2300,7 @@ export class Editor {
         const target = shapeOf(cell.getTerminal(false));
         const points = cell.getGeometry()?.points ?? [];
 
+        // Only edges with bends are layout; a straight edge needs no entry.
         if (!source || !target || points.length === 0) continue;
         const offset = this.origin(cell.getParent());
         layout[link.key] = { x: 0, y: 0, points: points.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })), from: source.key, to: target.key };
@@ -2184,6 +2323,7 @@ export class Editor {
     let answer: DiagramProposal;
 
     try {
+      // The spec hash of the opened view lets the server refuse a proposal against specs that changed meanwhile.
       answer = await this.api.diagramProposal(model, this.source.specHash ?? null);
     } catch (error) {
       this.host.status(`propose failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -2191,6 +2331,7 @@ export class Editor {
       return null;
     }
 
+    // A conflict: the draft is stale, so drop it and redraw the view from the specs as they are now.
     if (answer.status === "conflict") {
       this.tip(answer.error ?? "the specs changed since this diagram was opened");
       this.forgetDraft();
@@ -2204,6 +2345,7 @@ export class Editor {
 
     if (answer.status !== "proposed") return answer;
     // The drawn shapes the proposals took: marked on the canvas, and the layout keeps the mark.
+    // shape key → the spec its proposal went to.
     const taken = new Map(answer.targets.flatMap((target) => target.shapes.map((key) => [key, target.target] as const)));
     const graph = this.graph;
     this.loading = true;
@@ -2281,6 +2423,7 @@ export class Editor {
     this.host.status(answer.status === "proposed" ? `proposed: ${answer.targets.map((t) => `${t.target} (${t.hunks.length} hunk${t.hunks.length === 1 ? "" : "s"})`).join(", ")}${answer.weakenings.length > 0 ? ` · ${answer.weakenings.length} K108` : ""}` : head);
   }
 
+  /** Debounces saves: a burst of changes (a drag) writes the layout and the draft once, 250 ms after the last. */
   private changed(): void {
     if (this.loading) return;
     window.clearTimeout(this.saveTimer);
@@ -2289,11 +2432,13 @@ export class Editor {
 
   /** Writes the layout and the draft of the open view now if a change waits for them. */
   async flush(): Promise<void> {
+    // Nothing waits: no change since the last save.
     if (this.saveTimer === 0) return;
     window.clearTimeout(this.saveTimer);
     this.saveTimer = 0;
     this.writeDraft();
 
+    // An empty canvas has no view to keep a layout for; its draft is enough.
     if (this.viewKey !== "") await layoutStore().save(this.viewKey, this.layout());
   }
 
@@ -2302,6 +2447,7 @@ export class Editor {
     return this.graph.getSelectionCells().filter((cell) => cell.isVertex());
   }
 
+  /** Aligns the selected shapes on one edge or centre line: the outermost edge, or the mean centre. */
   align(value: "left" | "center" | "right" | "top" | "middle" | "bottom"): void {
     // In model coordinates, not maxGraph's `alignCells`: shapes in different lanes have different parents.
     const cells = this.selectedVertices();
@@ -2335,6 +2481,7 @@ export class Editor {
     };
 
     const values = boxes.map(edge);
+    // Right and bottom align to the furthest edge, left and top to the nearest, centre and middle to the average.
     const target = value === "right" || value === "bottom" ? Math.max(...values) : value === "center" || value === "middle" ? values.reduce((a, b) => a + b, 0) / values.length : Math.min(...values);
     this.graph.batchUpdate(() => {
       for (const box of boxes) {
@@ -2358,6 +2505,7 @@ export class Editor {
 
     // A group lives inside one lane: shapes of two lanes would leave their layers.
     if (new Set(cells.map((cell) => cell.getParent())).size > 1) return this.host.status("групувати можна лише фігури однієї доріжки");
+    // A group's key comes from the clock: groups are layout, so it needs no keylang ID.
     const shape = new Shape(`group:${Date.now().toString(36)}`, "group", "", "група");
     const frame = new Cell(shape, new Geometry(), shapeStyle(shape));
     frame.setVertex(true);
@@ -2365,6 +2513,7 @@ export class Editor {
     this.graph.setSelectionCell(done);
   }
 
+  /** Dissolves the selected groups and selects what they held. */
   ungroup(): void {
     const groups = this.graph.getSelectionCells().filter((cell) => shapeOf(cell)?.kind === "group");
 
@@ -2380,11 +2529,13 @@ export class Editor {
 
     if (bounds.width === 0 || bounds.height === 0 || width === 0 || height === 0) return view.scaleAndTranslate(1, margin, margin);
     const scale = view.scale;
+    // The drawing's box in model coordinates; the new scale fits it in the canvas with margins, never above 1, then centres it.
     const model = { x: bounds.x / scale - view.translate.x, y: bounds.y / scale - view.translate.y, w: bounds.width / scale, h: bounds.height / scale };
     const next = Math.max(0.05, Math.min(1, (width - 2 * margin) / model.w, (height - 2 * margin) / model.h));
     view.scaleAndTranslate(next, width / 2 / next - (model.x + model.w / 2), height / 2 / next - (model.y + model.h / 2));
   }
 
+  /** Zooms by `factor` (clamped to 0.05–4) around a point of the canvas, the centre by default, keeping that point still. */
   zoomAt(factor: number, x = this.canvas.clientWidth / 2, y = this.canvas.clientHeight / 2): void {
     const view = this.graph.getView();
     const scale = view.scale;

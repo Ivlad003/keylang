@@ -2,6 +2,10 @@
 // first, then a brief a model wrote, saved under `<dir>/explain/brief/`. One
 // lookup for the explained map, the TUI, MCP and the language server; the
 // store and its baselines live here so that lookup needs no model.
+// Sits after the snapshot (source → FileFacts → graph → snapshot) and feeds
+// the explained map. Entry points: `explanationOf`, `snapshotBaseline`,
+// `explanationPath`, `loadBriefs`. Terms: brief, answer, baseline (the
+// fingerprint a saved explanation is judged fresh or stale against).
 
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -26,6 +30,7 @@ export interface StoredExplanation {
   text: string;
 }
 
+/** The first line of a saved explanation: an HTML comment carrying agent, date, baseline, language and detail. */
 const HEADER = /^<!-- keylang:explain agent=(\S+) date=(\S+) closure=(\S*) lang=(\S+) detail=(short|full|brief) -->\r?\n/;
 
 /** A file `explain --llm` wrote: the model's text under keylang's header, not keylang Markdown to parse or format. */
@@ -33,6 +38,7 @@ export function isStoredExplanation(text: string): boolean {
   return HEADER.test(text);
 }
 
+/** Whether `text` is one of the three details. */
 function isExplanationDetail(text: string): text is ExplanationDetail {
   return text === "short" || text === "full" || text === "brief";
 }
@@ -50,6 +56,7 @@ export function parseStoredExplanation(text: string): StoredExplanation | null {
   return { agent: m[1]!, date: m[2]!, closure: m[3]!, lang: m[4]!, detail, text: text.slice(m[0].length).trimEnd() };
 }
 
+/** The file text of a saved explanation: the header line, then the model's text. */
 export function formatStoredExplanation(e: StoredExplanation): string {
   return `<!-- keylang:explain agent=${e.agent} date=${e.date} closure=${e.closure} lang=${e.lang} detail=${e.detail} -->\n${e.text}\n`;
 }
@@ -84,9 +91,13 @@ function storeName(names: readonly string[], id: string, also: Iterable<string>)
   const twinned = `${id}~${createHash("sha256").update(id).digest("hex").slice(0, 8)}.md`;
   const plain = `${id}.md`;
 
+  // An existing file keeps its name, hashed or plain, so a saved
+  // explanation is not orphaned when a twin appears or disappears.
   if (names.includes(twinned)) return twinned;
 
   if (names.includes(plain)) return plain;
+  // A new file gets the hashed name only when another ID that differs only in
+  // case is in the store or saved alongside it.
   const folded = id.toLowerCase();
   const twin = (other: string): boolean => other !== id && other.toLowerCase() === folded;
 
@@ -104,11 +115,13 @@ function storeNames(root: string, dir: string): string[] {
 
   if (!existsSync(abs)) return [];
 
+  // NFC so names compare the same on HFS+, which lists them in NFD.
   return readdirSync(abs, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => e.name.normalize("NFC"));
 }
 
+/** The saved explanation at `rel` (relative to `root`), or null when there is no file or no keylang header. */
 export function readStoredExplanation(root: string, rel: string): StoredExplanation | null {
   const file = join(root, rel);
 
@@ -126,6 +139,8 @@ export function loadBriefs(config: Config): Map<string, StoredExplanation> {
   const names = storeNames(config.root, dir);
   const out = new Map<string, StoredExplanation>();
 
+  // One entry per ID, read from the file name the store would use for it; a
+  // file that is not a brief (wrong header) is skipped.
   for (const id of [...new Set(names.map(storedId))].sort()) {
     const e = readStoredExplanation(config.root, `${dir}/${storeName(names, id, [])}`);
 
@@ -154,7 +169,10 @@ export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string
 
   if (!node) return null;
 
+  // A fn or type has its own closure fingerprint.
   if (node.closure) return node.closure.fingerprint;
+  // A container: the sorted ID list is cached per snapshot so finding the
+  // nodes under it is a binary search, not a scan for every container.
   let ids = sortedIds.get(snapshot);
 
   if (!ids) {
@@ -165,6 +183,8 @@ export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string
   const prefix = `${id}.`;
   const parts: string[] = [];
 
+  // Everything under the container sorts as one contiguous run after the
+  // prefix; collect each node's fingerprint and value code.
   for (let i = lowerBound(ids, prefix); i < ids.length && ids[i]!.startsWith(prefix); i++) {
     const other = ids[i]!;
     const n = snapshot.nodes[other];
@@ -178,11 +198,13 @@ export function snapshotBaseline(snapshot: AnalysisSnapshot, id: string): string
   if (node.values !== undefined) parts.push(`values ${node.values}`);
   parts.sort();
 
+  // Nothing to hash at all: the same empty baseline a planned node has.
   if (parts.length === 0 && (node.deps ?? []).length === 0) return "";
 
   return createHash("sha256").update([`deps ${(node.deps ?? []).join(",")}`, ...parts].join("\n")).digest("hex");
 }
 
+/** The first index in `sorted` whose value is not less than `key` (binary search). */
 function lowerBound(sorted: readonly string[], key: string): number {
   let lo = 0;
   let hi = sorted.length;
@@ -243,6 +265,7 @@ export interface NodeExplanation {
  * answer a question about one node, not a line of the map.
  */
 export function explanationOf(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string): NodeExplanation | null {
+  // The repository: its README or manifest wins over a model's brief.
   if (id === SYSTEM_ID) {
     const system = snapshot.system;
 
@@ -266,6 +289,7 @@ export function explanationOf(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<st
   return briefExplanation(briefs.get(id), () => snapshotBaseline(snapshot, id));
 }
 
+/** A saved brief as an explanation, judged stale against `baseline`; null without a brief or when it has no brief sentence. */
 function briefExplanation(brief: StoredExplanation | undefined, baseline: () => string | null): NodeExplanation | null {
   const text = brief ? briefOf(brief.text) : null;
 

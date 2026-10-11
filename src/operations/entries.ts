@@ -2,6 +2,9 @@
 // «Entry points»: the entry points of the current snapshot (ADR 0022 п. 5),
 // read-only. One text for the CLI's table and the F6 report, one JSON shape
 // for `--json` and MCP.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over source →
+// FileFacts → snapshot; entry points: `runEntries`, `entriesText`.
 
 import { isAbsolute } from "node:path";
 import { analyze } from "../analyze.ts";
@@ -36,6 +39,7 @@ export async function runEntries(request: EntriesRequest, context: OperationCont
   if (context.signal?.aborted) return empty("entries", "cancelled", null);
 
   if (snapshot === null) return empty("entries", "failed", 2, "entries: no code to read (`languages` in keylang.json is empty)");
+  // The snapshot already holds every entry point; `--kind` only filters it.
   const entries = snapshot.entries.filter((entry) => request.only === undefined || entry.kind === request.only);
   const text = entriesText(entries, request.only ?? null);
   const payload: EntriesPayload = { snapshotId: snapshot.snapshotId, kind: request.only ?? null, entries, text };
@@ -47,6 +51,8 @@ export async function runEntries(request: EntriesRequest, context: OperationCont
 export function entriesText(entries: readonly EntryPoint[], kind: EntryPoint["kind"] | null = null): string {
   if (entries.length === 0) return `no entry points found${kind === null ? "" : ` of kind ${kind}`}\n${ENTRIES_HINT}\n`;
   const rows = entries.map((entry) => [entry.kind, entry.label, entry.id, `${entry.file}:${entry.line}${entry.unresolved ? `  unresolved: ${entry.unresolved}` : ""}`]);
+  // Pad the first three columns to their widest cell; the last (file:line
+  // and an unresolved note) runs free.
   const widths = [0, 1, 2].map((column) => Math.max(...rows.map((row) => row[column]!.length)));
 
   return rows.map((row) => row.map((cell, column) => (column < 3 ? cell.padEnd(widths[column]!) : cell)).join("  ")).join("\n") + "\n";

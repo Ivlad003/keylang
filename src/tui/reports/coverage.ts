@@ -5,15 +5,22 @@
 // without a flow, a call into a configuration reader, a call site of a
 // client, a webhook, a flow of this repository a migrated flow became —
 // opens in the code or the spec.
+// Also the reports of `keylang system` and `keylang tour`.
+//
+// Layer: TUI reports, joined into one table by `records.ts`. Every place list
+// below is both the report's selectable rows and its Tab items, so the two
+// always share one order.
 
 import type { CoveragePayload, IntegrationsPayload, TourPayload, MigrationStatusPayload } from "../../operations.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, MUTED, outcomeRow, shortId, textRows, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
+/** The operation kinds of `COVERAGE_REPORTS`. */
 type CoverageKind = "coverage";
 
 /** The places of the report, in its order: orphans, modules with holes, entry points without a flow, logic in data. */
 export function coveragePlaces(payload: CoveragePayload): ReportItem[] {
+  // Modules without a file (no place to open) are left out.
   return [
     ...payload.orphans.map((orphan) => ({ file: orphan.file, line: orphan.line, col: 1, text: `orphan  ${orphan.id}  ${orphan.file}:${orphan.line}` })),
     ...payload.holes.modules.filter((module) => module.file !== null).map((module) => ({ file: module.file!, line: 1, col: 1, text: `holes ${module.holes}  ${module.module}  ${module.reasons[0] !== undefined ? `${module.reasons[0].count}× ${module.reasons[0].reason}` : ""}` })),
@@ -22,6 +29,7 @@ export function coveragePlaces(payload: CoveragePayload): ReportItem[] {
   ];
 }
 
+/** The F6 report of `keylang coverage` («Blind spots»). */
 export const COVERAGE_REPORTS = {
   coverage: {
     label: () => "coverage",
@@ -53,6 +61,7 @@ export function integrationPlaces(payload: IntegrationsPayload): ReportItem[] {
   ];
 }
 
+/** The F6 report of `keylang integrations`. */
 export const INTEGRATIONS_REPORTS = {
   integrations: {
     label: () => "integrations",
@@ -76,6 +85,7 @@ export const INTEGRATIONS_REPORTS = {
   },
 } satisfies { integrations: Report<"integrations"> };
 
+/** The F6 report of `keylang system`: its stdout only, no selectable places. */
 export const SYSTEM_REPORTS = {
   system: {
     label: (request) => `system ${request.action}${request.name ? ` ${request.name}` : ""}`,
@@ -98,6 +108,7 @@ export function tourPlaces(payload: TourPayload): ReportItem[] {
   ];
 }
 
+/** The F6 report of `keylang tour`. */
 export const TOUR_REPORTS = {
   tour: {
     label: () => "tour",
@@ -123,12 +134,14 @@ export const TOUR_REPORTS = {
 
 /** The places of the parity: each counterpart flow of this repository (its spec), then each dropped row of the table. */
 export function migrationPlaces(payload: MigrationStatusPayload): ReportItem[] {
+  // A flow whose counterpart has no spec file cannot be opened, so it is left out.
   return [
     ...payload.flows.flatMap((flow) => (flow.counterpart?.file == null ? [] : [{ file: flow.counterpart.file, line: 1, col: 1, text: `${flow.verdict}  ${flow.name} → ${flow.counterpart.name}  ${flow.reasons[0] ?? ""}` }])),
     ...payload.dropped.map((row) => ({ file: row.file, line: row.line, col: 1, text: `dropped  ${row.id}  ${row.reason}` })),
   ];
 }
 
+/** The F6 report of `keylang migration status`. */
 export const MIGRATION_REPORTS = {
   "migration-status": {
     label: () => "migration status",

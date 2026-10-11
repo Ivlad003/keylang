@@ -2,6 +2,10 @@
 // paths relative to the root and the generated documents of an analysis, the
 // hashes of the specs a result was computed from, and the steps of a model
 // draft that ends in a proposal.
+//
+// Place in the pipeline: helpers of the operations layer (`operations/*`);
+// no transport, no stdout. Key terms: envelope, candidate basis, proposal
+// (a drafted spec waiting under `.keylang/proposals/` for the user to merge).
 
 import { relative, resolve } from "node:path";
 import { toPosix, type Config } from "../config.ts";
@@ -49,6 +53,8 @@ export function generatedIn(docs: readonly Document[]): (path: string) => boolea
 
 /** The hand-written specs the candidate was built from, as they are on disk now: a planned signature or a flow's `test` changed meanwhile makes it unfit. */
 export function specHashes(root: string, docs: readonly Document[]): CandidateBasis["specs"] {
+  // Generated documents (the map) are not part of a candidate's basis: only
+  // the hand-written specs are hashed.
   return docs.flatMap((doc) => (doc.generated === null ? [{ path: doc.path, sha256: hashOrNull(readTextOrNull(resolve(root, doc.path))) }] : []));
 }
 
@@ -69,6 +75,7 @@ export function specProblems(root: string, specs: CandidateBasis["specs"], subje
  */
 export async function modelSetup(mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft"): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
   if (mode === "algo") return { client: null, fallback: null };
+  // The model client is loaded lazily so the algo path never imports it.
   const { llmClient } = await import("../llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
 
@@ -86,6 +93,8 @@ export async function modelSetup(mode: "algo" | "llm" | "hybrid", config: Pick<C
  * already waiting under `pending: refuse` (1, named in `refused`).
  */
 export function proposalRefusal(root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft"): { exitCode: 1 | 2; error: string; refused: string[] } | null {
+  // Three refusals in order of severity: the target itself, then the
+  // proposal store's write policy, then a proposal that is already waiting.
   const store = `${PROPOSALS_DIR}/${candidate.target}`;
 
   if (candidate.problem !== null) return { exitCode: 2, error: `${command}: ${candidate.target}: ${candidate.problem}`, refused: [] };
@@ -124,6 +133,8 @@ interface ProposalCommit {
  * write itself.
  */
 export async function commitProposal(commit: ProposalCommit, context: OperationContext): Promise<{ proposal: string } | { refused: string[] } | { failed: string; writing: boolean } | { cancelled: true }> {
+  // The commit gate: the caller's session defers conflicting saves from here
+  // on and may refuse the write with reasons; nothing is written before it.
   const { root, target, expected } = commit;
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
@@ -139,6 +150,9 @@ export async function commitProposal(commit: ProposalCommit, context: OperationC
   if (gate && gate.refused.length > 0) return { refused: gate.refused };
   let problems: string[];
 
+  // Re-check everything the draft was computed from: the target and the
+  // waiting proposal must be the ones read, and keylang.json and the sources
+  // unchanged; any drift refuses the write instead of overwriting newer work.
   try {
     const problem = proposalProblem(root, commit.specDir, target, commit.generated);
     const written = problem !== null ? `${target}: ${problem}` : proposalWriteProblem(root, target, expected);

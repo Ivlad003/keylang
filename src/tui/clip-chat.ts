@@ -11,6 +11,9 @@
 // nothing is asked. Every answer to a message ends an exchange, which goes
 // into today's log of the conversation (`clip-memory.ts`); a cancelled
 // request is no exchange.
+//
+// Layer: TUI. `app.ts` owns a `ClipChat` and implements `ChatHost`; the model
+// call itself is the shared `assistant-reply` operation (`operations.ts`).
 
 import { join } from "node:path";
 import { contextText, type ContextPack } from "../agent-context.ts";
@@ -91,6 +94,7 @@ const CHECK_FAILS = 5;
 
 /** The answer to free text without a model (spec §4.3); `reason` says what is missing when an agent is set. */
 export function noModelAnswer(reason: string | null): string {
+  // The commands that work without a model, named so the person knows what is left.
   const offline = COMMANDS.flatMap((command) => (command.offline ? [`/${command.name}`] : []));
 
   return `немає моделі: ${reason ?? "задайте `agent` у keylang.json або `KEYLANG_AGENT`"}; без неї працюють ${offline.join(", ")}`;
@@ -208,6 +212,8 @@ export class ClipChat {
   said(text: string): void {
     this.sent = text;
 
+    // `sent` is the message being answered while the call runs synchronously; a later
+    // async answer carries its message in `Ending` instead.
     try {
       if (text.startsWith("/")) return this.command(text.slice(1));
       this.ask();
@@ -223,6 +229,7 @@ export class ClipChat {
    * then and count no more (spec §4.6).
    */
   opened(): void {
+    // Opening the chat tells the new fails, so they stop counting from here on.
     const questions = openQuestions(this.state);
     this.state.clip.newFails = [];
 
@@ -231,6 +238,7 @@ export class ClipChat {
     const text = questionsAnswer(questions);
     const last = chat.messages.at(-1);
 
+    // The same list said twice in a row would only repeat itself.
     if (last?.role === "clip" && last.text === text) return;
     // No message of the person's is answered: the clip's word starts no exchange and ends none.
     chat.messages.push({ role: "clip", text });
@@ -261,6 +269,7 @@ export class ClipChat {
 
   // ---------- commands ----------
 
+  /** A `/command [arg]` line: the first word picks the command (case-insensitive), the rest is its argument. */
   private command(line: string): void {
     const [, word = "", rest = ""] = /^(\S*)\s*([\s\S]*)$/.exec(line) ?? [];
     const name = word.toLowerCase();
@@ -313,6 +322,7 @@ export class ClipChat {
   /** A command's shared operation, as the session runs any: one at a time, after the save step when it reads dirty buffers. */
   private operation(action: string, request: OperationRequest, text: (result: OperationResult) => string | null): void {
     if (this.state.activeOperation !== null) return this.answer(BUSY);
+    // The message is captured now; the operation ends later, after `sent` is cleared.
     const said = this.sent;
     this.host.requestOperation(action, request, (record) => this.answer(outcomeAnswer(record, text), { said: cancelled(record) ? null : said }));
   }
@@ -327,6 +337,7 @@ export class ClipChat {
   private ask(): void {
     const analysis = this.state.analysis;
 
+    // Refusals that ask nothing: no analysis, no model configured, or another operation running.
     if (analysis === null) return this.answer("аналіз ще триває: спитайте, коли він закінчиться");
 
     if (selectedAgent(analysis.config.agent) === null) return this.answer(noModelAnswer(null));
@@ -368,6 +379,7 @@ export class ClipChat {
   private async start(asked: Asked, request: AssistantReplyRequest): Promise<void> {
     let missing: string | null;
 
+    // Look up the client; a missing CLI or key becomes the reason in the answer.
     try {
       const { llmClient } = await import("../llm.ts");
       const setup = llmClient(asked.agent, { root: request.root });
@@ -376,6 +388,7 @@ export class ClipChat {
       missing = errorText(error);
     }
 
+    // Esc (or a new request) replaced this one while the lookup ran: drop it.
     if (this.asked !== asked) return;
 
     if (missing !== null) {
@@ -384,6 +397,7 @@ export class ClipChat {
       return this.answer(noModelAnswer(missing), { said: asked.said });
     }
 
+    // The session runs one operation at a time; another may have started meanwhile.
     const record = this.host.startOperation(CLIP_REPLY, request, (done) => this.replied(asked, done));
 
     if (record === null) {
@@ -403,9 +417,11 @@ export class ClipChat {
     if (cancelled(record) || result === null) return this.answer(CANCELLED, { said: null });
 
     if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`, { said: asked.said });
+    // Write the proposal (or say why not), and name any extra blocks the model gave that were dropped.
     const { agent, reply, proposal, dropped } = result.payload;
     const proposed = proposal === null ? null : this.propose(proposal, asked.basis);
     const notes = [...(proposed === null ? [] : [proposed]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
+    // The log records the proposal only when it was actually written.
     const written = proposal !== null && proposed === proposalWritten(proposal.path) ? { proposal: proposal.path } : {};
     this.answer([reply, ...notes].filter((line) => line !== "").join("\n"), { said: asked.said, agent, ...written });
   }
@@ -428,6 +444,8 @@ export class ClipChat {
     const state = this.state;
     const refused = (why: string): string => `пропозицію для ${path} не записано: ${why}`;
 
+    // Refusals in order: browse mode, a non-spec path, the shared proposal gate,
+    // unsaved edits in the target, a proposal already waiting.
     if (state.config.kind === "missing-config") return refused("режим перегляду нічого не пише; keylang init створює keylang.json");
     const dir = this.host.proposalDir();
 
@@ -455,6 +473,7 @@ export class ClipChat {
     return proposalWritten(path);
   }
 
+  /** No request is awaited any more: the eyes stop waiting. */
   private stopWaiting(): void {
     this.asked = null;
     this.state.clip.waiting = false;
@@ -469,6 +488,7 @@ export class ClipChat {
     const chat = this.state.clip.chat;
     chat.messages.push({ role: "clip", text });
     chat.scroll = 0;
+    // A cancelled request or a word nobody asked for is shown but not logged.
     const { said, agent = null, proposal = null } = ending;
 
     if (said === null) return;

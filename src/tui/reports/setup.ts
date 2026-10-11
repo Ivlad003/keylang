@@ -1,11 +1,17 @@
 // Reports of the operations that set a repository up and keep its generated
 // files: doctor, map check, map, baseline, agents, init, fmt and wire.
+// Every outcome text says what really happened on disk: a partial write is
+// named as partial and nothing is rolled back.
+//
+// Layer: TUI reports, joined into one table by `records.ts`; the payloads come
+// from the shared operations (`operations.ts`).
 
 import { WIRE_OUT, type AgentsPayload, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type GitignoreStage, type InitPayload, type MapCheckPayload, type MapPayload, type OperationResult, type WirePayload } from "../../operations.ts";
 import type { OperationRecord, State } from "../state.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, outcomeRow, WARNING, type Done, type Report, type ReportRow, type ReportView } from "./rows.ts";
 
+/** The operation kinds `SETUP_REPORTS` describes. */
 type SetupKind = "doctor" | "map-check" | "map" | "baseline" | "agents" | "init" | "fmt" | "wire";
 
 /** `write`, `check`: the mode a setup form ran in. */
@@ -25,6 +31,7 @@ function mapTail(rows: ReportRow[], payload: MapCheckPayload | MapPayload): void
   rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: MUTED });
 }
 
+/** The F6 reports of the setup operations. */
 export const SETUP_REPORTS = {
   doctor: {
     label: () => "doctor",
@@ -61,6 +68,7 @@ export const SETUP_REPORTS = {
       for (const line of payload.refused) rows.push({ text: `  refused  ${line}`, style: THEME.panel });
 
       if (payload.refused.length > 0) rows.push({ text: "  nothing was written · Enter computes the map again", style: THEME.hint });
+      // Prefix of a step's row by its state; a completed step is named by its verb instead.
       const state = { completed: "", failed: "failed ", "not-attempted": "not attempted " } as const;
 
       for (const step of payload.steps) {
@@ -121,12 +129,15 @@ export const SETUP_REPORTS = {
       for (const line of payload.refused) rows.push({ text: `  refused  ${line}`, style: THEME.panel });
 
       if (payload.refused.length > 0) rows.push({ text: "  nothing was written · Enter plans again", style: THEME.hint });
+      // Index the executed steps by path, to tell each planned file what happened to it.
       const steps = new Map(payload.steps.map((step) => [step.path, step]));
 
       for (const file of payload.files) {
         const step = steps.get(file.path);
         const verb = file.action === "write" ? "written" : "removed";
 
+        // A kept file is current; in a check or after a refusal nothing ran, so a change is stale;
+        // otherwise the step's own state decides.
         const state =
           file.action === "keep"
             ? "current"
@@ -163,6 +174,7 @@ export const SETUP_REPORTS = {
       const { payload } = result;
       const rows: ReportRow[] = [{ text: `Fmt ${payload.check ? "check · read-only, nothing written" : "write"} · ${payload.files.length} file(s)`, style: BOLD }, outcomeRow(view.summary, result.exitCode === 0)];
 
+      // The row label of each fmt state; stale reads differently in a check and in a write.
       const label: Record<FmtFile["state"], string> = {
         current: "canonical",
         stale: payload.check ? "not formatted" : "not written",
@@ -227,6 +239,7 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
     rows.push({ text: `  ${name.padEnd(13)} ${text}`, style: failed ? ERROR : THEME.panel });
   };
 
+  // When the config failed nothing after it was tried; otherwise a missing stage was cut off by a cancel.
   const notRun = payload.config.error !== null || record.status !== "cancelled" ? "not run" : "not run (cancelled)";
 
   // `.gitignore` is a file stage of init itself, not an operation: no code of its own, its reason on the row.
@@ -237,6 +250,8 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
     else stageRow(stage.file, gitignoreOutcome(stage, payload.check), gitignoreFailed(stage));
   };
 
+  // A failed harness preflight stops init before any write; otherwise a write shows
+  // the keylang.json stage and the .gitignore stage first.
   if (payload.preflight?.status === "failed") {
     stageRow("harness plan", `${payload.preflight.messages.map((message) => message.text).join("; ")}${codeOf(payload.preflight.exitCode)}`, true);
     rows.push({ text: "  checked before any write: nothing was written, keylang.json included", style: THEME.hint });
@@ -248,6 +263,8 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
     gitignoreRow();
   }
 
+  // The operation stages to list: a check runs agents and baseline only; a write
+  // runs map, baseline and agents unless the preflight failed.
   const stages: { name: string; result: OperationResult | null }[] = payload.check
     ? [
         { name: "agents", result: payload.agents },
@@ -263,6 +280,7 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
       continue;
     }
 
+    // The stage's own outcome text when its kind has one, else its record status.
     const outcome =
       stage.kind === "map" && stage.payload !== null
         ? mapOutcome(stage.status, stage.payload)
@@ -278,12 +296,14 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
 
     if (stage.kind === "map") for (const line of stage.payload?.refused ?? []) rows.push({ text: `    refused ${line}`, style: THEME.panel });
 
+    // Name the files a map or agents stage did not finish writing.
     for (const step of stage.kind === "map" || stage.kind === "agents" ? (stage.payload?.steps ?? []) : []) {
       if (step.state === "failed") rows.push({ text: `    failed ${step.path}${step.error === undefined ? "" : `: ${step.error}`}`, style: ERROR });
       else if (step.state === "not-attempted") rows.push({ text: `    not attempted ${step.path}`, style: MUTED });
     }
   }
 
+  // In a check the .gitignore stage comes last, after the operation stages.
   if (payload.check) gitignoreRow();
   rows.push({ text: `written: ${result.written.length} file(s)${result.removed.length > 0 ? `, removed: ${result.removed.length}` : ""}`, style: MUTED });
 
@@ -296,6 +316,7 @@ function initRows(_state: State, record: OperationRecord, result: Done<"init">, 
 
 /** `written`, `up to date`, `stale`, `2 error(s) in wiring`, `manual file`, `inputs changed, nothing written`: what wire found and really did. */
 function wireOutcome(status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null): string {
+  // The checks run in order of precedence: a refusal or failure masks whether anything was written.
   if (payload.state === "blocked") return `${payload.diagnostics.length} error(s) in wiring, nothing written`;
 
   if (payload.state === "manual") return "manual file, not written";
@@ -315,6 +336,7 @@ function wireOutcome(status: OperationRecord["status"], payload: WirePayload, ex
 
 /** `3 file(s) canonical`, `2 not formatted`, `1 formatted, 1 invalid`, `1 of 2 formatted, cancelled`: what fmt found and really did. */
 function fmtOutcome(status: OperationRecord["status"], payload: FmtPayload): string {
+  // Count files by state; a cancelled write reports how far it got among the files it planned.
   const count = (state: FmtFile["state"]): number => payload.files.filter((file) => file.state === state).length;
   const parts: string[] = [];
   const planned = count("formatted") + count("failed") + count("not-attempted");
@@ -340,9 +362,11 @@ function agentsOutcome(status: OperationRecord["status"], payload: AgentsPayload
   if (payload.error !== null) return `${payload.error.file} is broken, nothing written`;
 
   if (payload.refused.length > 0) return "inputs changed, nothing written";
+  // Changes the plan would make: in a check, or when there are none, that is the outcome.
   const changed = payload.files.filter((file) => file.action !== "keep").length;
 
   if (payload.check || changed === 0) return changed === 0 ? "up to date" : `${changed} stale`;
+  // A write: count completed steps; an unfinished run says how many of its steps were done.
   const done = payload.steps.filter((step) => step.state === "completed");
 
   if (status === "completed") {
@@ -362,8 +386,10 @@ function agentsOutcome(status: OperationRecord["status"], payload: AgentsPayload
  * is named once it failed or did not run.
  */
 function initOutcome(status: OperationRecord["status"], payload: InitPayload): string {
+  // A failed harness preflight is the whole story: nothing else ran.
   if (payload.preflight !== null && payload.preflight.status === "failed" && payload.preflight.payload !== null) return agentsOutcome(payload.preflight.status, payload.preflight.payload);
 
+  // A check lists its stages' findings, leaving out the ones that did not run.
   if (payload.check) {
     const agents = payload.agents?.payload ? `harness files ${agentsOutcome(payload.agents.status, payload.agents.payload)}` : "harness files not checked";
     const baseline = payload.baseline?.payload ? `baseline ${baselineOutcome(payload.baseline.status, payload.baseline.payload)}` : payload.baseline ? "baseline not checked" : "";
@@ -376,6 +402,7 @@ function initOutcome(status: OperationRecord["status"], payload: InitPayload): s
   const stages = initStages(payload);
 
   if (status === "completed") return `set up: ${stages.map((stage) => stage.name).join(", ")}`;
+  // A write that did not complete: name the stages that failed and those that never ran.
   const ignore = payload.gitignore;
   const bad = [...(ignore !== null && gitignoreFailed(ignore) ? [".gitignore"] : []), ...stages.filter((stage) => stage.result !== null && stage.result.exitCode !== 0).map((stage) => stage.name)];
   const missing = [...(ignore === null ? [".gitignore"] : []), ...stages.filter((stage) => stage.result === null).map((stage) => stage.name)];
@@ -415,6 +442,7 @@ function mapOutcome(status: OperationRecord["status"], payload: MapPayload): str
   if (payload.conflicts.length > 0) return `${payload.conflicts.length} conflict(s), nothing written`;
 
   if (payload.refused.length > 0) return "inputs changed, nothing written";
+  // Completed: count writes and removals; otherwise how many steps were done before it stopped.
   const done = payload.steps.filter((step) => step.state === "completed");
 
   if (status === "completed") {

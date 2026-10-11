@@ -8,6 +8,9 @@
 // cancel it in flight. The agent's draft of a flow (`Ctrl+Space` in the view)
 // is the session's draft-flow operation, cancelled by its Cancel and by
 // `close()`; while any explicit operation runs, ghost requests are suspended.
+//
+// Layer: TUI. `app.ts` owns one `Assist`; the model calls come from
+// `../ghost.ts` and `../llm.ts`, speech recognition from `../voice*.ts`.
 
 import type { Analysis } from "../analyze.ts";
 import type { ContextPack } from "../agent-context.ts";
@@ -20,6 +23,7 @@ import { errorText } from "./merge-session.ts";
 import type { Buffer, Cursor, Mode, State } from "./state.ts";
 import { graphemes } from "./width.ts";
 
+/** Opens the microphone: 16-bit PCM chunks until `stop()`, or null when there is none. */
 export type Microphone = () => Promise<{ chunks: AsyncIterable<Int16Array>; stop: () => void } | null>;
 
 /** What the assists need from the session around them. */
@@ -77,6 +81,7 @@ export function countSuggestion(state: Pick<State, "root" | "config">, source: "
   }
 }
 
+/** Ghost text and voice input for one session. */
 export class Assist {
   private readonly host: AssistHost;
   private readonly microphone: Microphone;
@@ -100,15 +105,18 @@ export class Assist {
     return this.ghostTimer !== null;
   }
 
+  /** A recording is starting, running or being recognized. */
   get recordingNow(): boolean {
     return this.recording !== null;
   }
 
+  /** Aborts a ghost request and stops a running microphone. */
   close(): void {
     this.cancelGhost();
     this.recording?.mic?.stop();
   }
 
+  /** Where the session is now, for work that lands later. */
   private spot(buffer: Buffer): Spot {
     return { path: buffer.path, version: buffer.version, mode: this.state.mode };
   }
@@ -122,6 +130,7 @@ export class Assist {
 
   // ---------- ghost text ----------
 
+  /** Clears the pending ghost timer and tells the session nothing waits on it. */
   private stopGhostTimer(): void {
     if (!this.ghostTimer) return;
     clearTimeout(this.ghostTimer);
@@ -156,6 +165,8 @@ export class Assist {
   ghostSoon(): void {
     // A newer request supersedes the one in flight: at most one runs.
     this.cancelGhost();
+    // Ask only when everything is in place: a buffer, a snapshot, an agent, no
+    // completion popup and no running operation.
     const buffer = this.host.buffer();
     const analysis = this.state.analysis;
     const agent = analysis ? selectedAgent(analysis.config.agent) : null;
@@ -163,9 +174,11 @@ export class Assist {
     if (!buffer || !analysis?.snapshot || agent === null || this.state.completion || this.state.activeOperation !== null) return;
     const { line, col } = this.state.cursor;
 
+    // Only at a place that calls for a next flow line (`ghostSignal`).
     if (!ghostSignal(buffer.path, buffer.text, line, col)) return;
     const spot = this.spot(buffer);
     const request = ++this.ghostRequest;
+    // Wait for a pause in typing; a newer key cancels this timer through `cancelGhost`.
     this.ghostTimer = setTimeout(() => {
       this.ghostTimer = null;
 
@@ -174,6 +187,7 @@ export class Assist {
       const flight: GhostFlight = { spot, line, controller: new AbortController() };
       this.ghostFlight = flight;
 
+      // The model call itself; the LLM module loads only when a ghost is really asked for.
       const work = (async () => {
         const { llmClient, isCancelled } = await import("../llm.ts");
         const setup = llmClient(analysis.config.agent, { root: this.state.root });
@@ -210,6 +224,7 @@ export class Assist {
   acceptGhost(ghost: NonNullable<State["ghost"]>): void {
     const buffer = this.host.buffer();
 
+    // The person is no longer where the ghost was shown: it counts as rejected.
     if (!buffer || buffer.path !== ghost.path || buffer.version !== ghost.version || this.state.mode !== "edit") {
       countSuggestion(this.state, "ghost", "rejected", ghost.shown);
 
@@ -246,6 +261,7 @@ export class Assist {
   voice(): void {
     const current = this.recording;
 
+    // A second Ctrl+R stops the running recording; nothing new starts while recognizing.
     if (current) {
       if (current.phase === "recognizing") {
         this.state.message = "voice: still recognizing the last recording";
@@ -276,6 +292,7 @@ export class Assist {
     this.recording = recording;
 
     const work = (async () => {
+      // Choose the engine (local model or OpenRouter) before opening the microphone.
       const { localAvailable } = await import("../voice-local.ts");
       const engine = voiceEngine(analysis.config.voice, await localAvailable());
 
@@ -286,12 +303,14 @@ export class Assist {
       recording.mic = mic;
       recording.phase = "recording";
 
+      // Stopped while the microphone was opening: close it at once.
       if (recording.stopped || this.host.closed()) mic.stop();
       else {
         this.state.message = "● voice: recording… Ctrl+R stops";
         this.host.draw();
       }
 
+      // Collect the whole recording, then join it into one PCM buffer.
       const chunks: Int16Array[] = [];
 
       for await (const chunk of mic.chunks) chunks.push(chunk);
@@ -310,6 +329,7 @@ export class Assist {
         return;
       }
 
+      // Recognize with the glossary of IDs near the cursor, so names come out spelled as in the spec.
       const terms = glossary(analysis, buffer.path, buffer.text, line);
       const text = engine.kind === "openrouter" ? await transcribeOpenRouter(engine, pcm, terms) : await (await import("../voice-local.ts")).transcribeLocal(engine.modelFile, pcm, terms);
 
@@ -333,6 +353,7 @@ export class Assist {
     this.host.track(work);
   }
 
+  /** Puts recognized `text` into the buffer: as list items on an empty item line, else as text at the cursor. */
   private insertSpeech(text: string, line: number, analysis: Analysis): void {
     const buffer = this.host.buffer();
 
@@ -341,6 +362,7 @@ export class Assist {
     const indent = /^\s*/.exec(current)![0];
     const ids = Object.keys(analysis.snapshot?.nodes ?? {}).filter((id) => analysis.snapshot!.nodes[id]!.kind === "fn");
     this.host.edit((lines, cursor) => {
+      // An empty line or a bare `-`: the speech becomes one or more flow items at that indent.
       if (/^\s*-?\s*$/.test(current)) {
         const spec = speechToSpec(text, ids, indent);
         const items = spec.startsWith(`${indent}- `) ? spec.split("\n") : [`${indent}- ${spec}`];
@@ -348,6 +370,7 @@ export class Assist {
         cursor.line = line + items.length - 1;
         cursor.col = graphemes(items.at(-1)!).length;
       } else {
+        // Otherwise insert the text at the cursor, counting columns in grapheme clusters.
         const chars = graphemes(lines[cursor.line] ?? "");
         chars.splice(cursor.col, 0, text.trim());
         lines[cursor.line] = chars.join("");

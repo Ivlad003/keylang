@@ -16,6 +16,13 @@
 // «Копіювати як пакет» (and Ctrl+C with no text selected) puts the open view —
 // a flow as `keylang flow export` writes it, its shapes in the layout block —
 // in the clipboard for another keylang web (business-flows/25).
+//
+// Place in the pipeline: the entry script of the web view (`/diagrams`), on
+// top of the API client (api.ts) and the canvas (canvas.ts). It owns the page
+// state: the mode, the open view (mirrored in the URL fragment), the list on
+// the left and the side panel. Entry point: `main`, which picks the transport
+// and starts `Page`. Key terms: view (a `ViewQuery` drawn from the snapshot and
+// the specs), mode (one pane of the page), usages (views that name an ID).
 
 import { Api, ApiError, readOnlyPage, transport, useTransport, type ClipEdge, type ClipShape, type Diagram, type DiagramNode, type DocList, type PageQuery, type Usages, type ViewQuery, type Views } from "./api.ts";
 import { BlindSpots } from "./blind.ts";
@@ -39,13 +46,16 @@ import "./diagrams.css";
 /** The call tree of an entry point: the server's default depth (src/diagram.ts) and the deepest the page offers. */
 const DEFAULT_DEPTH = 2;
 
+/** The deepest call tree the depth picker offers. */
 const MAX_DEPTH = 5;
 
 /** How often the page asks again, ms; a request that takes longer delays the next one. */
 const POLL_MS = 5000;
 
+/** One pane of the page; each has its own tab, list and status. */
 type Mode = "diagrams" | "explore" | "blind" | "editor" | "docs" | "changes";
 
+/** The pane a query opens: every drawable view is the «diagrams» mode. */
 function modeOf(query: PageQuery): Mode {
   return query.view === "explore" ? "explore" : query.view === "blind" ? "blind" : query.view === "editor" ? "editor" : query.view === "docs" ? "docs" : query.view === "changes" ? "changes" : "diagrams";
 }
@@ -57,6 +67,7 @@ function isViewQuery(query: PageQuery): query is ViewQuery {
 
 /** The fragment of a view (`view=flow&name=…`), with the selected node. */
 function hashOf(query: PageQuery, node: string | null): string {
+  // The editor's nested view does not fit flat params: it goes as the list key of that view.
   if (query.view === "editor") return new URLSearchParams({ view: "editor", of: query.of ? keyOf(query.of) : "" }).toString();
   const params = new URLSearchParams(query);
 
@@ -73,6 +84,9 @@ function readHash(): { query: PageQuery; node: string | null } | null {
   const name = params.get("name");
   const id = params.get("id");
 
+  // One case per view kind, each demanding the params it needs: a fragment with a
+  // missing name or ID is no view (null), so a broken link opens nothing rather than a wrong view.
+  // The non-diagram modes keep no selected node.
   if ((view === "flow" || view === "discovered") && name) return { query: { view, name }, node };
   const depth = params.get("depth");
 
@@ -108,6 +122,7 @@ function readHash(): { query: PageQuery; node: string | null } | null {
 function viewOfKey(key: string): ViewQuery | null {
   if (key === "layers") return { view: "layers" };
   const at = key.indexOf(":");
+  // `<kind>:<rest>`: split on the first colon only, since IDs and names may hold more.
   const kind = key.slice(0, at);
   const rest = key.slice(at + 1);
 
@@ -122,6 +137,7 @@ function viewOfKey(key: string): ViewQuery | null {
   if (kind === "system" || kind === "er") return { view: kind, name: rest };
 
   if (kind === "sequence") {
+    // `sequence:<system>/<sequence>`: the first slash splits the system from the sequence.
     const slash = rest.indexOf("/");
 
     return slash > 0 ? { view: "sequence", name: rest.slice(0, slash), seq: rest.slice(slash + 1) } : null;
@@ -130,6 +146,7 @@ function viewOfKey(key: string): ViewQuery | null {
   return null;
 }
 
+/** The list key of a query (`flow:checkout`, `entry:<id>`, `layers`); `viewOfKey` reads it back for the drawable views. */
 function keyOf(query: PageQuery): string {
   switch (query.view) {
     case "flow":
@@ -163,6 +180,7 @@ function keyOf(query: PageQuery): string {
 function exploreItemsOf(views: Views): ListItem[] {
   const items: ListItem[] = [];
 
+  // Each item's `search` is the lowercased text the filter matches; `group` is its heading in the list.
   for (const entry of views.entries) {
     const query: PageQuery = { view: "explore", id: entry.id };
     items.push({ key: keyOf(query), label: entry.label, hint: entry.kind, group: `Точки входу · ${entry.kind}`, search: `${entry.label} ${entry.id} ${entry.kind}`.toLowerCase(), title: `${entry.label}\n${entry.id}`, query });
@@ -179,8 +197,10 @@ function exploreItemsOf(views: Views): ListItem[] {
 /** Every view `/api/views` offers: flows by trigger layer, discovered flows by layer, entry points by kind, the layers view. */
 function itemsOf(views: Views): ListItem[] {
   const items: ListItem[] = [];
+  // An answer without `flowList` names the flows only: list them with no place or layer.
   const flows = views.flowList ?? views.flows.map((name) => ({ name, file: "", line: 0, trigger: null, layer: null, ids: [] }));
 
+  // Written flows, grouped by the layer of their trigger; the search text includes their IDs.
   for (const flow of flows) {
     const query: ViewQuery = { view: "flow", name: flow.name };
     items.push({ key: keyOf(query), label: flow.name, hint: "flow", group: `Флоу · ${flow.layer ?? "—"}`, search: [flow.name, flow.file, ...(flow.ids ?? [])].join(" ").toLowerCase(), title: [flow.name, flow.file && `${flow.file}:${flow.line}`, flow.trigger].filter(Boolean).join("\n"), query });
@@ -219,6 +239,7 @@ function itemsOf(views: Views): ListItem[] {
   return items;
 }
 
+/** The status text of a failed request; a 403 on the live server means the tab lost its token. */
 function explain(cause: unknown): string {
   if (cause instanceof ApiError && cause.status === 403 && transport().kind === "server" && !readOnlyPage()) return "No access: open the URL printed by `keylang web` (it carries the access token).";
 
@@ -233,6 +254,7 @@ function covers(id: string, target: string | undefined): boolean {
 /** The name of the system discovered from the code (src/system-discover.ts `DISCOVERED`). */
 const CODE_SYSTEM = "@code";
 
+/** Ukrainian names of the component kinds for the side panel. */
 const COMPONENT_NAME = new Map(Object.entries({
   client: "клієнт",
   cdn: "CDN",
@@ -252,8 +274,10 @@ const COMPONENT_NAME = new Map(Object.entries({
   external: "зовнішній сервіс",
 }));
 
+/** Headings of a system's interview notes, by note kind. */
 const NOTE_NAME = new Map(Object.entries({ requirement: "Вимоги", nfr: "Нефункціональні", estimate: "Оцінки", tradeoff: "Компроміси", question: "Відкриті питання" }));
 
+/** How the side panel names a shape's kind. */
 const KIND_NAME = new Map(Object.entries({
   component: "компонент системи",
   table: "таблиця",
@@ -271,6 +295,7 @@ const KIND_NAME = new Map(Object.entries({
   layer: "layer",
 }));
 
+/** The diagram page: the list, the canvas, the side panel and the other modes' panes, kept in step with the URL fragment. */
 class Page {
   private readonly api: Api;
   private readonly list: VirtualList;
@@ -279,6 +304,7 @@ class Page {
   private readonly details = element<HTMLElement>("details");
   private readonly search = element<HTMLInputElement>("search");
   private views: Views | null = null;
+  /** The last answers as JSON text: a poll that brings the same text redraws nothing. */
   private viewsText = "";
   private diagramText = "";
   private active: PageQuery | null = null;
@@ -336,6 +362,7 @@ class Page {
     this.docs = new Docs(element("docs"), this.api, { status: statusOf("docs"), open: (path: string, at: string | null) => void this.open(at === null ? { view: "docs", path } : { view: "docs", path, at }) });
     this.changes = new Changes(element("changes"), this.api, { ...host, status: statusOf("changes"), openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }) });
 
+    // The mode tabs: each reopens what that mode showed last; «Діаграми» goes back to the last diagram.
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
       tab.addEventListener("click", () => {
         const mode = tab.dataset["mode"];
@@ -363,6 +390,7 @@ class Page {
       window.clearTimeout(this.searchTimer);
       this.searchTimer = window.setTimeout(() => void this.searchCode(this.search.value.trim()), 250);
     });
+    // Enter opens the first item the filter left.
     this.search.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       const first = this.list.visibleItems()[0];
@@ -374,6 +402,7 @@ class Page {
 
       if (id) void this.findUsages(id);
     });
+    // The toolbar: zoom, export of the open view (the editor exports the view it holds) and the bundle copy.
     element<HTMLButtonElement>("zoom-in").addEventListener("click", () => this.canvas.zoomAt(1.25));
     element<HTMLButtonElement>("zoom-out").addEventListener("click", () => this.canvas.zoomAt(1 / 1.25));
     element<HTMLButtonElement>("zoom-fit").addEventListener("click", () => this.canvas.fit());
@@ -398,6 +427,7 @@ class Page {
       const active = this.active;
 
       if (active?.view !== "entry") return;
+      // The default depth leaves the query without `depth`, so its fragment matches a plain entry link.
       void this.open(this.depth.value === String(DEFAULT_DEPTH) ? { view: "entry", id: active.id } : { view: "entry", id: active.id, depth: this.depth.value });
     });
     element("toolbar").insertBefore(this.depth, element("zoom-out"));
@@ -414,6 +444,8 @@ class Page {
     this.systemBar.id = "system-bar";
     this.systemBar.hidden = true;
     element("stage").append(this.systemBar);
+    // Ctrl/Cmd+C in the diagrams mode copies the open view as a bundle, unless the
+    // focus is in a text field or the person selected text.
     document.addEventListener("keydown", (event) => {
       if (this.mode !== "diagrams" || readOnlyPage() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c" || event.shiftKey) return;
       const target = event.target;
@@ -425,6 +457,7 @@ class Page {
       event.preventDefault();
       void this.copyBundle(false);
     });
+    // Back/forward or an edited fragment: open what it names, unless that view is already open.
     window.addEventListener("hashchange", () => {
       const wanted = readHash();
 
@@ -435,6 +468,7 @@ class Page {
     this.renderDetails(null);
   }
 
+  /** Loads the list, opens the view the fragment names, then starts polling. */
   async start(): Promise<void> {
     this.status.textContent = "loading views…";
 
@@ -451,6 +485,7 @@ class Page {
     this.poll();
   }
 
+  /** Asks `/api/views` and refills the list when the answer changed; whether it did. */
   private async loadViews(): Promise<boolean> {
     const views = await this.api.views();
     const text = JSON.stringify(views);
@@ -468,6 +503,7 @@ class Page {
   private fillList(): void {
     if (!this.views) return;
     const changed = this.changes.current();
+    // Each mode has its own list: changed files, docs, drawable views, or entry points and events.
     this.items = this.mode === "changes" ? (changed ? changeItems(changed.answer, changed.since) : []) : this.mode === "docs" ? (this.docList ? docItems(this.docList) : []) : this.mode === "diagrams" || this.mode === "editor" ? itemsOf(this.views) : exploreItemsOf(this.views);
 
     // The code the search found, after the views: in the modes that open a module or a fn.
@@ -481,6 +517,7 @@ class Page {
    * its dependency graph, a fn or type the explorer. A static export has no search: the views only.
    */
   private async searchCode(text: string): Promise<void> {
+    // Too short to be useful, or no server to ask: drop any earlier hits.
     if (text.length < 2 || transport().kind === "static") {
       if (this.codeHits) {
         this.codeHits = null;
@@ -493,6 +530,7 @@ class Page {
     try {
       const found = await this.api.search(text);
 
+      // The person typed on while we waited: a newer search will answer, so drop this stale one.
       if (this.search.value.trim() !== text) return;
 
       const items: ListItem[] = found.hits.map((hit) => {
@@ -554,6 +592,10 @@ class Page {
     }, POLL_MS);
   }
 
+  /**
+   * Opens a query in its mode and records it in the fragment. Every await is followed by a check
+   * that `this.active` is still this query, so a slow answer never draws over a newer choice.
+   */
   async open(wanted: PageQuery, node: string | null = null): Promise<void> {
     this.active = wanted;
     this.node = node;
@@ -565,6 +607,7 @@ class Page {
     this.list.reveal(listKey);
     this.writeHash();
 
+    // The other modes hand over to their own pane.
     if (wanted.view === "explore") return this.explorer.show(wanted.id);
 
     if (wanted.view === "blind") return this.blind.show();
@@ -586,6 +629,7 @@ class Page {
         return;
       }
 
+      // The docs list was only just filled: mark and scroll to the open file again.
       this.list.setActive(listKey);
       this.list.reveal(listKey);
 
@@ -593,6 +637,7 @@ class Page {
     }
 
     if (wanted.view === "editor") return this.openEditor(wanted.of);
+    // A drawable view from here on.
     const query: ViewQuery = wanted;
     this.lastDiagram = query;
     // A static export holds each entry point at the default depth only.
@@ -605,6 +650,7 @@ class Page {
       const diagram = await this.api.diagram(query);
 
       if (this.active !== query) return;
+      // A fresh open always redraws and fits, even when the answer equals the last one.
       this.diagramText = "";
       this.showDiagram(diagram, false);
 
@@ -626,6 +672,7 @@ class Page {
   private async openEditor(of: ViewQuery | null): Promise<void> {
     const key = of ? keyOf(of) : "";
 
+    // The editor already holds this view (and maybe unsaved edits): leave it as it is.
     if (key !== "" && key === this.editor.view()) return;
 
     if (!of) return this.editor.openEmpty();
@@ -634,6 +681,7 @@ class Page {
     try {
       const diagram = await this.api.diagram(of);
 
+      // The person moved on while the diagram loaded.
       if (this.active?.view !== "editor" || !this.active.of || keyOf(this.active.of) !== key) return;
       await this.editor.openDiagram(key, diagram);
     } catch (error) {
@@ -644,6 +692,7 @@ class Page {
   /** The layers view as the matrix when chosen, or when its edges are too many to draw; any other view as drawn. Whether the matrix is shown. */
   private showMatrix(diagram: Diagram): boolean {
     const layers = this.active?.view === "layers";
+    // The person's choice wins; with none, the edge count decides.
     const matrix = layers && (this.matrixMode ?? diagram.edges.length > MATRIX_FROM);
     this.matrixToggle.hidden = !layers;
     this.matrixToggle.textContent = matrix ? "схема" : "матриця";
@@ -656,6 +705,7 @@ class Page {
     return matrix;
   }
 
+  /** Draws a diagram (or its matrix) and sets the status counts; `keepView` is a poll's refresh that keeps zoom, pan and the panel's node. */
   private showDiagram(diagram: Diagram, keepView: boolean): void {
     const text = JSON.stringify(diagram);
     this.shownDiagram = diagram;
@@ -668,12 +718,14 @@ class Page {
       return;
     }
 
+    // The same answer as drawn: a poll changes nothing on screen.
     if (text === this.diagramText) return;
     this.diagramText = text;
     this.renderSystemBar(diagram);
     this.canvas.show(diagram, keepView);
     this.canvas.select(this.node);
     this.markCanvas();
+    // Counts for the status line: failed and unverified shapes, and holes.
     const counts = { fail: 0, unverified: 0, holes: 0 };
 
     for (const node of diagram.nodes) {
@@ -711,6 +763,7 @@ class Page {
       return;
     }
 
+    // The shapes as drawn: canvas key, keylang ID (empty for shapes with no ID) and box, for the layout block.
     const diagram = this.canvas.current();
     const shapes: ClipShape[] = diagram.nodes.map((n) => ({ key: n.id, id: n.ref?.id ?? "", kind: n.kind, label: n.label, layer: n.group ?? null, x: n.x, y: n.y, w: n.w, h: n.h }));
 
@@ -724,6 +777,7 @@ class Page {
 
     try {
       const answer = await this.api.bundle({ view: keyOf(query), shapes, edges });
+      // The button may fall back to a dialog when the clipboard is refused; the shortcut only tries the clipboard.
       const way = fromButton ? await writeClipboard(answer.text) : await navigator.clipboard.writeText(answer.text).then(() => "clipboard" as const, () => "refused" as const);
       this.status.textContent = way === "clipboard" ? `copied as a bundle: ${answer.flows.join(", ")} · ${answer.shapes} shape(s) — paste it with Ctrl+V in the editor of another keylang web` : way === "dialog" ? "the bundle is selected in the dialog: Ctrl+C copies it" : "the browser refused the clipboard: «Копіювати як пакет» shows the bundle to copy";
     } catch (error) {
@@ -731,6 +785,7 @@ class Page {
     }
   }
 
+  /** Puts the open query and node in the fragment without a history entry; an unchanged fragment is left alone. */
   private writeHash(): void {
     if (!this.active) return;
     const hash = hashOf(this.active, this.node);
@@ -749,13 +804,16 @@ class Page {
     if (document.body.dataset["matrix"] === "1" && this.shownDiagram) renderMatrix(element("matrix"), this.shownDiagram, (next) => this.pick(next), this.node);
   }
 
+  /** A `vscode://` link to a file and line of the repository. */
   private link(file: string, line: number | undefined): HTMLElement {
     return codeLink(this.views?.root, file, line);
   }
 
+  /** The side panel: the picked shape's facts and actions, then the usages block; with neither, the system's notes or a hint. */
   private renderDetails(node: DiagramNode | null): void {
     const body: Node[] = [];
 
+    // The picked shape: a table of its facts, the reason of a hole, its verdicts, then buttons.
     if (node) {
       body.push(make("h2", { text: node.label }));
       const rows: [string, Node | string][] = [["kind", node.component ? `${COMPONENT_NAME.get(node.component) ?? node.component} (${node.component})` : (KIND_NAME.get(node.kind) ?? node.kind)]];
@@ -845,6 +903,7 @@ class Page {
     this.renderDetails(this.canvas.current().nodes.find((n) => n.id === this.node) ?? null);
   }
 
+  /** The usages of an ID in the panel: a button per flow or entry point, which opens it and centres the first shape under the ID. */
   private usagesBlock(usages: Usages): HTMLElement {
     const block = make("section", { className: "usages" });
     block.id = "usages";
@@ -881,6 +940,7 @@ class Page {
     return block;
   }
 
+  /** Drops the usages: the list, the canvas and the panel lose their marks. */
   private clearUsages(): void {
     this.usages = null;
     this.markList();
@@ -888,6 +948,7 @@ class Page {
     this.renderDetails(this.canvas.current().nodes.find((n) => n.id === this.node) ?? null);
   }
 
+  /** Marks the list items of the views the usages found; none without usages. */
   private markList(): void {
     const usages = this.usages;
 
@@ -901,6 +962,7 @@ class Page {
     );
   }
 
+  /** Marks the shapes whose ID is the usages' ID or under it. */
   private markCanvas(): void {
     const id = this.usages?.id;
     this.canvas.markUsed(id === undefined ? () => false : (node) => covers(id, node.ref?.id));
@@ -920,6 +982,7 @@ class Page {
     if (this.node === null) this.renderDetails(null);
 
     if (!system || active === null) return;
+    // One button per view of the system: the scheme, ER when it has tables, then each sequence.
     const views: ViewQuery[] = [{ view: "system", name: system.name }, ...(system.tables > 0 ? [{ view: "er" as const, name: system.name }] : []), ...system.sequences.map((seq): ViewQuery => ({ view: "sequence", name: system.name, seq }))];
     const switcher = make("div", { className: "system-views" });
 
@@ -946,6 +1009,7 @@ class Page {
 
     if (system.name === CODE_SYSTEM) out.push(make("p", { className: "empty", text: "Виведено з коду: шари з точками входу — сервіси й воркери, імпортовані драйвери — сховища, черги й зовнішні сервіси. `keylang system discover` друкує це як `# system`." }));
 
+    // Notes in a fixed order of kinds, so the panel reads the same every time.
     for (const kind of ["requirement", "nfr", "estimate", "tradeoff", "question"]) {
       const own = system.notes.filter((note) => note.kind === kind);
 
@@ -961,6 +1025,7 @@ class Page {
     return out;
   }
 
+  /** The legend under the canvas: the verdict colours, then the shapes of a flow or of a system. */
   private legend(system = false): void {
     const legend = element<HTMLElement>("legend");
     const rows: Node[] = [];

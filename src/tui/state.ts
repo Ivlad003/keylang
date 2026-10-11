@@ -1,5 +1,9 @@
 // The state of one TUI session. The same state drives the terminal and the
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
+//
+// Layer: TUI. Types only: `app.ts` owns and mutates a `State`, `view.ts`
+// draws it, and the panels and forms read the parts they need. The analysis
+// it holds is the shared one (Markdown -> IR -> resolve/rules over the snapshot).
 
 import type { Analysis } from "../analyze.ts";
 import type { C4Format, C4Level } from "../c4-export.ts";
@@ -13,10 +17,13 @@ import type { ClipState } from "./clip.ts";
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
+/** What the editor area shows: the spec (view/edit), reading mode, code, a merge, or the zoom screen. */
 export type Mode = "view" | "edit" | "read" | "code" | "merge" | "zoom";
 
+/** Which part of the screen takes the keys. */
 export type Focus = "editor" | "nav" | "files" | "context" | "results";
 
+/** A position in a buffer. */
 export interface Cursor {
   /** 0-based line. */
   line: number;
@@ -24,6 +31,7 @@ export interface Cursor {
   col: number;
 }
 
+/** One open file: its text, what is saved, and the state of saving and undo. */
 export interface Buffer {
   path: string;
   text: string;
@@ -50,6 +58,7 @@ export interface Buffer {
   version: number;
 }
 
+/** The hover popup: where it is anchored and its lines. */
 export interface Hover {
   /** Screen cell the popup is anchored at. */
   x: number;
@@ -59,6 +68,7 @@ export interface Hover {
   source: "mouse" | "key";
 }
 
+/** The built-in code viewer on one source file. */
 export interface CodeView {
   file: string;
   /** 1-based target line. */
@@ -69,6 +79,7 @@ export interface CodeView {
   link: string;
 }
 
+/** A merge in progress: the base, the hunks of the proposed version, and the decision on each. */
 export interface MergeState {
   path: string;
   /** `proposal`: a spec under `.keylang/proposals/`; `code`: a source file there (`spec-to-code`); `text-to-spec`: from `Ctrl+G`. */
@@ -94,6 +105,7 @@ export interface MergeState {
   top: number;
 }
 
+/** What the last merge changed, so `u` in the view can undo it while nothing changed since. */
 export interface LastMerge {
   path: string;
   /** Buffer text before and after the merge; `u` applies only while the buffer still holds `after`. */
@@ -111,6 +123,7 @@ export interface LastMerge {
   code?: true;
 }
 
+/** The open prompt: the palette, a search, a picker, or an operation form; its kind decides which fields are set. */
 export interface Prompt {
   /**
    * `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`);
@@ -267,6 +280,7 @@ export interface ExportForm {
 /** The kinds of a new specification: its first text follows the kind (design §2.8). */
 export type SpecKind = "flow" | "rules" | "wiring" | "feature" | "blank";
 
+/** The new-spec form while it is open. */
 export interface NewSpecForm {
   /** `kind`: choose from the items; `path`: the text is the relative path; `name`: the text is the flow name. */
   field: "kind" | "path" | "name";
@@ -347,6 +361,7 @@ export type ConfigState =
   /** `keylang.json` does not parse or validate: `reason` names the field; the analyzer is not run. */
   | { kind: "invalid-config"; reason: string };
 
+/** A place to jump back to: a file, a cursor and a mode. */
 export interface Place {
   path: string;
   cursor: Cursor;
@@ -374,6 +389,7 @@ export interface ZoomState {
   flow: string | null;
 }
 
+/** Everything one session shows and edits. */
 export interface State {
   root: string;
   config: ConfigState;

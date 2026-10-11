@@ -19,6 +19,11 @@
 // Edges: `Depends(f)` → `via: "injected"` from the fn whose parameter or
 // route declares it; `task.delay()` → `via: "dispatch"` to the task;
 // `signal.send()` → `via: "observer"` to each receiver.
+//
+// Pipeline place: after source → FileFacts → graph, before the snapshot. It
+// reads the Python files' facts (statements, decorators, calls, imports) and
+// writes entry points, framework edges and holes onto the graph. Entry point:
+// `pythonWebEntries`; the work is done by the `PythonWeb` class in passes.
 
 import type { Config } from "./config.ts";
 import { fnIn, frameworkEntry, type EntryScope } from "./entries.ts";
@@ -36,6 +41,7 @@ type Ref =
   /** A name of a package or of the standard library: `fastapi.APIRouter`. */
   | { kind: "external"; qualified: string };
 
+/** The framework objects a module-level constructor call can make. */
 type ObjectKind = "fastapi" | "flask" | "blueprint" | "celery" | "signal";
 
 /** An object a module-level statement makes with a framework's constructor: `router = APIRouter(prefix="/x")`. */
@@ -60,6 +66,7 @@ interface Mount {
   replaces: boolean;
 }
 
+/** A fn connected to a signal, with the label its entry shows and where it was connected. */
 interface Receiver {
   fn: string;
   signal: string;
@@ -67,10 +74,13 @@ interface Receiver {
   site: string;
 }
 
+// Decorator verbs that register a route for one HTTP method (FastAPI, Flask).
 const HTTP_VERBS = ["get", "post", "put", "patch", "delete", "head", "options", "trace"];
 
+// Methods of a Django class-based view that handle a request.
 const VIEW_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
+/** Entry points and unanswered registrations (holes) the adapters found. */
 export interface PythonWebResult {
   entries: EntryPoint[];
   holes: Gap[];
@@ -86,6 +96,7 @@ export function pythonWebEntries(config: Config, graph: Graph, facts: readonly F
   return new PythonWeb(config, graph, facts, scope, new Set(active)).run();
 }
 
+/** One pass of the Python web adapters over the facts; its state is the objects, mounts and registrations found so far. */
 class PythonWeb {
   private readonly files: Map<string, FileFacts>;
   private readonly resolver: PythonResolver;
@@ -116,6 +127,7 @@ class PythonWeb {
     this.files = new Map(facts.flatMap((f) => (f.path.endsWith(".py") ? [[f.path, f] as const] : [])));
     this.resolver = new PythonResolver(config.root, new Set(facts.map((f) => f.path)));
 
+    // Index every fn of the graph by ID, walking nested modules and classes.
     const visit = (module: Module): void => {
       for (const fn of module.fns) this.fns.set(fn.id, fn);
 
@@ -125,7 +137,10 @@ class PythonWeb {
     for (const layer of graph.layers) for (const module of layer.modules) visit(module);
   }
 
+  /** The passes in dependency order; each pass reads every file before the next starts. */
   run(): PythonWebResult {
+    // Objects first (routers, apps, signals), then mounts between them, so
+    // routes and receivers can resolve their object and its prefixes.
     for (const file of this.files.values()) this.collectObjects(file);
 
     for (const file of this.files.values()) this.collectMounts(file);
@@ -143,6 +158,8 @@ class PythonWeb {
 
     if (this.active.has("celery")) for (const file of this.files.values()) this.beat(file);
 
+    // Calls that dispatch (`.delay()`, `.send()`) last: they need every task and
+    // receiver; then events and the lifting of answered holes.
     for (const file of this.files.values()) this.dispatches(file);
     this.signalEvents();
     this.lift();
@@ -156,12 +173,16 @@ class PythonWeb {
   private resolve(file: string, dotted: string, depth = 0): Ref | null {
     const facts = this.files.get(file);
 
+    // The depth limit stops a cycle of re-exports between modules.
     if (facts === undefined || depth > 8 || dotted === "") return null;
     const parts = dotted.split(".");
 
+    // Declared in the file itself: a name here, with the rest as attributes.
     if (this.declares(facts, parts[0]!)) return { kind: "name", file, name: parts[0]!, rest: parts.slice(1) };
     let best: { source: string; length: number; module: boolean } | null = null;
 
+    // Otherwise the import whose local name is the longest prefix of `dotted`
+    // (`import a.b` binds `a.b`, which beats `import a` for `a.b.c`).
     for (const imp of facts.imports) {
       for (const binding of imp.bindings) {
         const local = binding.local.split(".");
@@ -176,6 +197,7 @@ class PythonWeb {
     const rest = parts.slice(best.length);
     const found = this.resolver.resolve(file, best.source);
 
+    // Into the repository: continue in the target module; into a package: the qualified name.
     if (found.kind === "internal") {
       const head: Ref = found.whole === true || best.module ? { kind: "module", file: found.file } : { kind: "name", file: found.file, name: best.source.slice(best.source.lastIndexOf(".") + 1), rest: [] };
 
@@ -200,6 +222,7 @@ class PythonWeb {
     return ref;
   }
 
+  /** `name` of `file` with `rest`: declared there, or re-resolved through that file's own imports. */
   private follow(file: string, name: string, rest: string[], depth: number): Ref | null {
     const facts = this.files.get(file);
 
@@ -226,6 +249,7 @@ class PythonWeb {
     return ref?.kind === "external" ? ref.qualified : null;
   }
 
+  /** The ID of the fn `dotted` names in `file`, or null when it names none. */
   private fnOf(file: string, dotted: string): string | null {
     const ref = this.resolve(file, dotted);
 
@@ -234,6 +258,7 @@ class PythonWeb {
     return fnIn(this.scope, ref.file, [ref.name, ...ref.rest].join("."));
   }
 
+  /** The class module `dotted` names in `file`, or null. */
   private classOf(file: string, dotted: string): Module | null {
     const ref = this.resolve(file, dotted);
 
@@ -242,6 +267,7 @@ class PythonWeb {
     return this.graph.byPath.get(ref.file)?.children.find((c) => c.class && c.name === ref.name && (c.path === null || c.path === ref.file)) ?? null;
   }
 
+  /** The framework object `dotted` names in `file`, or null. */
   private objectOf(file: string, dotted: string): FrameworkObject | null {
     const ref = this.resolve(file, dotted);
 
@@ -250,7 +276,9 @@ class PythonWeb {
 
   // Objects and mounts.
 
+  /** `x = Constructor(…)` at module level where the constructor is a framework's: routers, apps, blueprints, Celery apps, signals. */
   private collectObjects(file: FileFacts): void {
+    // Only plain `name = call(…)` statements; `a.b = …` and `x += …` make no object.
     for (const s of file.statements ?? []) {
       if (s.target === null || s.target.includes(".") || s.augmented || s.value.kind !== "call") continue;
       const q = this.qualified(file.path, s.value.callee);
@@ -264,6 +292,7 @@ class PythonWeb {
     }
   }
 
+  /** `parent.include_router(child)` / `app.register_blueprint(bp)` at module level; a child that is no known object is a hole. */
   private collectMounts(file: FileFacts): void {
     for (const s of file.statements ?? []) {
       if (s.target !== null || s.value.kind !== "call") continue;
@@ -296,6 +325,8 @@ class PythonWeb {
     const parents = this.mounts.filter((m) => m.child === key && !seen.has(m.parent));
 
     if (parents.length === 0) return [own.prefix];
+    // Recurse up through every mount (an object may be mounted in several
+    // places); `seen` breaks mount cycles. Sorted for a stable entry order.
     const next = new Set([...seen, key]);
     const out = new Set<string>();
 
@@ -310,7 +341,9 @@ class PythonWeb {
 
   // Decorators: routes, tasks, receivers.
 
+  /** Every decorator of the file: a route of a known router/app, a Celery task, or a Django `@receiver`. */
   private decorated(file: FileFacts): void {
+    // `@obj.verb(…)`: split the object from the verb; `q` is the decorator's package name, if any.
     for (const d of file.decorators ?? []) {
       const dot = d.name.lastIndexOf(".");
       const verb = d.name.slice(dot + 1);
@@ -324,8 +357,10 @@ class PythonWeb {
     }
   }
 
+  /** A route decorator: one entry per URL prefix and HTTP method, plus FastAPI `dependencies`. */
   private route(file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number], object: FrameworkObject, verb: string): void {
     const at = `${file.path}:${d.line}`;
+    // The path is the first argument, or `path=` (FastAPI) / `rule=` (Flask).
     const fn = fnIn(this.scope, file.path, d.target);
     const path = str(d.call?.args[0] ?? kwarg(d.call?.kwargs ?? [], "path") ?? kwarg(d.call?.kwargs ?? [], "rule"));
 
@@ -338,6 +373,7 @@ class PythonWeb {
     this.registered.add(`${file.path}:${d.line}:${d.col}`);
     const framework = object.kind === "fastapi" ? "fastapi" : "flask";
 
+    // `websocket` has no HTTP method; `route`/`api_route` take `methods=`, defaulting to GET.
     const methods =
       verb === "websocket" ? [null]
       : verb === "route" || verb === "api_route" ? (strings(kwarg(d.call?.kwargs ?? [], "methods")) ?? ["GET"]).map((m) => m.toUpperCase())
@@ -352,6 +388,7 @@ class PythonWeb {
       }
     }
 
+    // The route's own dependencies and those of its router both run for it.
     if (framework === "fastapi") {
       const dependencies = kwarg(d.call?.kwargs ?? [], "dependencies");
 
@@ -361,6 +398,7 @@ class PythonWeb {
     }
   }
 
+  /** A Celery task: a `consumer` entry under its registered name (`name=`, else `module.fn`). */
   private task(file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]): void {
     const fn = fnIn(this.scope, file.path, d.target);
 
@@ -377,6 +415,7 @@ class PythonWeb {
     this.entries.push(frameworkEntry(this.scope, "celery", "consumer", fn, name, `${file.path}:${d.line}`, { file: file.path, line: d.line }));
   }
 
+  /** `@receiver(signal | [signals], sender=…)`: one receiver per signal. */
   private receiver(file: FileFacts, d: NonNullable<FileFacts["decorators"]>[number]): void {
     const fn = fnIn(this.scope, file.path, d.target);
     const first = d.call?.args[0];
@@ -403,6 +442,7 @@ class PythonWeb {
       return;
     }
 
+    // The signal's short name: after the last `.` (Django's) or `#` (the repository's).
     const name = key.slice(Math.max(key.lastIndexOf("."), key.lastIndexOf("#")) + 1);
     const label = sender?.kind === "name" ? `${name} (sender=${sender.value})` : name;
     const site = `${file}:${line}:${col}`;
@@ -414,6 +454,7 @@ class PythonWeb {
   private signalKey(file: string, dotted: string): string | null {
     const ref = this.resolve(file, dotted);
 
+    // A Django signal lives in a `signals` module (`django.db.models.signals.post_save`).
     if (ref?.kind === "external") return isQualified(ref.qualified, "django", []) && /\.signals\.[A-Za-z_]+$/.test(ref.qualified) ? ref.qualified : null;
 
     if (ref?.kind === "name" && ref.rest.length === 0) return this.objects.get(`${ref.file}#${ref.name}`)?.kind === "signal" ? `${ref.file}#${ref.name}` : null;
@@ -441,6 +482,7 @@ class PythonWeb {
       this.observe(file.path, s.line, s.col, { kind: "name", value: signal }, fn, kwarg(s.value.kwargs, "sender"));
     }
 
+    // The same inside functions (`AppConfig.ready`), where the handler is a passed reference.
     this.eachCall(file, (_caller, c) => {
       if (!c.callee.endsWith(".connect") || c.bound) return;
       const signal = c.callee.slice(0, -".connect".length);
@@ -461,6 +503,8 @@ class PythonWeb {
 
   /** `urlpatterns` from each root urls module (one no other `include`s), with the prefixes `include` adds. */
   private urls(): void {
+    // Two passes: find which urls modules are included by others, then walk
+    // only the roots, so each included module gets the prefixes of its includes.
     const urlFiles = [...this.files.values()].filter((f) => (f.statements ?? []).some((s) => s.target === "urlpatterns"));
     const included = new Set<string>();
 
@@ -469,6 +513,7 @@ class PythonWeb {
     for (const file of urlFiles) if (!included.has(file.path)) this.walkUrls(file.path, "", new Set());
   }
 
+  /** The items of every top-level statement of the file that assigns `urlpatterns`. */
   private patterns(file: FileFacts): LiteralValue[] {
     return (file.statements ?? []).filter((s) => s.target === "urlpatterns").flatMap((s) => (s.value.kind === "list" ? s.value.items : [s.value]));
   }
@@ -487,6 +532,8 @@ class PythonWeb {
 
   /** What `include(x)` includes: a urls module's file, an inline list of patterns, or null. */
   private includedFile(file: string, arg: LiteralValue | undefined): string | LiteralValue[] | null {
+    // `include((urls_module, app_name))` (a tuple, read as a list) names the
+    // module first; any other list is an inline list of patterns.
     if (arg?.kind === "list") {
       const first = arg.items[0];
 
@@ -508,6 +555,7 @@ class PythonWeb {
     return null;
   }
 
+  /** Every pattern of a urls module under `prefix`; `seen` stops include cycles. */
   private walkUrls(path: string, prefix: string, seen: ReadonlySet<string>): void {
     const file = this.files.get(path);
 
@@ -517,6 +565,7 @@ class PythonWeb {
     for (const value of this.patterns(file)) this.urlPattern(file, value, prefix, next);
   }
 
+  /** One `path(route, view)`: an include (recursing with a longer prefix), a class-based view, or a function view. */
   private urlPattern(file: FileFacts, value: LiteralValue, prefix: string, seen: ReadonlySet<string>): void {
     const module = this.graph.byPath.get(file.path)?.id ?? null;
 
@@ -537,6 +586,7 @@ class PythonWeb {
       return;
     }
 
+    // A `re_path` regex loses its `^`/`$` anchors so prefixes concatenate.
     const url = `${prefix}${route.replace(/^\^/, "").replace(/\$$/, "")}`;
 
     if (view.kind === "call" && this.isDjango(file.path, view.callee, ["include"])) {
@@ -558,6 +608,8 @@ class PythonWeb {
         return;
       }
 
+      // One entry per handler method the class defines itself; inherited
+      // handlers are not visible, so the class stands in for them.
       const methods = cls.fns.filter((fn) => VIEW_METHODS.includes(fn.written ?? fn.name));
 
       if (methods.length === 0) {
@@ -585,6 +637,7 @@ class PythonWeb {
     this.entries.push(frameworkEntry(this.scope, "django", "route", fn, `/${url}`, at, { file: file.path, line: value.line }));
   }
 
+  /** `callee` in `file` is one of Django's `names` (any module of the `django` package). */
   private isDjango(file: string, callee: string, names: string[]): boolean {
     const q = this.qualified(file, callee);
 
@@ -593,6 +646,7 @@ class PythonWeb {
 
   /** `<app>/management/commands/<name>.py` with a class `Command`: `manage.py <name>` runs its `handle`. */
   private command(file: FileFacts): void {
+    // The command name is the file name; Django skips files starting with `_`.
     const match = /(?:^|\/)management\/commands\/([^/]+)\.py$/.exec(file.path);
     const cls = file.decls.find((d) => d.kind === "class" && d.name === "Command");
 
@@ -608,6 +662,8 @@ class PythonWeb {
 
   /** `beat_schedule = {name: {"task": "…", "schedule": crontab(…)}}`, in a Celery config or Django settings. */
   private beat(file: FileFacts): void {
+    // `beat_schedule = {…}` / `CELERY_BEAT_SCHEDULE = {…}` (also as an attribute,
+    // `app.conf.beat_schedule`), or `app.conf.update(beat_schedule={…})`.
     for (const s of file.statements ?? []) {
       const last = s.target?.slice(s.target.lastIndexOf(".") + 1).toLowerCase();
       const schedule = last === "beat_schedule" || last === "celery_beat_schedule" ? s.value : s.target === null && s.value.kind === "call" && s.value.callee.endsWith(".conf.update") ? kwarg(s.value.kwargs, "beat_schedule") : undefined;
@@ -647,6 +703,7 @@ class PythonWeb {
     }
   }
 
+  /** `Depends(f)` / `Security(f)` → an `injected` edge from `fn` to `f` (or to a class's `__init__`); a package's dependency is left alone. */
   private depends(file: string, fn: string, value: LiteralValue, hook: string): void {
     if (value.kind !== "call") return;
     const q = this.qualified(file, value.callee);
@@ -670,6 +727,7 @@ class PythonWeb {
     this.edge(fn, { target, line: value.line, col: value.col, endLine: value.line, endCol: value.col + value.callee.length, text: `${value.callee}(${text(arg)})`, via: "injected", hook, site });
   }
 
+  /** The `__init__` of the class `dotted` names: what `Depends(SomeClass)` calls. */
   private constructorOf(file: string, dotted: string): string | null {
     const cls = this.classOf(file, dotted);
 
@@ -678,6 +736,7 @@ class PythonWeb {
 
   /** `task.delay()` / `task.apply_async()` → the task (`dispatch`); `signal.send()` → its receivers (`observer`). */
   private dispatches(file: FileFacts): void {
+    // Calls on a bound receiver or an opaque value cannot name a task or signal.
     this.eachCall(file, (caller, c) => {
       if (c.bound || c.opaque) return;
       const task = /^(.+)\.(delay|apply_async)$/.exec(c.callee);
@@ -728,6 +787,7 @@ class PythonWeb {
    * by a suffix, as `eventIds` does; IDs other adapters gave are not reused.
    */
   private signalEvents(): void {
+    // Sorted by short name, then key, so suffixes (`-2`) go to the same signal on every run.
     const name = (key: string): string => key.slice(Math.max(key.lastIndexOf("."), key.lastIndexOf("#")) + 1);
     const keys = [...new Set([...this.receivers.keys(), ...this.sends.keys()])].sort((a, b) => compare(name(a), name(b)) || compare(a, b));
 
@@ -770,6 +830,7 @@ class PythonWeb {
       }
     }
 
+    // Keep the event list in ID order, whatever order the adapters added to it.
     events.sort((a, b) => compare(a.id, b.id));
   }
 
@@ -791,6 +852,7 @@ class PythonWeb {
     for (const d of file.decls) each(d, d.name);
   }
 
+  /** Adds `call` to the fn `source`, unless the same edge (target, via, position) is there already. */
   private edge(source: string, call: Call): void {
     const fn = this.fns.get(source);
 
@@ -803,6 +865,7 @@ class PythonWeb {
   /** Lifts the holes a registration answers: a recognised decorator's, a dispatch's or a send's call. */
   private lift(): void {
     const { graph } = this;
+    // A lifted call hole becomes a resolved call in the stats, so the totals still add up.
     graph.gaps = graph.gaps.filter((gap) => {
       const at = `${gap.file}:${gap.line}:${gap.col}`;
 
@@ -820,11 +883,13 @@ class PythonWeb {
     });
   }
 
+  /** Records an `unsupported` hole: a registration that could not be read, with the reason. */
   private hole(file: string, line: number, col: number, fragment: string, reason: string, source: string | null): void {
     this.holes.push({ kind: "unsupported", file, line, col, endLine: line, endCol: col + 1, text: fragment, reason, source });
   }
 }
 
+/** The kind of framework object a qualified constructor name makes, or null. */
 function objectKind(q: string | null): ObjectKind | null {
   if (q === null) return null;
 
@@ -841,6 +906,7 @@ function objectKind(q: string | null): ObjectKind | null {
   return null;
 }
 
+/** The adapter (framework name) an object kind belongs to. */
 function frameworkOf(kind: ObjectKind): string {
   return kind === "blueprint" ? "flask" : kind === "signal" ? "django" : kind;
 }
@@ -852,14 +918,17 @@ function isQualified(q: string, pkg: string, names: readonly string[]): boolean 
   return parts[0] === pkg && (names.length === 0 || names.includes(parts.at(-1)!));
 }
 
+/** The value of keyword argument `name`, or undefined. */
 function kwarg(kwargs: readonly Kwarg[], name: string): LiteralValue | undefined {
   return kwargs.find((k) => k.name === name)?.value;
 }
 
+/** The value of the string key `key` in a dict literal, or undefined. */
 function entryOf(dict: Extract<LiteralValue, { kind: "dict" }>, key: string): LiteralValue | undefined {
   return dict.entries.find((e) => e.key.kind === "string" && e.key.value === key)?.value;
 }
 
+/** A string literal's value, or undefined for anything else. */
 function str(value: LiteralValue | undefined): string | undefined {
   return value?.kind === "string" ? value.value : undefined;
 }
@@ -933,6 +1002,7 @@ function scheduleText(value: LiteralValue | undefined, qualified: (dotted: strin
 }
 
 
+/** Code-unit order of two strings. */
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

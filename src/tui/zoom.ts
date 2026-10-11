@@ -3,6 +3,11 @@
 // system to the code. A level is a focus, its children, and the nodes outside
 // it that the focus has edges with, as far as `depth` edges away. Pure: the
 // keys in `app.ts` move through it and `view.ts` draws it.
+//
+// A TUI view over the snapshot (source -> FileFacts -> graph -> snapshot ->
+// views). Entry points: `zoomLevel` (the nodes view), `zoomEdges` (the edges
+// view), `flowOverlay` (a flow's steps placed on a level), and the navigation
+// helpers `zoomTarget`, `zoomParent`, `crumbLabel`.
 
 import type { Analysis } from "../analyze.ts";
 import { SYSTEM_ID } from "../explanations.ts";
@@ -19,6 +24,7 @@ export const ZOOM_ROOT = SYSTEM_ID;
 /** Farthest neighbors a level shows: `>` stops here. */
 export const MAX_DEPTH = 3;
 
+/** One line of a level's nodes view: a child of the focus, a neighbor, or the `more` summary. */
 export interface ZoomRow {
   id: string;
   kind: "layer" | "module" | "class" | "package" | "fn" | "type" | "event" | "more";
@@ -36,6 +42,7 @@ export interface ZoomRow {
   more?: number;
 }
 
+/** Everything the nodes view draws for one focus: breadcrumbs and rows. */
 export interface ZoomLevel {
   focus: string;
   /** From the repository down to the focus. */
@@ -44,6 +51,7 @@ export interface ZoomLevel {
   rows: ZoomRow[];
 }
 
+/** Per-analysis lookups the levels share, built once by `indexOf`. */
 interface ZoomIndex {
   /** Layers at the top: the repository's own in the map's order, then packages and files outside the architecture. */
   layers: readonly string[];
@@ -55,8 +63,11 @@ interface ZoomIndex {
   marks: ReadonlyMap<string, Mark>;
 }
 
+// Cached per analysis: a new analysis (after a rescan) is a new key, and the
+// old index is collected with it, so no invalidation is needed.
 const indexes = new WeakMap<Analysis, ZoomIndex>();
 
+/** The `ZoomIndex` of an analysis, built on first use and cached. */
 function indexOf(analysis: Analysis): ZoomIndex {
   const cached = indexes.get(analysis);
 
@@ -66,6 +77,9 @@ function indexOf(analysis: Analysis): ZoomIndex {
   const nodes = snapshot?.nodes ?? {};
   const own = new Set(tree.layers);
 
+  // Layers the code tree does not order (packages, files outside the
+  // architecture) go after the repository's own, sorted by ID with the
+  // external-packages layer last, so the top level is stable across runs.
   const others = Object.keys(nodes)
     .filter((id) => nodes[id]?.kind === "layer" && !own.has(id))
     .sort((a, b) => Number(a === EXTERNAL) - Number(b === EXTERNAL) || compareText(a, b));
@@ -73,6 +87,7 @@ function indexOf(analysis: Analysis): ZoomIndex {
   const layers = [...tree.layers, ...others];
   const parent = new Map<string, string>();
 
+  // Parent links: layers hang under the repository, everything else under its code-tree parent.
   for (const layer of layers) parent.set(layer, ZOOM_ROOT);
 
   for (const [id, kids] of tree.children) for (const kid of kids) parent.set(kid, id);
@@ -99,6 +114,8 @@ function degrees(snapshot: AnalysisSnapshot): Map<string, number> {
     const b = prefixes(edge.target);
     let common = 0;
 
+    // Skip the ancestors both ends share: the edge stays inside them, so it
+    // crosses the boundary only of the ancestors below the common part.
     while (common < a.length && common < b.length && a[common] === b[common]) common++;
 
     for (const id of [...a.slice(common), ...b.slice(common)]) out.set(id, (out.get(id) ?? 0) + 1);
@@ -107,6 +124,7 @@ function degrees(snapshot: AnalysisSnapshot): Map<string, number> {
   return out;
 }
 
+/** The worst verdict for each node, rolled up from the verdict's area to every ancestor ID. */
 function markIndex(analysis: Analysis): Map<string, Mark> {
   const out = new Map<string, Mark>();
 
@@ -119,6 +137,7 @@ function markIndex(analysis: Analysis): Map<string, Mark> {
   return out;
 }
 
+/** Whether `id` is `scope` or lies under it by ID; everything is inside the repository. */
 function inside(id: string, scope: string): boolean {
   return scope === ZOOM_ROOT || id === scope || id.startsWith(`${scope}.`);
 }
@@ -155,11 +174,14 @@ export function zoomTarget(analysis: Analysis, id: string): { focus: string; sel
 /** The name a reader knows a node by on a level: the repository's manifest name, else `system`, and IDs below it. */
 export function crumbLabel(analysis: Analysis, id: string): string {
   if (id === ZOOM_ROOT) return analysis.snapshot?.system?.name ?? "system";
+
+  // Below a module, show the ID relative to it; directly under a layer, the whole ID.
   const above = zoomParent(analysis, id);
 
   return above !== null && above !== ZOOM_ROOT && id.startsWith(`${above}.`) ? id.slice(above.length + 1) : id;
 }
 
+/** The kind a row shows: a module splits into class, package (an external one) or plain module. */
 function rowKind(analysis: Analysis, id: string): ZoomRow["kind"] {
   const node = analysis.snapshot?.nodes[id];
 
@@ -179,6 +201,7 @@ function unitOf(index: ZoomIndex, focusIsLayer: boolean, id: string): string {
   if (!focusIsLayer) return id;
   let unit = id;
 
+  // Climb parents until the next step up would be a layer or the repository.
   for (let up = index.parent.get(unit); up !== undefined && up !== ZOOM_ROOT && !index.layers.includes(up); up = index.parent.get(unit)) unit = up;
 
   return unit;
@@ -204,10 +227,12 @@ export function zoomLevel(analysis: Analysis, focus: string, depth: number): Zoo
     mark: index.marks.get(id) ?? null,
   });
 
+  // Children first, labelled by their name under the focus (layers by their whole ID).
   const children = focus === ZOOM_ROOT ? index.layers : (index.children.get(focus) ?? []);
   const rows = children.map((id) => row(id, 0, focus === ZOOM_ROOT ? id : id.slice(focus.length + 1)));
   const crumbs: ZoomLevel["crumbs"] = [];
 
+  // Breadcrumbs: climb from the focus to the repository, prepending so they read top-down.
   for (let at: string | null = focus; at !== null; at = zoomParent(analysis, at)) crumbs.unshift({ id: at, label: crumbLabel(analysis, at) });
 
   if (focus === ZOOM_ROOT || !snapshot) return { focus, crumbs, rows };
@@ -225,6 +250,8 @@ export function zoomLevel(analysis: Analysis, focus: string, depth: number): Zoo
     set.add(b);
   };
 
+  // An undirected unit graph: direction does not matter for "how far away".
+  // Unresolved edges have no target and add nothing.
   for (const edge of snapshot.edges) {
     if (edge.target === null) continue;
     const a = unit(edge.source);
@@ -236,6 +263,8 @@ export function zoomLevel(analysis: Analysis, focus: string, depth: number): Zoo
   const distance = new Map<string, number>([[focus, 0]]);
   let frontier = [focus];
 
+  // Breadth-first, one ring per distance. It goes one ring past `depth` only
+  // to count what the `more` row leaves out.
   for (let d = 1; d <= depth + 1 && frontier.length > 0; d++) {
     const next: string[] = [];
 
@@ -252,6 +281,7 @@ export function zoomLevel(analysis: Analysis, focus: string, depth: number): Zoo
 
   // A module whose own member is as near says nothing more: the import is how the call gets there.
   const shadowed = (id: string, d: number): boolean => !focusIsLayer && [...distance].some(([other, od]) => od <= d && other !== id && other.startsWith(`${id}.`));
+  // Neighbors within depth, nearest first and by ID within a ring, so the rows are stable.
   const near = [...distance].filter(([id, d]) => id !== focus && d <= depth && !shadowed(id, d)).sort(([a, da], [b, db]) => da - db || compareText(a, b));
   rows.push(...near.map(([id, d]) => row(id, d, id)));
   const past = [...distance].filter(([id, d]) => d === depth + 1 && !shadowed(id, d)).length;
@@ -296,6 +326,7 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
   const index = indexOf(analysis);
   const children = focus === ZOOM_ROOT ? index.layers : (index.children.get(focus) ?? []);
   const focusIsLayer = snapshot.nodes[focus]?.kind === "layer";
+  // Each end becomes a child of the focus when inside it, else a unit grouped as the nodes view groups neighbors.
   const childOf = (id: string): string => children.find((child) => inside(id, child)) ?? focus;
   const end = (id: string): { unit: string; in: boolean } => (inside(id, focus) ? { unit: childOf(id), in: true } : { unit: unitOf(index, focusIsLayer, id), in: false });
   const rows = new Map<string, ZoomEdge>();
@@ -305,10 +336,14 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
     const a = end(edge.source);
     const b = end(edge.target);
 
+    // Edges that never touch the focus, and edges within one unit, are not on this level.
     if (!a.in && !b.in) continue;
 
     if (a.unit === b.unit) continue;
+
+    // Classify: both inside, coming in, going to a package, or going out to other code.
     const group: ZoomEdge["group"] = a.in && b.in ? "inside" : !a.in ? "in" : b.unit === EXTERNAL || b.unit.startsWith(`${EXTERNAL}.`) ? "external" : "out";
+    // Aggregate edges between the same two units into one row, counting each kind.
     const key = `${group}\0${a.unit}\0${b.unit}`;
     let row = rows.get(key);
 
@@ -322,10 +357,12 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
 
   const out = [...rows.values()];
 
+  // Stable order: group, then the busiest rows first, then by ends; kinds inside a row the same way.
   for (const row of out) row.kinds.sort((a, b) => b.count - a.count || compareText(a.kind, b.kind));
   out.sort((a, b) => EDGE_GROUPS.indexOf(a.group) - EDGE_GROUPS.indexOf(b.group) || b.count - a.count || compareText(a.from, b.from) || compareText(a.to, b.to));
   const holes = new Map<string, number>();
 
+  // The `unresolved` row counts coverage holes inside the focus by their kind.
   for (const item of snapshot.coverage) {
     // Listed for the record, but no hole: a file left out or outside the architecture, an import of a file `assume` names.
     if (item.source === null || !inside(item.source, focus) || NOT_HOLES.has(item.kind) || !leavesUnresolved(item)) continue;
@@ -368,6 +405,7 @@ export interface FlowOverlay {
 export function flowsThrough(analysis: Analysis, id: string): string[] {
   const out = new Set<string>();
 
+  // A flow passes through `id` when any trigger, step or calls target lies inside it.
   for (const flow of analysis.spec.flows) {
     let hit = id === ZOOM_ROOT;
     walkFlow(flow, (item) => {
@@ -383,6 +421,10 @@ export function flowsThrough(analysis: Analysis, id: string): string[] {
   return [...out].sort(compareText);
 }
 
+/**
+ * The flow named `name` laid over the level of `focus`, or null when there is
+ * no such flow or no snapshot. `lineMark` gives the gutter mark of a spec line.
+ */
 export function flowOverlay(analysis: Analysis, name: string, focus: string, lineMark: (file: string, line: number) => Mark | null): FlowOverlay | null {
   const flow = analysis.spec.flows.find((item) => item.name === name);
   const snapshot = analysis.snapshot;
@@ -391,11 +433,14 @@ export function flowOverlay(analysis: Analysis, name: string, focus: string, lin
   const index = indexOf(analysis);
   const children = focus === ZOOM_ROOT ? index.layers : (index.children.get(focus) ?? []);
   const focusIsLayer = snapshot.nodes[focus]?.kind === "layer";
+  // A unit is a child of the focus for targets inside it, else the neighbor grouping of `zoomLevel`.
   const unit = (id: string): string => (inside(id, focus) ? (children.find((child) => inside(id, child)) ?? focus) : unitOf(index, focusIsLayer, id));
   const layerOf = (id: string): string => snapshot.nodes[id]?.layer ?? id.split(".")[0]!;
   const overlay: FlowOverlay = { flow: flow.name, file: flow.file, steps: new Map(), marks: new Map(), sequence: [], pairs: new Set() };
   let n = 0;
 
+  // Number the next step, put it on its unit, extend the layer sequence, and
+  // record the unit pair it crosses from its parent step.
   const place = (id: string, line: number, parent: string | null): void => {
     n++;
     const at = unit(id);
@@ -410,6 +455,8 @@ export function flowOverlay(analysis: Analysis, name: string, focus: string, lin
     if (parent !== null && unit(parent) !== at) overlay.pairs.add(`${unit(parent)}\0${at}`);
   };
 
+  // Depth-first in written order. A step's target is the parent of what is
+  // nested under it; `calls` and other items pass their parent through.
   const visit = (item: Trigger | FlowItem, parent: string | null): void => {
     if (item.kind === "trigger" || item.kind === "step") place(item.target.target, item.span.start.line, parent);
 
@@ -421,6 +468,7 @@ export function flowOverlay(analysis: Analysis, name: string, focus: string, lin
     for (const child of item.children) visit(child, next);
   };
 
+  // Top-level items that are not triggers hang off the first trigger.
   const first = flow.triggers[0]?.target.target ?? null;
 
   for (const item of flow.top) visit(item, item.kind === "trigger" ? null : first);

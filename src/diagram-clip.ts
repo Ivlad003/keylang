@@ -12,6 +12,11 @@
 //
 // The text is data from another repository or a person: nothing in it is
 // ever run, and only its IDs, kinds, labels and numbers reach the canvas.
+//
+// Layer: web diagram editor (copy/paste), beside diagram-layout.ts and
+// flow-bundle.ts. Entry points: `parseClipSelection` → `clipLayout` →
+// `clipLayoutText` on copy; `parseClipLayout` → `pastedShapes` on paste;
+// `fragmentFlow`, `fragmentName`.
 
 import { shapeBase, twinsApart } from "./diagram-layout.ts";
 import type { Bundle, LayerChoice } from "./flow-bundle.ts";
@@ -19,6 +24,7 @@ import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts
 import { isId } from "./parser.ts";
 import { compareText } from "./span.ts";
 
+/** The version of the layout block's JSON. */
 export const CLIP_FORMAT = 1;
 
 /** One copied shape as the editor (or the viewer) sends it: a key of its canvas and a box in model coordinates. */
@@ -70,6 +76,7 @@ export interface ClipLayout {
 /** A shape as the paste answers it: its stable key (what the edges name) and the rest. */
 export type PastedShape = ClipShape;
 
+/** A line a paste draws, between the stable keys of two pasted shapes. */
 export interface PastedEdge {
   from: string;
   to: string;
@@ -85,6 +92,7 @@ export interface PastedFragment {
   laidOut: boolean;
 }
 
+// Allow-lists for untrusted input: only these shape kinds, line kinds and trigger kinds pass.
 const KINDS: ReadonlySet<string> = new Set(["layer", "module", "fn", "type", "start", "task", "gateway", "parallel", "event", "timer", "external", "hole", "note"]);
 
 const LINKS: ReadonlySet<string> = new Set(["sequence", "call", "dependency", "allow", "deny", "emits", "subscribes", "continues"]);
@@ -96,10 +104,13 @@ const MAX_SHAPES = 2000;
 
 const MAX_TEXT = 2000;
 
+// Coordinates are kept to two decimals, so the text is stable and short.
 const round = (value: number): number => Math.round(value * 100) / 100;
 
+// A JSON number that is not NaN or infinite.
 const finite = (value: JsonValue | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 
+// A string field, capped at MAX_TEXT characters.
 const short = (value: JsonValue | undefined): string | undefined => (isJsonString(value) ? value.slice(0, MAX_TEXT) : undefined);
 
 /** An ID as a shape may carry it: a dotted ID, optionally `planned:`; anything else is none. */
@@ -117,6 +128,7 @@ function cleanShape(raw: JsonValue, key: string): ClipShape | null {
 
   if (kind === null) return null;
 
+  // Sizes must be positive and are capped; defaults are a task box.
   const shape: ClipShape = {
     key,
     id: cleanId(raw.id),
@@ -146,11 +158,13 @@ function cleanShape(raw: JsonValue, key: string): ClipShape | null {
     if (tests.length > 0) shape.tests = tests;
   }
 
+  // Only a `#rrggbb` colour: nothing that could inject CSS.
   if (isJsonString(raw.colour) && /^#[0-9a-fA-F]{6}$/.test(raw.colour)) shape.colour = raw.colour;
 
   return shape;
 }
 
+/** Edge waypoints from untrusted JSON: finite numbers only, at most 100. */
 function cleanPoints(raw: JsonValue | undefined): { x: number; y: number }[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const points = raw.filter((p): p is { x: number; y: number } => isJsonObject(p) && finite(p.x) && finite(p.y)).slice(0, 100).map((p) => ({ x: round(p.x), y: round(p.y) }));
@@ -167,6 +181,7 @@ export function parseClipSelection(shapesRaw: JsonValue | undefined, edgesRaw: J
   if (shapesRaw.length > MAX_SHAPES) return `shapes: at most ${MAX_SHAPES}`;
   const shapes: ClipShape[] = [];
 
+  // A bad shape fails the whole request with its index: the editor sent it, so it is a bug to report.
   for (const [i, raw] of shapesRaw.entries()) {
     const key = isJsonObject(raw) && isJsonString(raw.key) && raw.key !== "" ? raw.key.slice(0, 200) : null;
     const shape = key === null ? null : cleanShape(raw, key);
@@ -180,6 +195,7 @@ export function parseClipSelection(shapesRaw: JsonValue | undefined, edgesRaw: J
   if (edgesRaw !== undefined) {
     if (!Array.isArray(edgesRaw)) return "edges: an array of {from, to, kind}";
 
+    // A bad edge is skipped instead: an unknown kind falls back to `sequence`.
     for (const raw of edgesRaw.slice(0, MAX_SHAPES * 2)) {
       if (!isJsonObject(raw) || !isJsonString(raw.from) || !isJsonString(raw.to)) continue;
       const edge: ClipEdge = { from: raw.from, to: raw.to, kind: isJsonString(raw.kind) && LINKS.has(raw.kind) ? raw.kind : "sequence" };
@@ -209,8 +225,10 @@ function baseKey(shape: ClipShape): string {
  * keys of their ends. Deterministic: the same selection gives the same text.
  */
 export function clipLayout(view: string, shapes: readonly ClipShape[], edges: readonly ClipEdge[]): ClipLayout {
+  // Order top-to-bottom, left-to-right so twin keys (`#2`) are numbered the same way every time.
   const ordered = [...shapes].sort((a, b) => a.y - b.y || a.x - b.x || compareText(a.key, b.key));
   const keys = twinsApart(ordered.map((shape) => [shape.key, baseKey(shape)] as const));
+  // Shift everything so the fragment's top-left is (0, 0); an empty selection has no offset.
   const left = Math.min(...ordered.map((s) => s.x), Infinity);
   const top = Math.min(...ordered.map((s) => s.y), Infinity);
   const dx = Number.isFinite(left) ? left : 0;
@@ -225,6 +243,7 @@ export function clipLayout(view: string, shapes: readonly ClipShape[], edges: re
   const pairs: [string, string][] = [];
   const byPair = new Map<string, ClipEdge>();
 
+  // Only edges between copied shapes; parallel lines between the same pair get twin keys too.
   for (const [i, edge] of edges.entries()) {
     const from = keys.get(edge.from);
     const to = keys.get(edge.to);
@@ -247,6 +266,7 @@ export function clipLayout(view: string, shapes: readonly ClipShape[], edges: re
   return out;
 }
 
+/** A JSON value with every object's keys sorted, recursively: stable text for the same layout. */
 function sorted(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(sorted);
 
@@ -276,6 +296,7 @@ export function parseClipLayout(text: string): ClipLayout | null {
   }
 
   if (!isJsonObject(value) || !isJsonObject(value.shapes)) return null;
+  // Lenient: keep every valid shape and edge, drop the rest silently (the bundle may come from anywhere).
   const out: ClipLayout = { format: finite(value.format) ? value.format : CLIP_FORMAT, view: isJsonString(value.view) ? value.view.slice(0, 500) : "", shapes: {}, edges: {} };
 
   for (const [key, raw] of Object.entries(value.shapes).slice(0, MAX_SHAPES)) {
@@ -306,6 +327,7 @@ export function parseClipLayout(text: string): ClipLayout | null {
 /** The two ends of a layout edge key. */
 function edgeEnds(key: string, shapes: ClipLayout["shapes"]): [string, string] | null {
   // A key may hold `->` inside a `when:` label: the split that names two shapes wins.
+  // Drop a twin suffix and the `edge:` prefix, then try each `->` as the split point.
   const bare = key.replace(/#\d+$/, "").slice("edge:".length);
 
   for (let at = bare.indexOf("->"); at !== -1; at = bare.indexOf("->", at + 1)) {
@@ -324,6 +346,7 @@ function edgeEnds(key: string, shapes: ClipLayout["shapes"]): [string, string] |
  * right; a drawn shape is declared `planned` with its kind and signature.
  */
 export function fragmentFlow(name: string, shapes: readonly ClipShape[]): string | null {
+  // Shapes with an ID, left to right; the start shape (if any) leads as the trigger.
   const named = [...shapes].filter((s) => s.id !== "" && s.kind !== "note").sort((a, b) => a.x - b.x || a.y - b.y || compareText(a.key, b.key));
 
   if (named.length === 0) return null;
@@ -338,6 +361,7 @@ export function fragmentFlow(name: string, shapes: readonly ClipShape[]): string
     if (seen.has(bare)) continue;
     seen.add(bare);
 
+    // A drawn shape has no code yet: declare it `planned`, keeping its signature but no comment markers.
     if (shape.id.startsWith("planned:")) {
       const kind = shape.kind === "module" || shape.kind === "type" || shape.kind === "event" ? shape.kind : "fn";
       const signature = shape.signature?.replace(/\s+/g, " ").trim().replace(/<!--|-->/g, "") ?? "";
@@ -371,6 +395,8 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
   const byId = new Map(ids.map((x) => [x.from, x]));
   const layerTo = new Map(choices.map((c) => [c.from, c.to]));
 
+  // Re-home an ID: a mapped ID takes its target; otherwise its first segment
+  // (the layer) follows the layer choice, and the result is planned.
   const rehome = (raw: string): string => {
     if (raw === "") return "";
     const bare = raw.replace(/^planned:/, "");
@@ -385,6 +411,7 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
     return to === undefined ? raw : `planned:${[to, ...rest].join(".")}`;
   };
 
+  // The lane of a pasted shape: the chosen target layer, else its own layer, else its ID's first segment.
   const layerOf = (layer: string | null, id: string): string | null => {
     if (layer !== null && choices.length > 0) return layerTo.get(layer) ?? null;
 
@@ -396,6 +423,7 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
 
   const layout = parseClipLayout(bundle.layout);
 
+  // With a layout block, keep the copied places and lines, re-homing IDs.
   if (layout !== null && Object.keys(layout.shapes).length > 0) {
     const shapes: PastedShape[] = Object.entries(layout.shapes).map(([key, shape]) => {
       const id = rehome(shape.id);
@@ -424,10 +452,12 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
   const keyOf = new Map<string, string>();
 
   for (const flow of bundle.flows) {
+    // The flow's trigger ID (after an optional trigger kind), which becomes a start shape.
     const trigger = /^\s*- trigger\s+(?:(?:fn|route|cron|webhook|consumer|cli|event)\s+)?([^\s<]+)/m.exec(flow.text)?.[1] ?? null;
     let previous: string | null = null;
 
     for (const source of flowOrder(bundle, flow.name, flow.text)) {
+      // Packages are not drawn; each other ID is placed once, at the next column of its layer's row.
       if (source.split(".")[0] === "external") continue;
       let key = keyOf.get(source);
 
@@ -462,6 +492,7 @@ export function pastedShapes(bundle: Bundle, ids: readonly { from: string; to: s
         shapes.push(shape);
       }
 
+      // Connect consecutive IDs of the flow, once per pair.
       if (previous !== null && previous !== key && !edges.some((e) => e.from === previous && e.to === key)) edges.push({ from: previous, to: key, kind: "sequence" });
       previous = key;
     }
@@ -477,6 +508,7 @@ function flowOrder(bundle: Bundle, flow: string, text: string): string[] {
   if (named.length > 0) return named;
   const out: string[] = [];
 
+  // Fallback: scan the flow text for trigger, step and then items, first mention only.
   for (const m of text.matchAll(/^\s*- (?:trigger|step|then)\s+(?:(?:fn|route|cron|webhook|consumer|cli|event)\s+)?([^\s<]+)/gm)) if (isId(m[1]!) && !out.includes(m[1]!)) out.push(m[1]!);
 
   return out;

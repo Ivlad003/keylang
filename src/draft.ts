@@ -4,6 +4,10 @@
 // code writes them; a function already listed is not expanded again, so a
 // cycle ends. A call keylang did not resolve is a comment on its caller,
 // never a step: the draft claims only what the edges show.
+// Pipeline: AnalysisSnapshot (graph) or a trace run → `# flow` / `# rules`
+// Markdown drafts, merged into a spec file by `withFlow` / `withRules`. Also
+// home of `code-to-spec` and the `git diff` readers it uses. Entry points:
+// `draftFlow`, `draftFlowFromTrace`, `draftRules`, `codeToSpec`, `changedFlows`.
 
 import { SYNTHETIC_LAYERS } from "./config.ts";
 import { sectionNodes } from "./ir.ts";
@@ -12,6 +16,7 @@ import { keepLineEndings } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import type { TraceRun, TraceSpan } from "./trace-evidence.ts";
 
+/** One drafted flow: its name, its Markdown section and its step IDs. */
 export interface FlowDraft {
   name: string;
   /** The `# flow` section, ending with a newline. */
@@ -39,6 +44,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   if (node?.kind !== "fn") throw new Error(`\`${trigger}\` is not a fn of the snapshot`);
   const name = options.name ?? trigger.slice(trigger.lastIndexOf(".") + 1);
   const depth = options.depth ?? 4;
+  // The unresolved places of each fn, written as a comment on its line so the draft never hides a gap.
   const holes = new Map<string, string[]>();
 
   for (const c of snapshot.coverage) {
@@ -65,6 +71,8 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   const lines = [`# flow ${name}`, ""];
   const steps: string[] = [];
 
+  // Depth-first walk over the resolved calls, in the order the code makes them.
+  // A fn already listed is not expanded again, which also ends cycles.
   const visit = (id: string, level: number, how: string): void => {
     listed.add(id);
     steps.push(id);
@@ -75,6 +83,7 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
     const keyword = level === 0 ? (options.entry === undefined ? "trigger" : `trigger ${options.entry}`) : "step";
     lines.push(`${"  ".repeat(level)}- ${keyword} ${id}${how}${comment}`);
 
+    // Stop at the depth limit; under `trigger event` the subscriber sits one level down, so allow one more.
     if (level >= depth + (options.event === undefined ? 0 : 1)) return;
 
     for (const callee of snapshot.nodes[id]?.calls ?? []) {
@@ -111,11 +120,13 @@ export function draftFlowFromTrace(snapshot: AnalysisSnapshot, run: TraceRun, op
   const known = new Set(run.spans.map((span) => span.spanId));
   const children = new Map<string | null, TraceSpan[]>();
 
+  // Build the span tree; a span whose parent is not in this run becomes a root.
   for (const span of run.spans) {
     const parent = span.parentSpanId !== null && known.has(span.parentSpanId) ? span.parentSpanId : null;
     children.set(parent, [...(children.get(parent) ?? []), span]);
   }
 
+  // Siblings in start order: `seq` is exact on one clock, timestamps compare across clocks.
   const order = (a: TraceSpan, b: TraceSpan): number => (a.start.clockId === b.start.clockId ? a.start.seq - b.start.seq : a.start.ts - b.start.ts);
 
   for (const list of children.values()) list.sort(order);
@@ -128,6 +139,7 @@ export function draftFlowFromTrace(snapshot: AnalysisSnapshot, run: TraceRun, op
   const lines = [`# flow ${name}`, ""];
   const steps: string[] = [];
 
+  // Walk the span tree from the trigger, marking a step the static graph cannot explain.
   const visit = (span: TraceSpan, level: number, parent: string | null): void => {
     listed.add(span.symbolId);
     steps.push(span.symbolId);
@@ -148,6 +160,7 @@ function reachesByCalls(snapshot: AnalysisSnapshot, from: string, to: string): b
   const seen = new Set([from]);
   const queue = [from];
 
+  // Plain graph search over `calls` (order does not matter, only reachability).
   while (queue.length > 0) {
     for (const callee of snapshot.nodes[queue.pop()!]?.calls ?? []) {
       if (callee === to) return true;
@@ -172,6 +185,7 @@ export function withFlow(existing: string | null, draft: Pick<FlowDraft, "name" 
   if (existing === null || existing.trim() === "") return draft.text;
   const text = existing.replace(/\r\n/g, "\n");
   const lines = text.replace(/\n*$/, "").split("\n");
+  // Work on LF text without trailing blank lines; find the flow's section through the parser.
   const sections = parse("spec.md", text).sections;
   const index = sections.findIndex((section) => section.kind === "flow" && section.name?.value === draft.name);
   let out: string;
@@ -179,6 +193,7 @@ export function withFlow(existing: string | null, draft: Pick<FlowDraft, "name" 
   if (index === -1) {
     out = `${lines.join("\n")}\n\n${draft.text}`;
   } else {
+    // Replace the lines from this heading up to the next one, keeping a blank line before what follows.
     const start = sections[index]!.heading!.span.start.line - 1;
     const end = nextHeading(sections, index) ?? lines.length;
     const after = lines.slice(end);
@@ -201,15 +216,18 @@ export function withRules(existing: string | null, draftText: string): string {
   const sections = parse("rules.md", text).sections;
   const written = new Set<string>();
 
+  // The rules the file already has, by meaning (comments and formatting aside).
   for (const section of sections) if (section.kind === "rules") for (const node of sectionNodes(section)) written.add(renderMeaning(node));
   const draftLines = draftText.split("\n");
   const added: string[] = [];
 
+  // Keep the draft's own line text for every rule the file does not have yet.
   for (const section of parse("draft.md", draftText).sections) {
     for (const node of sectionNodes(section)) if (!written.has(renderMeaning(node))) added.push(draftLines[node.span.start.line - 1]!);
   }
 
   if (added.length === 0) return existing;
+  // Append to the last headed `# rules` section, or add a new section at the end.
   const index = sections.findLastIndex((section) => section.kind === "rules" && section.heading !== null);
   let out: string;
 
@@ -218,6 +236,7 @@ export function withRules(existing: string | null, draftText: string): string {
   } else {
     let end = nextHeading(sections, index) ?? lines.length;
 
+    // Insert right after the section's last non-blank line.
     while (end > 0 && lines[end - 1]!.trim() === "") end--;
     // A list starts on its own paragraph after prose.
     const gap = /^\s*- /.test(lines[end - 1] ?? "") ? [] : [""];
@@ -247,6 +266,8 @@ export function distinctNames(drafts: readonly FlowDraft[]): FlowDraft[] {
   const segments = drafts.map((d) => d.steps[0]!.split("."));
   const nameOf = (i: number): string => (widths[i] === 1 ? drafts[i]!.name : segments[i]!.slice(-widths[i]!).join("-"));
 
+  // Fixed-point loop: while two drafts share a name, widen each clashing name by
+  // one more trailing ID segment, until names differ or segments run out.
   for (let changed = true; changed; ) {
     changed = false;
     const byName = new Map<string, number[]>();
@@ -278,11 +299,13 @@ export function distinctNames(drafts: readonly FlowDraft[]): FlowDraft[] {
  * `no-cycles` when no module cycle exists. The person decides which to keep.
  */
 export function draftRules(snapshot: AnalysisSnapshot, cyclic: boolean): string {
+  // Real layers only (not synthetic ones like external), sorted for stable output.
   const layers = Object.entries(snapshot.nodes)
     .filter(([, n]) => n.kind === "layer" && !SYNTHETIC_LAYERS.some((synthetic) => synthetic === n.layer))
     .map(([id]) => id)
     .sort();
 
+  // Which layers each layer uses, from resolved edges between different layers.
   const uses = new Map(layers.map((l) => [l, new Set<string>()]));
 
   for (const e of snapshot.edges) {
@@ -297,6 +320,7 @@ export function draftRules(snapshot: AnalysisSnapshot, cyclic: boolean): string 
   const lines = ["# rules", ""];
   const order = layerOrder(layers, uses);
 
+  // A topological order becomes one `layers` rule; otherwise deny each pair used in one direction only.
   if (order) {
     if (order.length > 1) lines.push(`- layers ${order.join(" < ")}${mark}`);
   } else {
@@ -313,6 +337,7 @@ function layerOrder(layers: readonly string[], uses: ReadonlyMap<string, Readonl
   const order: string[] = [];
   const left = new Set(layers);
 
+  // Repeatedly take the first (by name) layer whose dependencies are all placed already.
   while (left.size > 0) {
     const next = [...left].find((l) => [...uses.get(l)!].every((dep) => !left.has(dep)));
 
@@ -343,6 +368,7 @@ export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, lin
   if (fns.length === 0) throw new Error(`${file}: no function of the snapshot is declared here`);
 
   if (line !== null) {
+    // The innermost fn holding the line is the one that starts last.
     const holding = fns
       .filter(([, n]) => n.line! <= line && (n.endLine ?? n.line!) >= line)
       .sort(([, a], [, b]) => (b.line ?? 0) - (a.line ?? 0));
@@ -354,6 +380,7 @@ export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, lin
     return { name: id.slice(id.lastIndexOf(".") + 1), triggers: [id] };
   }
 
+  // Without a line: every exported fn, in declaration order.
   const exported = fns.filter(([, n]) => n.exported === true).map(([id]) => id).sort((a, b) => (snapshot.nodes[a]!.line ?? 0) - (snapshot.nodes[b]!.line ?? 0));
 
   if (exported.length === 0) throw new Error(`${file}: no exported function; name a line`);
@@ -394,17 +421,20 @@ export function diffHunks(diff: string): Map<string, [number, number][]> {
   let file: string | null = null;
 
   for (const line of diff.split("\n")) {
+    // `+++ b/path` opens a file's hunks; `/dev/null` means the file was deleted.
     if (line.startsWith("+++ ")) {
       file = line === "+++ /dev/null" ? null : gitPath(line.slice(4)).replace(/^b\//, "");
       continue;
     }
 
+    // A hunk header `@@ -a,b +c,d @@`: c is the new start, d the new count (default 1).
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
 
     if (!m || file === null) continue;
     const start = Number(m[1]);
     const count = m[2] === undefined ? 1 : Number(m[2]);
     const ranges = out.get(file) ?? [];
+    // A pure deletion (count 0) is recorded as the line it follows, at least line 1.
     ranges.push(count === 0 ? [Math.max(1, start), Math.max(1, start)] : [start, start + count - 1]);
     out.set(file, ranges);
   }
@@ -425,6 +455,7 @@ export function deletedDiffPaths(diff: string): string[] {
 
     if (!line.startsWith("--- ")) continue;
 
+    // A deleted file is a `---` header immediately followed by `+++ /dev/null`.
     if (!(lines[i + 1] ?? "").startsWith("+++ /dev/null")) continue;
     const path = gitPath(line.slice(4)).replace(/^a\//, "");
 
@@ -450,6 +481,7 @@ function gitPath(text: string): string {
     ["\\", 92],
   ]);
 
+  // Decode C escapes into bytes (octal `\NNN` is a raw byte), then the bytes as UTF-8.
   const chars = Array.from(text.slice(1, -1));
   const bytes: number[] = [];
 
@@ -487,6 +519,7 @@ export interface ChangedFlowDrafts {
  * draft is left inside that draft.
  */
 export function changedFlows(snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>): ChangedFlowDrafts {
+  // Fns whose line range overlaps a changed range (or any fn of an untracked file), by file, line and ID.
   const touched = Object.entries(snapshot.nodes)
     .filter(([, n]) => {
       if (n.kind !== "fn" || n.file === null || n.line === null) return false;

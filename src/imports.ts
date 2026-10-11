@@ -27,6 +27,12 @@
 // template, `@salesforce/retail-react-app/app/x`, is the project's
 // `overrides/app/x` when that file exists, else the base package; `^` before
 // it names the base package always (`src/frameworks/pwa-kit.ts`).
+//
+// Pipeline: source → FileFacts → graph, at the import-resolution step: the
+// graph asks the frontend's `SourceResolver` (this `ImportResolver` for JS/TS)
+// what each import names. Entry points: `ImportResolver`, `probeCandidates`,
+// `assumedTarget`, the workspace helpers and the JSONC readers. Key terms:
+// resolution kind, governing tsconfig, workspace package, input of the snapshot id.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -40,6 +46,7 @@ import { globToRegExp } from "./glob.ts";
 import { cartridgeAnswers, cartridgeLayout, SUPER_MODULE, type CartridgeLayout } from "./frameworks/cartridges.ts";
 import { extensibilityOf, type Extensibility } from "./frameworks/pwa-kit.ts";
 
+/** What an import specifier names: a file of the repository, the importing file itself, a package, a built-in, or nothing known. */
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
   /** `whole`: the specifier names the module itself, so a named binding is the module (Rust `use crate::a`). */
@@ -54,6 +61,7 @@ export type Resolution =
   | { kind: "generated" }
   | { kind: "unresolved" };
 
+/** The per-language resolver the graph uses: specifier → `Resolution`, plus the config files it read. */
 export interface SourceResolver {
   resolve(fromFile: string, spec: string): Resolution;
   /** Config files read, with their text (null: absent); the snapshot id depends on them. */
@@ -90,14 +98,21 @@ export function assumedTarget(r: Resolution, wouldName: () => readonly string[],
   return matches.find((path) => languageOf(path) !== undefined) ?? matches[0] ?? null;
 }
 
+/** Source extensions tried after a bare path, in tsc's order. */
 const EXTS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
+/** One `paths` (or `imports`) pattern with its targets. */
 interface PathRule {
   pattern: string;
   /** Targets relative to root, already joined with the base directory. */
   targets: string[];
 }
 
+/**
+ * The JS/TS resolver of one graph build. It caches every answer and records
+ * every config file and `node_modules` lookup it used in `inputs`, so the
+ * snapshot id changes when any of them does.
+ */
 export class ImportResolver {
   private readonly root: string;
   /** Per config file: its `baseUrl`/`paths` after `extends`, and those of the projects it `references`. */
@@ -166,6 +181,7 @@ export class ImportResolver {
     this.read = read;
     // The root config is an input of the snapshot id whether or not a bare import asks for it.
     this.governingConfig(".");
+    // Root manifest: its declared dependencies and the workspace globs (npm/yarn `workspaces`, either form).
     const pkg = read("package.json");
     this.declared = dependencies(pkg);
     const declared = isJsonObject(pkg) ? pkg.workspaces : undefined;
@@ -195,6 +211,7 @@ export class ImportResolver {
     let held = this.verbatimSetting(config, 0);
     const raw = this.read(config);
 
+    // A solution config hands its files to the projects it references: any of them setting it counts.
     for (const ref of isJsonObject(raw) && Array.isArray(raw.references) ? raw.references : []) {
       if (held === true || held === "unknown") break;
       const target = isJsonObject(ref) && isJsonString(ref.path) ? posix.normalize(posix.join(posix.dirname(config), toPosix(ref.path))) : null;
@@ -236,6 +253,7 @@ export class ImportResolver {
         this.tsconfigs.set(config, loaded);
       }
 
+      // The config's own `paths` win; otherwise borrow those of the referenced projects that hold this directory.
       if (loaded.own.paths.length > 0) result = loaded.own;
       else {
         result = { baseUrl: loaded.own.baseUrl, paths: [] };
@@ -261,6 +279,7 @@ export class ImportResolver {
     const at = (name: string): string => (dir === "." ? name : `${dir}/${name}`);
     let found: string | null = null;
 
+    // `tsconfig.json` beats `jsconfig.json` in the same directory; else ask the parent, up to the root.
     if (this.text(at("tsconfig.json")) !== null) found = at("tsconfig.json");
     else if (this.text(at("jsconfig.json")) !== null) found = at("jsconfig.json");
     else if (dir !== ".") found = this.governingConfig(posix.dirname(dir));
@@ -287,6 +306,7 @@ export class ImportResolver {
     if (own !== undefined) return "unknown";
     const parents = raw.extends === undefined ? [] : Array.isArray(raw.extends) ? raw.extends : [raw.extends];
 
+    // Later `extends` entries override earlier ones, so read them from the last; the first that says anything decides.
     for (const parent of [...parents].reverse()) {
       const target = isJsonString(parent) ? this.extendedConfig(posix.dirname(file), parent) : null;
       const setting = target === null ? "unknown" : this.verbatimSetting(target, depth + 1);
@@ -308,6 +328,7 @@ export class ImportResolver {
   private extendedConfig(dir: string, spec: string): string | null {
     const name = toPosix(spec);
 
+    // A relative entry: the path as written if it is a file (or already `.json`), else with `.json` added.
     if (/^\.\.?(\/|$)/.test(name)) {
       const path = posix.normalize(posix.join(dir, name));
 
@@ -316,8 +337,10 @@ export class ImportResolver {
       return this.text(path) !== null || path.endsWith(".json") ? path : `${path}.json`;
     }
 
+    // An absolute path or a drive letter leaves the repository.
     if (name === "" || name.startsWith("/") || /^[A-Za-z]:/.test(name)) return null;
 
+    // A package entry: look in each `node_modules` from `dir` up to the root, as tsc does.
     for (let at = dir; ; at = posix.dirname(at)) {
       const base = at === "." ? `node_modules/${name}` : `${at}/node_modules/${name}`;
       const manifest = name.endsWith(".json") ? null : this.read(`${base}/package.json`);
@@ -344,6 +367,8 @@ export class ImportResolver {
     if (known !== undefined) return known;
     let found: Located = null;
 
+    // Walk `node_modules` from the root up to the file system root: a link back
+    // into the repository is a workspace package, anything else (or its `@types`) is installed.
     for (let dir = this.root; ; ) {
       const installed = join(dir, "node_modules", pkg);
 
@@ -364,6 +389,7 @@ export class ImportResolver {
       dir = parent;
     }
 
+    // Not installed: a workspace directory whose `package.json` has this `name`.
     if (found === null) {
       const dir = this.workspaceDirs().find((d) => {
         const manifest = this.read(`${d}/package.json`);
@@ -419,6 +445,9 @@ export class ImportResolver {
     const candidates: string[] = [];
     const exports = manifest?.exports;
 
+    // `exports` as a string/array (root only), as a conditions object (root only),
+    // or as a subpath map (exact key, else a `*` pattern); without `exports`,
+    // `module`/`main`/`index` for the root and the subpath itself otherwise.
     if (isJsonString(exports) || Array.isArray(exports)) {
       if (key === ".") candidates.push(...flattenTarget(exports));
     } else if (isJsonObject(exports)) {
@@ -439,6 +468,7 @@ export class ImportResolver {
       candidates.push("index");
     } else candidates.push(key);
 
+    // The first candidate that probes to a source file; declaration files are no source.
     for (const target of candidates) {
       if (/\.d\.[cm]?ts$/.test(target)) continue;
       const f = this.probe(posix.join(dir, toPosix(target)));
@@ -449,6 +479,7 @@ export class ImportResolver {
     return null;
   }
 
+  /** What `spec`, imported from `fromFile`, names; cached per file and specifier. */
   resolve(fromFile: string, spec: string): Resolution {
     const key = `${fromFile}\0${spec}`;
     let r = this.cache.get(key);
@@ -475,6 +506,11 @@ export class ImportResolver {
     return this.layout;
   }
 
+  /**
+   * The resolution order: generated modules, relative paths, SFCC cartridges,
+   * PWA Kit template imports, `#imports`, tsconfig `paths` and `baseUrl`,
+   * Node built-ins, and finally packages.
+   */
   private resolveUncached(fromFile: string, spec: string): Resolution {
     // Framework-generated type modules (React Router `./+types/route`).
     if (spec.includes("+types/")) return { kind: "generated" };
@@ -558,6 +594,7 @@ export class ImportResolver {
     if (manifest !== null) {
       const cc = extensibilityOf(parseJsonc(manifest));
       found = cc === null ? null : { dir: key, cc };
+    // No manifest here: inherit the parent directory's answer; the root or a path outside it ends the walk.
     } else found = key === "" || key.startsWith("..") ? null : this.extensibilityAt(posix.dirname(key));
     this.extensibility.set(key, found);
 
@@ -570,6 +607,7 @@ export class ImportResolver {
    * A target that is not a relative path names a package.
    */
   private resolveSubpathImport(fromFile: string, spec: string): Resolution {
+    // Walk up to the nearest `package.json`: it alone scopes `#imports`, even when it has no matching key.
     for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
       const scope = dir === "." || dir === "" ? "" : dir;
       const rules = this.scopeImports(scope);
@@ -582,6 +620,7 @@ export class ImportResolver {
         for (const t of matched.rule.targets) {
           const target = toPosix(t).replaceAll("*", matched.star);
 
+          // A bare target names a package (resolve it as one); `#…` or an absolute target is skipped.
           if (!target.startsWith(".")) {
             if (target.startsWith("#") || target.startsWith("/")) continue;
 
@@ -649,6 +688,7 @@ export class ImportResolver {
    * snapshot id.
    */
   private near(fromFile: string, pkg: string, subpath: string): Resolution | null {
+    // From the importing file's directory up to (not including) the root.
     for (let dir = posix.dirname(fromFile); dir !== "." && dir !== "" && !dir.startsWith(".."); dir = posix.dirname(dir)) {
       const installed = join(this.root, dir, "node_modules", pkg);
 
@@ -684,6 +724,7 @@ export class ImportResolver {
    * A `file:` tarball (`file:vendor/x.tgz`) is installed code: external.
    */
   private declaredDependency(dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string): Resolution | null {
+    // A declaration of the package's `@types` counterpart counts as declaring the package.
     const types = `@types/${pkg.replace(/^@/, "").replace("/", "__")}`;
     const range = declared.has(pkg) ? declared.get(pkg)! : declared.has(types) ? declared.get(types)! : undefined;
 
@@ -691,6 +732,7 @@ export class ImportResolver {
 
     if (range === null || !LOCAL_RANGE.test(range)) return { kind: "external", pkg };
 
+    // A `workspace:` range names a package the workspace should have listed; `locate` did not find it.
     if (range.startsWith("workspace:")) return { kind: "unresolved" };
     const target = toPosix(range.replace(LOCAL_RANGE, ""));
 
@@ -704,6 +746,7 @@ export class ImportResolver {
 
   /** Candidate file (POSIX, relative to root) → existing source file, or null. */
   private probe(candidate: string): string | null {
+    // Files of the analysis first (they may not be on disk yet), then exact-case files on disk.
     for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
@@ -728,6 +771,7 @@ export class ImportResolver {
     if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") return probeCandidates(posix.join(posix.dirname(fromFile), spec));
     const out: string[] = [];
 
+    // Same walk as `resolveSubpathImport`, collecting candidates instead of probing them.
     if (spec.startsWith("#")) {
       for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
         const scope = dir === "." || dir === "" ? "" : dir;
@@ -773,6 +817,7 @@ export function probeCandidates(candidate: string): string[] {
   const c = posix.normalize(candidate);
 
   if (c.startsWith("../")) return [];
+  // NodeNext lets `./x.js` name `x.ts` (and `.mjs`/`.cjs` their TS twins); `./x.jsx` may name `x.tsx`.
   const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : c.endsWith('.jsx') ? [c.replace(/\.jsx$/, ".tsx")] : [];
   // A module that only has a declaration file is what tsc resolves to after the sources: `./types` → `types.d.ts`.
   const declared = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".d.ts").replace(/\.mjs$/, ".d.mts").replace(/\.cjs$/, ".d.cts")] : [];
@@ -782,6 +827,7 @@ export function probeCandidates(candidate: string): string[] {
 
 const DTS = [".d.ts", ".d.mts", ".d.cts"];
 
+/** Where `node_modules` has a package: a workspace link (its directory), installed elsewhere, or not found. */
 type Located = { kind: "workspace"; dir: string } | { kind: "installed" } | null;
 
 /** `abs` (after links) as a POSIX path under `root`, outside any `node_modules`; null otherwise. */
@@ -798,6 +844,7 @@ export function inside(root: string, abs: string): string | null {
 
   const rel = relative(base, real);
 
+  // The root itself, or anything outside it (another drive included), is not inside.
   if (rel === "" || rel.startsWith("..") || rel.startsWith(sep) || /^[A-Za-z]:/.test(rel)) return null;
   const posixRel = toPosix(rel);
 
@@ -843,6 +890,7 @@ export function isGlob(glob: string): boolean {
  */
 export function listWorkspaceGlob(root: string, glob: string): string {
   const segments = glob.split("/");
+  // Index of the first segment with a wildcard; everything before it is the fixed base to list from.
   const fixed = segments.findIndex((segment) => isGlob(segment));
   const base = segments.slice(0, fixed).join("/");
 
@@ -858,7 +906,9 @@ export function listWorkspaceGlob(root: string, glob: string): string {
     }
   };
 
+  // The common `base/*`: one directory listing.
   if (fixed === segments.length - 1 && segments[fixed] === "*") return subdirs(base).sort().join("\n");
+  // Otherwise walk below the base: as deep as the glob has segments, or without limit for `**` or braces.
   const pattern = globToRegExp(glob);
   const out: string[] = [];
   const deep = segments.slice(fixed).includes("**") || glob.includes("{");
@@ -896,6 +946,7 @@ export function withoutNegated(dirs: readonly string[], patterns: readonly JsonV
  */
 export function pnpmWorkspacePackages(text: string): string[] {
   const lines = text.split(/\r?\n/);
+  // Find the top-level `packages:` key; this is a minimal reader for that one key, not a YAML parser.
   const start = lines.findIndex((line) => line.startsWith('packages:'));
 
   if (start === -1) return [];
@@ -910,6 +961,7 @@ export function pnpmWorkspacePackages(text: string): string[] {
     for (let i = start + 1; i < lines.length; i++) {
       const line = lines[i]!;
 
+      // Skip blank and comment lines; the first line that is not a `- item` ends the list.
       if (/^\s*(#|$)/.test(line)) continue;
       const item = /^\s*-\s*(.*)$/.exec(line);
 
@@ -935,6 +987,7 @@ function bestMatch(rules: readonly PathRule[], spec: string): { rule: PathRule; 
 
     if (star === null) continue;
 
+    // An exact key wins at once.
     if (!rule.pattern.includes("*")) return { rule, star };
     const prefix = rule.pattern.indexOf("*");
 
@@ -944,6 +997,7 @@ function bestMatch(rules: readonly PathRule[], spec: string): { rule: PathRule; 
   return best && { rule: best.rule, star: best.star };
 }
 
+/** The text a pattern's single `*` stands for in `spec` (`""` for an exact match); null when it does not match. */
 function matchPattern(pattern: string, spec: string): string | null {
   const star = pattern.indexOf("*");
 
@@ -958,6 +1012,7 @@ function matchPattern(pattern: string, spec: string): string | null {
   return null;
 }
 
+/** Every string of an `exports`/`imports`/`paths` target, depth first through arrays and condition objects. */
 function flattenTarget(t: JsonValue | undefined): string[] {
   if (isJsonString(t)) return [t];
 
@@ -968,6 +1023,7 @@ function flattenTarget(t: JsonValue | undefined): string[] {
   return [];
 }
 
+/** The package part of a bare specifier: `@scope/name` or `name`. */
 export function packageName(spec: string): string {
   const parts = spec.split("/");
 
@@ -1014,6 +1070,7 @@ function stripJsonc(source: string): string {
   const text = withoutBom(source);
   let out = "";
 
+  // One pass: copy strings verbatim (with escapes), drop `//` and `/* */` comments, keep everything else.
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;
 
@@ -1033,9 +1090,11 @@ function stripJsonc(source: string): string {
     }
   }
 
+  // Trailing commas before `}` or `]`; strings are not excluded here, so `",]"` inside a string would change too.
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
+/** The module-resolution options keylang reads: `baseUrl` and the placed `paths` rules. */
 interface Tsconfig {
   baseUrl: string | null;
   paths: PathRule[];
@@ -1087,6 +1146,7 @@ function loadTsconfig(read: (file: string) => JsonValue, file: string): LoadedTs
   return result;
 }
 
+/** `baseUrl`/`paths` of a config after its relative `extends` chain (later parents override earlier ones). */
 function mergedOptions(read: (file: string) => JsonValue, file: string, depth: number): MergedOptions {
   const raw = read(file);
   let result: MergedOptions = { baseUrl: null, paths: null };
@@ -1113,6 +1173,7 @@ function mergedOptions(read: (file: string) => JsonValue, file: string, depth: n
   return result;
 }
 
+/** Turn `paths` targets into root-relative paths against `baseUrl`, else the declaring config's directory. */
 function placePaths(options: MergedOptions): PathRule[] {
   if (!options.paths) return [];
   const base = options.baseUrl ?? options.paths.dir;

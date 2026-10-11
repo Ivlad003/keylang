@@ -2,6 +2,9 @@
 // from code, code from a planned fn and its applied candidate, and the
 // model's open questions for a feature. A proposal is written only through
 // MERGE; a preview writes nothing.
+//
+// Layer: TUI reports, joined into one table by `records.ts`; the payloads come
+// from the shared operations (`operations.ts`).
 
 import { PROPOSALS_DIR } from "../../proposals.ts";
 import type { CodeToSpecPayload, DraftFlowPayload, DraftRulesPayload, FeatureQuestionsPayload, SpecToCodePayload } from "../../operations.ts";
@@ -9,6 +12,7 @@ import type { OperationRecord } from "../state.ts";
 import { MARK_STYLE, THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, noticeRow, outcomeRow, textRows, WARNING, type Report, type ReportRow } from "./rows.ts";
 
+/** The operation kinds `DRAFT_REPORTS` describes. */
 type DraftKind = "feature-questions" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code" | "apply-code";
 
 /** ` --mode hybrid`; nothing for algo, the CLI's default. */
@@ -25,6 +29,8 @@ function codeSource(source: { file?: string | null | undefined; line?: number | 
 
 /** `3 step(s), preview, nothing written`, `3 step(s) proposed for <target>`, `refused, nothing written`, `write failed`. */
 function draftOutcome(status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload): string {
+  // Ordered by precedence: no candidate (an empty `--since` slice), a preview,
+  // a written proposal, then why nothing was written.
   if (payload.candidate === null) return `no fn outside the flows changed since ${"since" in payload ? payload.since : ""}, nothing written`;
 
   if (payload.output === "preview") return `${payload.summary}, preview, nothing written`;
@@ -46,6 +52,7 @@ function specCodeOutcome(status: OperationRecord["status"], payload: SpecToCodeP
 
   if (payload.proposals.length === total) return `${payload.summary} proposed`;
 
+  // A partial run names how many of its proposals were written before it stopped.
   if (payload.proposals.length > 0) return `${status} after ${payload.proposals.length} of ${total} proposal(s)`;
 
   if (payload.refused.length > 0) return "refused, nothing written";
@@ -81,6 +88,7 @@ function fallback(payload: { fallback: unknown }): string {
 /** The model's statuses next to the snapshot's: provenance, not evidence. */
 const PROVENANCE = "  the statuses are provenance, not evidence: only check decides a verdict";
 
+/** The F6 reports of the draft operations. */
 export const DRAFT_REPORTS = {
   "feature-questions": {
     label: (request) => `feature ${request.slug} questions`,
@@ -145,6 +153,7 @@ export const DRAFT_REPORTS = {
       const rows: ReportRow[] = [
         { text: `Draft rules · ${payload.mode}${fallback(payload)} → ${candidate.target} · ${payload.output === "preview" ? "preview, nothing written" : "proposal; the target itself is not written"}`, style: BOLD },
         outcomeRow(view.summary, result.exitCode === 0),
+        // Conflict messages are listed below under their own heading, so they are left out here.
         ...result.messages.filter((message) => !message.text.startsWith("conflict: ")).map(messageRow),
       ];
 
@@ -186,6 +195,7 @@ export const DRAFT_REPORTS = {
         ...Object.entries(payload.layers).map(([name, globs]) => ({ text: `  ${name}  ${globs.join(", ")}`, style: THEME.panel })),
       ];
 
+      // Moving the layers into a buffer is offered only while the record still matches the inputs.
       if (record.outdated === null)
         rows.push({
           text: `  Enter: move the layers into ${payload.configExists ? "keylang.json's buffer — only layers change, every other field stays" : "a new keylang.json buffer, the inferred config with these layers"}; written only by Ctrl+S, Ctrl+Z undoes`,
@@ -213,6 +223,7 @@ export const DRAFT_REPORTS = {
         ...result.messages.map(noticeRow),
       ];
 
+      // What part of the code the draft covered: a git slice, the fn around a line, or a whole file.
       const scope =
         payload.since !== null
           ? `every fn changed in the working tree since ${payload.since}, untracked files whole; a fn already in a hand-written flow is named for review, not drafted again`
@@ -224,6 +235,7 @@ export const DRAFT_REPORTS = {
 
       if (payload.described.length > 0) rows.push({ text: `  already in flows (review those): ${payload.described.join(", ")}`, style: WARNING });
 
+      // Nothing to draft (an empty slice): the scope rows are the whole report.
       if (candidate === null) return rows;
 
       for (const flow of candidate.flows) rows.push({ text: `  flow ${flow.name} · trigger ${flow.trigger} · ${flow.steps.length} step(s)`, style: THEME.panel });
@@ -260,6 +272,7 @@ export const DRAFT_REPORTS = {
 
       if (payload.model !== null) rows.push({ text: `  written by ${payload.model.agent} in ${payload.model.requests} request(s): provenance, not evidence — review each hunk in MERGE; nothing is accepted for you and its tests are not run`, style: MUTED });
 
+      // Each target file with what happened to it: proposed, a proposal already waiting, previewed, or not proposed.
       for (const target of candidate.targets) {
         const store = `${PROPOSALS_DIR}/${target.file}`;
         const state = payload.proposals.includes(store) ? `proposed as ${store}` : target.pending !== null ? `a proposal was waiting at ${store}` : payload.output === "preview" ? "previewed" : "not proposed";
@@ -271,6 +284,7 @@ export const DRAFT_REPORTS = {
       if (payload.proposals.length > 0) rows.push({ text: "  Enter opens the proposals list: each file merges on its own (m and Proposals too)", style: THEME.hint });
       else if (payload.output === "preview") rows.push({ text: "  Enter builds it again · the form's proposal output writes the proposals", style: THEME.hint });
 
+      // Direct apply is offered only for a fresh, completed run that proposed nothing.
       if (record.status === "completed" && record.outdated === null && payload.proposals.length === 0)
         rows.push({ text: `  a applies the entire candidate: writes these ${candidate.targets.length} file(s) directly, as --apply, after a step that names them — no proposal, no test is run`, style: THEME.hint });
       rows.push(...textRows(`keylang spec-to-code ${candidate.id}${payload.mode === "llm" ? " --mode llm" : ""} --print · stdout`, candidate.print.replace(/\r\n/g, "\n")));
@@ -285,6 +299,7 @@ export const DRAFT_REPORTS = {
       const { payload } = result;
       const done = payload.files.filter((file) => file.state === "completed").length;
 
+      // All written, refused, nothing written, or how far a partial write got.
       const outcome =
         done === payload.files.length
           ? `${done} file(s) written`

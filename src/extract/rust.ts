@@ -4,6 +4,12 @@
 // traits and macros are not guessed: they stay holes in coverage. Every call
 // expression is an edge or a hole: a callee keylang cannot name is a call
 // through a value, never dropped.
+//
+// The Rust frontend of the code pipeline (source → FileFacts → graph →
+// map/index): parses one file with tree-sitter and returns its `FileFacts`.
+// Entry point: `extractRust`. Terms: decl (an item keylang indexes), hole (an
+// unsupported fact or an unresolved call), value ref (a fn read as a value,
+// so something else may call it), pass (a fn path given as an argument).
 
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, PassFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
@@ -17,6 +23,7 @@ const KNOWN_MACROS = new Set(
 /** Primitive types: `u64::from()` is the language's, not a module path. */
 const PRIMITIVES = new Set("bool char str f32 f64 i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize".split(" "));
 
+/** Type-like items and the declaration kind each becomes: data types are classes (they get `impl` members), traits and aliases are types. */
 const TYPE_ITEMS = new Map<string, DeclFact["kind"]>([["struct_item", "class"], ["enum_item", "class"], ["union_item", "class"], ["trait_item", "type"], ["type_item", "type"]]);
 
 /** Attributes of the language and its tools, and attribute macros that keep the fn and run its body when it is called by name. */
@@ -32,10 +39,12 @@ const IMPLICIT_TRAITS = new Set(
 /** Nodes whose identifiers bind names instead of reading them. */
 const PATTERN_NODES = new Set(["tuple_struct_pattern", "struct_pattern", "tuple_pattern", "slice_pattern", "ref_pattern", "mut_pattern", "or_pattern", "captured_pattern", "field_pattern", "match_pattern", "range_pattern", "reference_pattern"]);
 
+/** The facts of one Rust file: imports, items with their calls, holes and value references. */
 export function extractRust(path: string, src: string): Promise<FileFacts> {
   return withTree("rust", src, (tree) => extractTree(path, tree.rootNode));
 }
 
+/** Collect the facts of a parsed file in passes: imports, items, `impl` members, value references, then file-level data. */
 function extractTree(path: string, root: Node): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null };
   const impls: { type: string; node: Node; members: { item: Node; decl: DeclFact }[] }[] = [];
@@ -66,6 +75,8 @@ function extractTree(path: string, root: Node): FileFacts {
     if (body) facts.moduleCalls.push(...bodyCalls(body, { owner, self: owner !== null, bound: new Map(), names, imports }, facts).map((c) => ({ ...c, closure: true as const })));
   };
 
+  // Items: each top-level item becomes a declaration, an export row, a hole,
+  // or code that runs outside any indexed fn (`detached`).
   for (const node of items) {
     const name = node.childForFieldName("name")?.text;
 
@@ -119,6 +130,7 @@ function extractTree(path: string, root: Node): FileFacts {
         const trait = baseType(node.childForFieldName("trait"));
         const implicit = trait !== null && IMPLICIT_TRAITS.has(trait);
 
+        // Only methods are indexed; associated consts and types are skipped.
         for (const item of members(node)) {
           const member = item.childForFieldName("name")?.text;
 
@@ -148,6 +160,9 @@ function extractTree(path: string, root: Node): FileFacts {
     }
   }
 
+  // Attach `impl` methods to their type once every item is known (an impl
+  // may come before its struct). A type of another file cannot hold them:
+  // their calls escape as module-level code instead.
   for (const impl of impls) {
     const owner = facts.decls.find((d) => d.kind === "class" && d.name === impl.type);
 
@@ -159,6 +174,9 @@ function extractTree(path: string, root: Node): FileFacts {
     }
   }
 
+  // File-level facts: value refs sorted by position (attribute refs were
+  // noted earlier), the module doc, the value-code fingerprint, the end, and
+  // a parse error that makes the file opaque.
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(items, names, facts)].sort((a, b) => a.line - b.line || a.col - b.col);
   const doc = moduleDoc(root);
 
@@ -178,6 +196,7 @@ function extractTree(path: string, root: Node): FileFacts {
   return facts;
 }
 
+/** A line or block comment node. */
 function isComment(node: Node): boolean {
   return node.type === "line_comment" || node.type === "block_comment";
 }
@@ -207,6 +226,8 @@ function docText(comments: readonly Node[]): string | undefined {
 function itemDoc(node: Node): string | undefined {
   const docs: Node[] = [];
 
+  // Walk back over the attributes and comments right above the item; an inner
+  // doc belongs to the module and ends the item's run.
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (innerDoc(prev)) break;
 
@@ -221,6 +242,7 @@ function moduleDoc(root: Node): string | undefined {
   return docText(root.namedChildren.filter(innerDoc));
 }
 
+/** The item has any `pub` visibility (`pub`, `pub(crate)`, …). */
 function exported(node: Node): boolean {
   return node.namedChildren.some((c) => c.type === "visibility_modifier");
 }
@@ -232,6 +254,7 @@ function members(node: Node): Node[] {
 
 /** An item under `#[cfg(test)]` (or `cfg(all(test, …))`) or a `#[test]` fn: test code, kept out of the map like test files. */
 function testOnly(node: Node): boolean {
+  // Any test attribute among those right above the item.
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (prev.type === "attribute_item" && isTestAttribute(prev)) return true;
   }
@@ -248,9 +271,12 @@ function testOnly(node: Node): boolean {
 function noteAttributes(node: Node, symbol: string, member: boolean, facts: FileFacts): void {
   for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
     if (prev.type !== "attribute_item") continue;
+    // The attribute's path without arguments (`get` of `#[get("/")]`).
     const path = prev.namedChildren[0]?.namedChildren[0]?.text.replace(/\s+/g, "") ?? "";
 
     if (KEEPING_ATTRIBUTES.has(path) || /^(clippy|rustfmt|diagnostic)::/.test(path)) continue;
+    // An unknown attribute: a hole for the fn, and a value ref, since the
+    // macro holds the fn and a framework may call it.
     facts.unsupported.push({ ...unsupported(prev, `attribute \`${path}\` may replace \`${symbol}\``), symbol });
     const at = located(prev);
     facts.valueRefs.push(member ? { name: symbol.slice(symbol.lastIndexOf(".") + 1), member: true, line: at.line, col: at.col } : { name: symbol, line: at.line, col: at.col });
@@ -259,8 +285,10 @@ function noteAttributes(node: Node, symbol: string, member: boolean, facts: File
 
 /** `#[cfg(test)]`, `#[cfg(all(test, unix))]`, `#[test]`, `#[tokio::test]`, `#[bench]` (or `#![…]`). */
 function isTestAttribute(node: Node): boolean {
+  // The attribute's content without spaces, `#[`/`#![` and `]`.
   const text = node.text.replace(/\s+/g, "").replace(/^#!?\[/, "").replace(/\]$/, "");
 
+  // `test`, `tokio::test`, `bench`, with or without arguments.
   if (/^((\w+::)*test|bench)(\(.*\))?$/.test(text)) return true;
   const cfg = /^cfg\((.*)\)$/.exec(text);
 
@@ -275,9 +303,11 @@ function requiresTest(predicate: string): boolean {
   if (!call) return false;
   const args = splitTopLevel(call[2]!);
 
+  // `all` needs test if any part does; `any` only if every part does.
   return call[1] === "all" ? args.some(requiresTest) : args.length > 0 && args.every(requiresTest);
 }
 
+/** Split a `cfg` argument list at commas outside parentheses and string literals. */
 function splitTopLevel(text: string): string[] {
   const out: string[] = [];
   let depth = 0;
@@ -305,6 +335,8 @@ function splitTopLevel(text: string): string[] {
 function nestedUses(node: Node, facts: FileFacts): void {
   if (node.type === "mod_item" || node.type === "macro_definition" || node.type === "attribute_item") return;
 
+  // Recurse through every nested node; a `use` found is an import of the
+  // file but never a re-export.
   for (const child of node.namedChildren) {
     if (testOnly(child)) continue;
 
@@ -314,6 +346,7 @@ function nestedUses(node: Node, facts: FileFacts): void {
   }
 }
 
+/** Record a public name of the file. */
 function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): void {
   facts.exports.add(name);
   facts.exportRows.push({ name, kind, local: null });
@@ -337,10 +370,12 @@ function takesSelf(params: Node | null): boolean {
   return (params?.namedChildren ?? []).some((c) => c.type === "self_parameter" || (c.type === "parameter" && c.childForFieldName("pattern")?.type === "self"));
 }
 
+/** The declaration of a fn or method: signature, calls, doc, and whether it is an associated (static) fn. */
 function fnDecl(node: Node, name: string, exported: boolean, owner: string | null, names: ReadonlySet<string>, facts: FileFacts): DeclFact {
   const at = located(node);
   const params = node.childForFieldName("parameters");
   const returns = node.childForFieldName("return_type");
+  // Parameters and return type as written, whitespace collapsed.
   const signature = params ? `${params.text.replace(/\s+/g, " ")}${returns ? ` → ${returns.text.replace(/\s+/g, " ")}` : ""}` : null;
   const self = takesSelf(params);
   const body = node.childForFieldName("body");
@@ -381,11 +416,13 @@ function boundNames(fn: Node): Map<string, "parameter" | "local"> {
     for (const c of pattern.namedChildren) if (c.type !== "type_identifier" && c.type !== "scoped_identifier" && c.id !== type) names(c, kind);
   };
 
+  // The fn's own parameters (a closure's are untyped patterns).
   const params = fn.childForFieldName("parameters");
 
   if (params?.type === "closure_parameters") for (const c of params.namedChildren) names(c, "parameter");
   else for (const p of params?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
 
+  // Every binding form anywhere in the body, nested fns and closures included.
   const walk = (node: Node): void => {
     if (node.type === "let_declaration" || node.type === "let_condition" || node.type === "for_expression") names(node.childForFieldName("pattern"), "local");
     else if (node.type === "match_pattern") {
@@ -437,6 +474,7 @@ type ClosureState = null | "stored" | { line: number; col: number };
 /** A call fact before its position is known. */
 type UnplacedCall = Omit<CallFact, "line" | "col" | "endLine" | "endCol">;
 
+/** Every call in a body as a call fact (with closure state and fn arguments), and a hole for each unknown macro. */
 function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
   const out: CallFact[] = [];
 
@@ -459,6 +497,7 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
         out.push(call);
       }
     } else if (node.type === "macro_invocation") {
+      // Macro bodies are not parsed as code: a macro may hide calls.
       const name = macroName(node);
       // `serde_json::json!` comes from another crate; a macro of this crate (`ui_message!`, `crate::m!`) hides calls.
       const foreign = name.includes("::") && !/^(crate|self|super)::/.test(name);
@@ -467,6 +506,9 @@ function bodyCalls(body: Node, scope: CallScope, facts: FileFacts): CallFact[] {
     }
 
     // A nested `fn` runs only when something calls it, like a closure.
+    // The closure state for the children: an async block, a nested fn or a
+    // closure stored in a value makes them "stored"; a closure passed
+    // straight as an argument keeps the outermost such closure's position.
     let inner = closure;
 
     if (node.type === "async_block" || node.type === "function_item") inner = "stored";
@@ -489,6 +531,7 @@ function passesOf(call: Node, scope: CallScope, facts: FileFacts): PassFact[] {
   const args = call.childForFieldName("arguments");
 
   if (args?.type !== "arguments") return [];
+  // Argument index counts only real arguments, not comments between them.
   const out: PassFact[] = [];
   args.namedChildren
     .filter((arg) => arg.type !== "line_comment" && arg.type !== "block_comment")
@@ -505,6 +548,7 @@ function passesOf(call: Node, scope: CallScope, facts: FileFacts): PassFact[] {
   return out;
 }
 
+/** What a callee expression names: the dotted callee, and `bound` when it goes through a local or parameter. */
 type Callee = Pick<CallFact, "callee" | "bound">;
 
 /**
@@ -535,6 +579,7 @@ function callOf(fn: Node | null, scope: CallScope, facts: FileFacts): Callee | n
       return inner && (inner.type === "identifier" || inner.type === "scoped_identifier" || inner.type === "generic_function" || inner.type === "parenthesized_expression") ? callOf(inner, scope, facts) : throughValue(fn);
     }
 
+    // A bare name: a variant/tuple struct by case, else a call of a local or an item.
     case "identifier": {
       if (/^[A-Z]/.test(fn.text)) return null;
       const kind = bound.get(fn.text);
@@ -542,6 +587,7 @@ function callOf(fn: Node | null, scope: CallScope, facts: FileFacts): Callee | n
       return kind ? { callee: fn.text, bound: kind } : { callee: fn.text };
     }
 
+    // `self.m()` is a method of the impl; `x.m()` goes through the value `x`.
     case "field_expression": {
       const value = fn.childForFieldName("value");
       const field = fn.childForFieldName("field")?.text;
@@ -574,8 +620,10 @@ function pathCall(fn: Node, scope: CallScope, facts: FileFacts): Callee | null {
     return name ? { callee: `${compact(fn.childForFieldName("path")?.text ?? "?")}.${name}`, bound: "local" } : throughValue(fn);
   }
 
+  // A CamelCase last segment is a constructor, not a call.
   if (/^[A-Z]/.test(segments.at(-1)!)) return null;
 
+  // `u64::from` and friends: the language's own, kept as written.
   if (PRIMITIVES.has(segments[0]!)) return { callee: segments.join(".") };
 
   if (segments[0] === "Self" && owner !== null) return { callee: [owner, ...segments.slice(1)].join(".") };
@@ -587,6 +635,7 @@ function pathCall(fn: Node, scope: CallScope, facts: FileFacts): Callee | null {
   if (via && !via.source.includes("*")) segments = [...via.source.split("::"), ...segments.slice(1)];
   const head = segments[0]!;
 
+  // Inside an inline module paths are relative to it: not an import, a hole.
   if (!scope.imports) return { callee: segments.join("::"), bound: "local" };
 
   if (head === "crate" || head === "super" || head === "self" || via || (/^[a-z_]/.test(head) && !bound.has(head) && !names.has(head))) {
@@ -595,6 +644,8 @@ function pathCall(fn: Node, scope: CallScope, facts: FileFacts): Callee | null {
     const path = type === -1 ? segments : segments.slice(0, type + 1);
     const source = path.join("::");
 
+    // Add a synthetic import for the path once per file, so the resolver
+    // turns it into a dependency like a `use`.
     if (!facts.imports.some((imp) => imp.source === source && imp.bindings.some((b) => b.local === source))) {
       const at = located(fn);
       facts.imports.push({ source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings: [{ kind: "named", local: source, imported: path.at(-1)! }], reexport: false });
@@ -603,6 +654,7 @@ function pathCall(fn: Node, scope: CallScope, facts: FileFacts): Callee | null {
     return { callee: [source, ...segments.slice(path.length)].join(".") };
   }
 
+  // A path starting at an item or binding of this file.
   return { callee: segments.join(".") };
 }
 
@@ -611,6 +663,7 @@ function throughValue(fn: Node): Callee {
   return { callee: compact(fn.text), bound: "local" };
 }
 
+/** Source text on one line, without spaces around `.` and `:`. */
 function compact(text: string): string {
   return text.replace(/\s+/g, " ").replace(/ ?([.:]) ?/g, "$1");
 }
@@ -625,6 +678,7 @@ function pathSegments(node: Node): string[] | null {
 
   if (!name) return null;
 
+  // `::f` (no path) is just the name; otherwise recurse into the prefix.
   if (!path) return [name.text];
   const head = pathSegments(path);
 
@@ -638,15 +692,19 @@ function pathSegments(node: Node): string[] | null {
  * A `use m::*` may bind any name, so then every free name read is noted.
  */
 function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts): ValueRefFact[] {
+  // With a glob import any free lower-case name may be an imported fn.
   const glob = facts.imports.some((imp) => imp.glob);
   const first = new Map<string, ValueRefFact>();
 
+  // Keep only the first reference of each name (and of each member name).
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
 
     if (!first.has(key)) first.set(key, member ? { name, member: true, line: node.startPosition.row + 1, col: node.startPosition.column + 1 } : { name, line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
   };
 
+  // Walk all items, widening the bound names at each fn or closure and
+  // switching off imports inside inline modules; skip code that reads no values.
   const walk = (node: Node, scope: CallScope): void => {
     if (node.type === "use_declaration" || node.type === "attribute_item" || node.type === "macro_definition" || node.type === "lifetime" || node.type === "label" || testOnly(node)) return;
 
@@ -683,6 +741,7 @@ function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts):
 function calledPath(node: Node): boolean {
   let at = node;
 
+  // Look through `f::<T>` and `(f)` wrappers to the position that matters.
   while (at.parent?.type === "generic_function" || at.parent?.type === "parenthesized_expression") at = at.parent;
   const parent = at.parent;
 
@@ -719,6 +778,7 @@ function bindsOrCalls(node: Node): boolean {
   return false;
 }
 
+/** One imported path of a `use` tree, with its alias and whether it is a glob. */
 interface UseLeaf {
   path: string[];
   alias: string | null;
@@ -768,6 +828,7 @@ function useLeaves(node: Node | null, prefix: string[]): UseLeaf[] {
   }
 }
 
+/** The import fact of one `use` leaf; a `pub use` also records the re-export. */
 function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFacts): ImportFact {
   const source = leaf.path.join("::");
 
@@ -777,6 +838,7 @@ function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFact
     return { ...importAt(node, source, [], exported), glob: true };
   }
 
+  // `use x as _` imports only for traits: it binds no name.
   const imported = leaf.path.at(-1)!;
   const local = leaf.alias ?? imported;
 
@@ -785,16 +847,19 @@ function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFact
   return importAt(node, source, local === "_" ? [] : [{ kind: "named", local, imported }], exported);
 }
 
+/** An import fact placed at `node`. */
 function importAt(node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean): ImportFact {
   const at = located(node);
 
   return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
+/** The macro's path as written, without `!`. */
 function macroName(node: Node): string {
   return node.childForFieldName("macro")?.text ?? node.namedChildren[0]?.text ?? "?";
 }
 
+/** A hole at `node`, its text cut to the first line. */
 function unsupported(node: Node, reason: string): UnsupportedFact {
   const at = located(node);
 

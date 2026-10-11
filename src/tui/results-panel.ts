@@ -4,6 +4,9 @@
 // finding's or an item's place is shown with the panel hidden, and Esc or
 // Ctrl+O come back to the panel at the selection. view.ts draws the panel;
 // reports/ say what each kind of record shows.
+//
+// Layer: TUI. `app.ts` creates one `ResultsPanel` and routes keys to it while
+// F6 is open; it changes only the session `State` and calls back through `ResultsHost`.
 
 import { existsSync } from "node:fs";
 import { extname, resolve } from "node:path";
@@ -51,6 +54,7 @@ export interface ResultsHost {
   clampCursor(): void;
 }
 
+/** The key handling of the F6 panel over the session state. */
 export class ResultsPanel {
   private readonly host: ResultsHost;
 
@@ -104,6 +108,7 @@ export class ResultsPanel {
       return;
     }
 
+    // Rules that keep Enter from rerunning: a running record, the clip's reply, an export.
     if (record.status === "running") {
       this.state.message = "this operation is still running";
 
@@ -167,6 +172,7 @@ export class ResultsPanel {
       results.gap = 0;
     };
 
+    // Keys over the record list (or, after Tab, over the selected report).
     switch (event.name) {
       case "left":
       case "right": {
@@ -327,6 +333,7 @@ export class ResultsPanel {
   clampFinding(): void {
     const results = this.state.results;
     const visible = visibleFindings(findingsOf(this.state.analysis), results.filter);
+    // Clamp into the filtered list, then scroll so the selection stays within the shown rows.
     results.finding = Math.max(0, Math.min(results.finding, Math.max(0, visible.length - 1)));
     const rows = findingsListRows(this.state, layout(this.state).panel);
 
@@ -366,6 +373,7 @@ export class ResultsPanel {
     const origin = { path: this.state.current, cursor: { ...this.state.cursor }, top: this.state.top, mode: this.state.mode, code: this.state.code };
     const abs = resolve(this.state.root, file);
 
+    // A spec file inside the repository opens in the editor; anything else (source code) in the read-only viewer.
     if (extname(file) === ".md" && !file.startsWith("..")) {
       const lines = bufferLines(this.host.load(file));
       const line = Math.max(0, Math.min(targetLine - 1, lines.length - 1));
@@ -391,6 +399,7 @@ export class ResultsPanel {
 
     if (!origin) return;
 
+    // Restore the file, cursor, mode and code view the finding was opened from.
     if (origin.path !== null) {
       this.host.load(origin.path);
       this.state.filesIndex = Math.max(0, this.state.files.indexOf(origin.path));
@@ -407,6 +416,7 @@ export class ResultsPanel {
     this.state.top = origin.top;
   }
 
+  /** ↑↓ or a page over the selected report: moves the selected item when the report has items, else scrolls its text. */
   scrollReport(delta: number): void {
     // Over the findings the selection moves, so it never leaves the shown rows.
     if (this.state.results.entry === "analysis") return this.moveFinding(delta);
@@ -435,6 +445,7 @@ export class ResultsPanel {
     results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - height)));
   }
 
+  /** The item of the selected report under the Tab selection, if any. */
   private selectedGap(): ReportItem | undefined {
     return reportItems(this.state)[this.state.results.gap];
   }

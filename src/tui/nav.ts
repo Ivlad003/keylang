@@ -2,18 +2,24 @@
 // flows and rules from the specs with their worst mark. Items point at the
 // spec line that declares them and, for code entities, at the code. The tree
 // is indexed once per analysis; each frame only lists the expanded part.
+//
+// Layer: TUI. `view.ts` draws `navItems`; `zoom.ts` reuses `codeTree`.
+// Item keys (`l:`, `m:`, `f:`, `w:`, `r:`) are stable across analyses, so the
+// set of expanded keys survives a rescan.
 
 import type { Analysis } from "../analyze.ts";
 import { kindLabel, sectionNodes, walk, type Node } from "../ir.ts";
 import { compareText } from "../span.ts";
 import { evidenceOf, worse, type LineEvidence, type Mark } from "./evidence.ts";
 
+/** A place in a file: the spec line or the code line an item opens. */
 export interface Place {
   file: string;
   /** 1-based. */
   line: number;
 }
 
+/** One row of the panel: a heading, a code entity, a flow or a rule, with its places and mark. */
 export interface NavItem {
   key: string;
   depth: number;
@@ -28,6 +34,7 @@ export interface NavItem {
   expanded: boolean;
 }
 
+/** The panel's index of one analysis: layers, the code tree, and the flow and rule rows. */
 interface Tree {
   layers: string[];
   /** Direct children (members and nested modules) by module id, and top modules by layer. */
@@ -42,8 +49,10 @@ export interface CodeTree {
   children: ReadonlyMap<string, readonly string[]>;
 }
 
+// One tree per analysis; a new analysis is a new key, so nothing has to be invalidated.
 const trees = new WeakMap<Analysis, Tree>();
 
+/** The worst evidence mark on the spec lines `[from, to]`, both inclusive. */
 function markOver(evidence: Map<number, LineEvidence>, from: number, to: number): Mark | null {
   let mark: Mark | null = null;
 
@@ -52,6 +61,7 @@ function markOver(evidence: Map<number, LineEvidence>, from: number, to: number)
   return mark;
 }
 
+/** The last line a node or any of its nested items starts on. */
 function lastLine(node: Node): number {
   let end = node.span.start.line;
   walk(node, (child) => {
@@ -61,10 +71,12 @@ function lastLine(node: Node): number {
   return end;
 }
 
+/** A section heading row (LAYERS, FLOWS, RULES); always expanded, never selectable as an entity. */
 function heading(key: string, label: string): NavItem {
   return { key, depth: 0, label, kind: "heading", id: null, spec: null, code: null, mark: null, parent: false, expanded: true };
 }
 
+/** The panel's index for `analysis`, built once and cached. */
 function treeOf(analysis: Analysis): Tree {
   const cached = trees.get(analysis);
 
@@ -79,6 +91,7 @@ function treeOf(analysis: Analysis): Tree {
     list.push(id);
   };
 
+  // Code tree: modules, fns and types under their parents, in sorted ID order so siblings list stably.
   for (const id of Object.keys(nodes).sort(compareText)) {
     const node = nodes[id]!;
 
@@ -93,6 +106,8 @@ function treeOf(analysis: Analysis): Tree {
   const flows: NavItem[] = [];
   const rules: NavItem[] = [];
 
+  // Spec rows from the hand-written docs only: each `# flow` section with the
+  // worst mark up to the next heading, and each rule node with the worst mark over its lines.
   for (const doc of analysis.docs) {
     if (doc.generated !== null) continue;
     const evidence = evidenceOf(analysis, doc.path);
@@ -113,6 +128,7 @@ function treeOf(analysis: Analysis): Tree {
     });
   }
 
+  // Only layers the snapshot knows, in config order.
   const tree = { layers: [...analysis.config.layers.keys()].filter((layer) => nodes[layer] !== undefined), children, flows, rules };
   trees.set(analysis, tree);
 
@@ -136,6 +152,7 @@ export function navItems(analysis: Analysis | null, expanded: ReadonlySet<string
   const tree = treeOf(analysis);
   const nodes = analysis.snapshot?.nodes ?? {};
 
+  /** Where the spec declares `id`, or null when no spec names it. */
   const specPlace = (id: string): Place | null => {
     const found = analysis.index.lookup(id);
 
@@ -144,6 +161,7 @@ export function navItems(analysis: Analysis | null, expanded: ReadonlySet<string
 
   const out: NavItem[] = [];
 
+  // Depth-first: a module row, then (when expanded) its nested modules and members in index order.
   const addModule = (id: string, depth: number, base: string): void => {
     const node = nodes[id]!;
     const key = `m:${id}`;
@@ -165,6 +183,7 @@ export function navItems(analysis: Analysis | null, expanded: ReadonlySet<string
     }
   };
 
+  // The layers section; a layer is open unless its `-l:` key collapses it.
   if (tree.layers.length > 0) out.push(heading("h:layers", "LAYERS"));
 
   for (const layer of tree.layers) {

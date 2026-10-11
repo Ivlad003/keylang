@@ -2,12 +2,16 @@
 // frame into the next. Views draw into a `Grid`; only changed rows are sent,
 // so the same output works on a real terminal and on xterm.js in a browser.
 // Tests read `Grid.lines()` instead of parsing escape sequences.
+//
+// Layer: TUI drawing, the bottom of it: every view writes into a `Grid`, and
+// `terminal.ts` (or the web terminal) sends what `renderDiff` returns.
 
 import { graphemes, graphemeWidth } from "./width.ts";
 
 /** 256-colour palette index. */
 export type Color = number;
 
+/** How one cell is drawn: 256-colour indices, emphasis and an optional hyperlink. */
 export interface Style {
   fg?: Color;
   bg?: Color;
@@ -28,6 +32,7 @@ interface Cell {
 
 const PLAIN: Style = {};
 
+/** The cells of one frame; writes clip to its bounds and keep wide characters whole. */
 export class Grid {
   readonly cols: number;
   readonly rows: number;
@@ -43,21 +48,25 @@ export class Grid {
 
   /** Writes `text` from (x, y), clipped to `limit` cells; returns the cells used. */
   write(x: number, y: number, text: string, style: Style = PLAIN, limit = this.cols - x): number {
+    // A row off the grid draws nothing; columns before 0 are skipped but still advance.
     if (y < 0 || y >= this.rows) return 0;
     const end = Math.min(this.cols, x + Math.max(0, limit));
     let col = x;
 
     for (const cluster of graphemes(text)) {
+      // A tab takes one cell and draws as a space; zero-width clusters (combining marks) are skipped.
       const width = cluster === "\t" ? 1 : graphemeWidth(cluster);
 
       if (width === 0) continue;
 
+      // A cluster that does not fit whole stops the write, so a wide character is never cut in half.
       if (col + width > end) break;
 
       if (col >= 0) {
         this.clearWide(col, y);
         this.cells[y]![col] = { ch: cluster === "\t" ? " " : cluster, style };
 
+        // A wide character takes two cells; the second holds "" as a placeholder.
         if (width === 2) {
           this.clearWide(col + 1, y);
           this.cells[y]![col + 1] = { ch: "", style };
@@ -70,6 +79,7 @@ export class Grid {
     return col - x;
   }
 
+  /** Fills a rectangle with spaces in `style`, clipped to the grid. */
   fill(x: number, y: number, width: number, height: number, style: Style = PLAIN): void {
     for (let row = y; row < Math.min(this.rows, y + height); row++) {
       for (let col = Math.max(0, x); col < Math.min(this.cols, x + width); col++) {
@@ -98,6 +108,7 @@ export class Grid {
     return this.cells[y]?.[x]?.style ?? PLAIN;
   }
 
+  /** The cells of row `y`; an empty row past the grid. */
   row(y: number): readonly Cell[] {
     return this.cells[y] ?? [];
   }
@@ -108,6 +119,7 @@ export class Grid {
  * edge. `round` corners (`╭╮╰╯`) are the clip's window; the popups are square.
  */
 export function drawBox(grid: Grid, rect: { x: number; y: number; width: number; height: number }, title: string, style: Style, titleStyle: Style, round = false): void {
+  // Fill first, then the top edge, the sides and the bottom edge, then the title over the top edge.
   const [tl, tr, bl, br] = round ? ["╭", "╮", "╰", "╯"] : ["┌", "┐", "└", "┘"];
   grid.fill(rect.x, rect.y, rect.width, rect.height, style);
   grid.write(rect.x, rect.y, `${tl}${"─".repeat(Math.max(0, rect.width - 2))}${tr}`, style);
@@ -122,8 +134,10 @@ export function drawBox(grid: Grid, rect: { x: number; y: number; width: number;
   if (title) grid.write(rect.x + 2, rect.y, ` ${title} `, titleStyle, rect.width - 4);
 }
 
+/** The escape character that starts every control sequence. */
 const ESC = "\x1b";
 
+/** The SGR sequence for a style; it starts from reset (`0`), so no attribute leaks from the previous cell. */
 function sgr(style: Style): string {
   const codes = ["0"];
 
@@ -144,6 +158,7 @@ function sgr(style: Style): string {
   return `${ESC}[${codes.join(";")}m`;
 }
 
+/** Any C0 control, DEL or C1 control. */
 const CONTROL_CHARACTER = new RegExp(String.raw`[\x00-\x1f\x7f-\x9f]`);
 
 /**
@@ -157,10 +172,12 @@ export function safeLink(link: string | undefined): string | undefined {
   return link;
 }
 
+/** Equal styles draw the same; an absent flag and `false` are the same. */
 function sameStyle(a: Style, b: Style): boolean {
   return a.fg === b.fg && a.bg === b.bg && !a.bold === !b.bold && !a.dim === !b.dim && !a.italic === !b.italic && !a.underline === !b.underline && !a.inverse === !b.inverse && a.link === b.link;
 }
 
+/** Rows with the same characters and styles; such a row is not sent again. */
 function rowEqual(a: readonly Cell[], b: readonly Cell[]): boolean {
   if (a.length !== b.length) return false;
 
@@ -172,10 +189,12 @@ function rowEqual(a: readonly Cell[], b: readonly Cell[]): boolean {
 /** ANSI that turns `prev` into `next` on screen; a full repaint when there is no `prev` or the size changed. */
 export function renderDiff(prev: Grid | null, next: Grid): string {
   const full = prev === null || prev.cols !== next.cols || prev.rows !== next.rows;
+  // Hide the cursor while drawing; a full repaint resets attributes and clears the screen.
   let out = `${ESC}[?25l`;
 
   if (full) out += `${ESC}[0m${ESC}[2J`;
 
+  // Send only the rows that changed, each from its first column.
   for (let y = 0; y < next.rows; y++) {
     const cells = next.row(y);
 
@@ -183,9 +202,11 @@ export function renderDiff(prev: Grid | null, next: Grid): string {
     out += `${ESC}[${y + 1};1H`;
     let style: Style | null = null;
 
+    // Emit SGR only when the style changes; the placeholder cell of a wide character is skipped.
     for (const cell of cells) {
       if (cell.ch === "") continue;
 
+      // Close an open hyperlink before a new one starts, and open the new one after the SGR.
       if (style === null || !sameStyle(style, cell.style)) {
         const link = safeLink(cell.style.link);
         const open = safeLink(style?.link);
@@ -200,10 +221,12 @@ export function renderDiff(prev: Grid | null, next: Grid): string {
       out += cell.ch;
     }
 
+    // Close any link still open, and reset at the end of the row.
     if (safeLink(style?.link)) out += `${ESC}]8;;${ESC}\\`;
     out += `${ESC}[0m`;
   }
 
+  // Show the cursor only where the frame asks for it.
   if (next.cursor) out += `${ESC}[${next.cursor.y + 1};${next.cursor.x + 1}H${ESC}[?25h`;
 
   return out;
@@ -212,4 +235,5 @@ export function renderDiff(prev: Grid | null, next: Grid): string {
 /** Entering and leaving the TUI: alternate screen, SGR mouse with motion, bracketed paste. */
 export const ENTER = `${ESC}[?1049h${ESC}[?25l${ESC}[?1000h${ESC}[?1002h${ESC}[?1003h${ESC}[?1006h${ESC}[?2004h`;
 
+/** Leaving restores the terminal: paste and mouse off, attributes reset, cursor shown, main screen. */
 export const LEAVE = `${ESC}[?2004l${ESC}[?1006l${ESC}[?1003l${ESC}[?1002l${ESC}[?1000l${ESC}[0m${ESC}[?25h${ESC}[?1049l`;

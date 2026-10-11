@@ -1,7 +1,12 @@
 // Languages keylang indexes: names, file extensions and the
 // default module granularity. Plain data, so config and the language core
 // know which files are source without loading any frontend or grammar.
+// Sits before both pipelines: config validation and file collection ask it
+// which files are source; the frontends and the graph ask it about language
+// rules (constructors, implicit members, case-insensitive names).
+// Entry points: `LANGUAGES`, `languageOf` and the per-file predicates below.
 
+/** What keylang needs to know about one source language, without its grammar. */
 export interface LanguageInfo {
   /** File extensions with the dot. */
   extensions: readonly string[];
@@ -21,6 +26,7 @@ export interface LanguageInfo {
 
 const JS_IMPLICIT = new Set(["then", "next", "return", "throw", "toString", "valueOf", "toJSON"]);
 
+/** The table of supported languages, keyed by the name used in `keylang.json`. */
 export const LANGUAGES = {
   javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false, interfaceTypes: false },
   // Dunder methods other than `__init__` run through syntax and built-ins: `with`, `for`, `str()`, operators, `x()`.
@@ -33,14 +39,18 @@ export const LANGUAGES = {
   typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name), caselessNames: false, interfaceTypes: false },
 } satisfies Record<string, LanguageInfo>;
 
+/** A supported language name (`typescript`, `php`…). */
 export type Language = keyof typeof LANGUAGES;
 
+/** Supported language names, sorted so that every listing and lookup order is stable. */
 export const LANGUAGE_NAMES = Object.keys(LANGUAGES).filter(isLanguage).sort();
 
+/** Narrows a config value to a supported language name. */
 export function isLanguage(name: unknown): name is Language {
   return typeof name === "string" && Object.hasOwn(LANGUAGES, name);
 }
 
+/** The language a path belongs to by its extension, or `undefined` for a non-source file. */
 export function languageOf(path: string): Language | undefined {
   for (const name of LANGUAGE_NAMES) {
     if (LANGUAGES[name].extensions.some((ext) => path.endsWith(ext))) return name;
@@ -84,5 +94,6 @@ export function interfaceTypes(file: string | null | undefined): boolean {
 export function implicitMember(file: string | null | undefined, name: string): boolean {
   const language = file ? languageOf(file) : undefined;
 
+  // A file of unknown language falls back to the JS/TS rules.
   return LANGUAGES[language ?? "typescript"].implicit(name);
 }

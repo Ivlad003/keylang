@@ -1,6 +1,15 @@
 // Drafts of specs from the code, by the snapshot's edges or by a model, written
 // only as proposals: `draft flow`, `draft rules`, `draft map` (printed only)
 // and `code-to-spec`.
+//
+// Place in the pipeline: the reverse direction, snapshot → spec Markdown.
+// These operations read a fresh analysis, draft flows or rules (from the
+// snapshot's edges, a trace, a git change, or a model) and commit them as
+// proposals through `shared.ts`. Entry points: `runDraftFlow`,
+// `runDraftRules`, `runDraftLayout`, `runCodeToSpec`, and the candidate
+// builders `flowCandidate`, `rulesCandidate`, `codeToSpecCandidate`. Key
+// terms: algo / llm / hybrid mode, candidate, proposal, stats (counts of
+// model-drafted lines that agree with the algorithm or not).
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -63,6 +72,8 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   // A draft from a trace is what the run observed: no model reconciles it.
   const mode = fromTrace ? "algo" : (request.mode ?? "algo");
 
+  // Validate the request: an absolute root and, unless drafting from a
+  // trace, a trigger ID.
   if (!isAbsolute(root)) return empty("draft-flow", "failed", 2, "draft flow: root must be an absolute path");
 
   if (trigger === "" && !fromTrace) return empty("draft-flow", "failed", 2, "draft flow: a trigger id is required");
@@ -82,6 +93,7 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
 
   if (!snapshot) return empty("draft-flow", "failed", 2, "draft: no supported source files; run `keylang init`");
 
+  // The trigger must be a fn of the snapshot; suggest a near ID otherwise.
   if (!fromTrace && snapshot.nodes[trigger]?.kind !== "fn") {
     const hint = analyzed.index.suggest(trigger);
 
@@ -93,6 +105,8 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   const traceNotes: OperationMessage[] = [];
   let algo: FlowDraft;
 
+  // The algorithmic draft: from a recorded trace run, or by walking the
+  // snapshot's calls from the trigger.
   if (fromTrace) {
     const observed = traceDraft(root, snapshot, fromTrace, request.name);
 
@@ -135,6 +149,8 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   let draft: FlowDraft = algo;
   let model: DraftModelInfo | null = null;
 
+  // A model mode with a model refines the draft; the candidate then keeps
+  // the basis's target state and swaps in the model's flow.
   if (setup.client !== null) {
     const drafted = await modelDraft(request, mode === "llm" ? "llm" : "hybrid", analyzed, setup.client, context);
 
@@ -176,6 +192,7 @@ export async function runDraftFlow(request: DraftFlowRequest, context: Operation
   const store = committed.proposal;
   payload.proposal = store;
 
+  // The model's counts reach the stats only once its proposal exists.
   if (model !== null) payload.statsError = countProposed(root, model.counts);
 
   return {
@@ -243,6 +260,8 @@ export async function runDraftRules(request: DraftRulesRequest, context: Operati
   // Module dependencies inside the repository: a cycle among them keeps `no-cycles` out of the draft.
   const modules = new Map<string, Set<string>>();
 
+  // Build the module graph from internal deps only (external packages
+  // cannot form a cycle of this repository).
   for (const [id, node] of Object.entries(snapshot.nodes)) if (node.kind === "module") modules.set(id, new Set((node.deps ?? []).filter((dep) => snapshot.nodes[dep]?.layer !== "external")));
   const cyclic = stronglyConnected(modules).length > 0;
   const algo = draftRules(snapshot, cyclic);
@@ -279,6 +298,8 @@ export async function runDraftRules(request: DraftRulesRequest, context: Operati
   let rules = algo;
   let model: RulesModelInfo | null = null;
 
+  // A model mode with a model replaces the algo rules with its own, each
+  // checked against the snapshot; conflicts are reported as notes.
   if (setup.client !== null) {
     const client = setup.client;
     context.onProgress?.({ text: `asking ${client.agent}` });
@@ -365,6 +386,8 @@ export async function runDraftLayout(request: DraftLayoutRequest, context: Opera
     return empty("draft-layout", "failed", 2, errorText(error));
   }
 
+  // Without a model the layout is guessed from directories and printed;
+  // with one the model is asked for the layers of the source files.
   const configExists = existsSync(join(root, CONFIG_FILE));
   const setup = await modelSetup(mode, config, "draft map");
 
@@ -429,6 +452,8 @@ interface CodeDrafted {
  * target that cannot be read throws.
  */
 export function codeToSpecCandidate(root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string): CodeToSpecCandidate {
+  // Same shape as `flowCandidate`, but every drafted flow is merged into
+  // the one target.
   const base = codePosition(drafted, target);
   const problem = proposalProblem(root, specDir, target, generated);
 
@@ -460,6 +485,7 @@ function codePosition(drafted: CodeDrafted, target: string): Pick<CodeToSpecCand
 function describedIds(docs: readonly Document[]): Set<string> {
   const named = new Set<string>();
 
+  // Only hand-written flows count; the generated map names every ID.
   for (const doc of docs) {
     if (doc.generated !== null) continue;
 
@@ -499,6 +525,8 @@ export async function runCodeToSpec(request: CodeToSpecRequest, context: Operati
   const since = request.since;
   const line = request.line ?? null;
 
+  // Validate the request: exactly one source (a path or `--since`) and a
+  // whole, non-negative line.
   if (!isAbsolute(root)) return empty("code-to-spec", "failed", 2, "code-to-spec: root must be an absolute path");
 
   if (file !== undefined && since !== undefined) return empty("code-to-spec", "failed", 2, "code-to-spec: give a path or --since, not both");
@@ -527,6 +555,8 @@ export async function runCodeToSpec(request: CodeToSpecRequest, context: Operati
   let drafted: CodeDrafted;
   let described: string[] = [];
 
+  // Source one: a git change. Changed fns already named by a hand-written
+  // flow are listed for review instead of drafted.
   if (since !== undefined) {
     context.onProgress?.({ text: `reading the git changes since ${since}` });
     let changes: ReturnType<typeof changedFlows>;
@@ -549,6 +579,8 @@ export async function runCodeToSpec(request: CodeToSpecRequest, context: Operati
 
     drafted = { file: null, line: null, since, name: "changes", drafts: changes.drafts };
   } else {
+    // Source two: a file position; `codeToSpec` finds the fn at the line
+    // (or every exported fn of the file).
     try {
       const position = codeToSpec(snapshot, file!, line);
       drafted = { file: file!, line, since: null, name: position.name, drafts: position.drafts };
@@ -564,6 +596,7 @@ export async function runCodeToSpec(request: CodeToSpecRequest, context: Operati
   if (setup.fallback !== null) notes.push({ level: "warning", text: setup.fallback });
   const specDir = rootRelative(root, analyzed.config.dir);
   const generated = generatedIn(analyzed.docs);
+  // The target defaults to `<dir>/flows/<name>.md`.
   const target = toPosix(request.into ?? `${specDir}/flows/${drafted.name}.md`);
   // The target and its waiting proposal as they are now, before any model answers: the basis of the write.
   let basis: CodeToSpecCandidate;
@@ -673,6 +706,8 @@ async function modelFlows(
   const drafts: FlowDraft[] = [];
   const model: CodeModelInfo = { agent: client.agent, counts: { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 }, flows: [] };
 
+  // One request per flow, in order; any error or cancel discards the
+  // drafts made so far.
   for (const [i, flow] of algo.entries()) {
     if (context.signal?.aborted) return { cancelled: true };
     const trigger = flow.steps[0]!;
@@ -743,6 +778,8 @@ async function modelDraft(request: DraftFlowRequest, mode: "llm" | "hybrid", ana
 function flowSteps(text: string, trigger: string): string[] {
   const ids = [trigger];
 
+  // Collect every ref of trigger and step nodes, each once, after the
+  // requested trigger.
   for (const section of parse("draft.md", text).sections) {
     for (const top of sectionNodes(section)) walk(top, (node) => {
       if (node.kind !== "trigger" && node.kind !== "step") return;
@@ -783,6 +820,8 @@ function traceDraft(root: string, snapshot: AnalysisSnapshot, fromTrace: { file:
   let runs: TraceRun[];
 
   try {
+    // Only runs with spans can be drafted from; then pick the one run named
+    // by `--run`, or the file's only run.
     runs = loadTraces(root, [fromTrace.file]).filter((run) => run.spans.length > 0);
   } catch (error) {
     return { error: `draft flow --from-trace: ${errorText(error)}` };
@@ -798,6 +837,8 @@ function traceDraft(root: string, snapshot: AnalysisSnapshot, fromTrace: { file:
   const draft = draftFlowFromTrace(snapshot, run, name !== undefined ? { name } : {});
   const notes: OperationMessage[] = [];
 
+  // Notes on what the draft cannot show: an incomplete run, spans outside
+  // the trigger's call tree, IDs the current snapshot no longer has.
   if (!run.complete) notes.push({ level: "warning", text: `run ${run.runId} is incomplete: a process ended without its run record, or a span stayed open; the draft shows what was observed` });
 
   if (draft.rest.length > 0) notes.push({ level: "warning", text: `run ${run.runId}: left out, outside the call tree of the trigger ${draft.steps[0]}: ${draft.rest.join(", ")}` });

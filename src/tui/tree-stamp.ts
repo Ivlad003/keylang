@@ -5,6 +5,8 @@
 // analysis would come out the same, so `keylang web` answers from the one it
 // has instead of analysing again: a stamp costs milliseconds, an analysis
 // seconds. Nothing outside these paths (`dist/`, other worktrees) is walked.
+//
+// Layer: TUI/web. `web.ts` calls `inputsOf` once per analysis and `stampOf` per request.
 
 import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
@@ -18,8 +20,10 @@ const MANIFESTS = ["package.json", "pyproject.toml", "requirements.txt", "compos
 
 /** The files an analysis read, relative to the root, and their directories. */
 export function inputsOf(done: Analysis): string[] {
+  // The fixed inputs: the config, the root manifests and the spec directory itself.
   const files = new Set<string>([CONFIG_FILE, ...MANIFESTS, done.config.dir]);
 
+  // The sources and specs the snapshot was built from.
   for (const file of done.snapshot?.manifest.files ?? []) files.add(file.path);
 
   for (const doc of done.docs) files.add(doc.path);
@@ -35,6 +39,7 @@ export function inputsOf(done: Analysis): string[] {
     // No briefs.
   }
 
+  // Test reports and traces named in keylang.json.
   for (const field of ["tests", "trace"] as const) {
     try {
       for (const file of evidenceFiles(done.config, field) ?? []) files.add(file);
@@ -43,6 +48,8 @@ export function inputsOf(done: Analysis): string[] {
     }
   }
 
+  // Add every ancestor directory, so a file created or deleted beside an input
+  // changes the stamp through its directory's mtime. Sorted, so the hash is stable.
   const all = new Set<string>(["."]);
 
   for (const file of files) {
@@ -54,6 +61,7 @@ export function inputsOf(done: Analysis): string[] {
   return [...all].sort();
 }
 
+/** A sha256 over the size and mtime of each input under `root`; a missing path hashes as `-`, so its appearance changes the stamp too. */
 export function stampOf(root: string, inputs: readonly string[]): string {
   const hash = createHash("sha256");
 

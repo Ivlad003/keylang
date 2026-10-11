@@ -8,6 +8,12 @@
 // route a `?` task with its reason. `layout` places the shapes in plain
 // TypeScript (ranks by depth, order by spec line, fixed sizes); manual
 // positions (the layout file of ticket 24) override it.
+//
+// Pipeline: AnalysisSnapshot + SpecIR + check results → Diagram JSON for
+// `keylang web` and the exports (bpmn-export.ts). Views: flow, entry, event,
+// layers, process, module, and system/er/sequence of a `# system`. Entry
+// points: `diagramOf`, `layout`, `parseView`, `viewOfKey`, `viewsOf`,
+// `flowListing`, `usagesOf`.
 
 import { savedPositions, type LayoutFile } from "./diagram-layout.ts";
 import { EXTERNAL } from "./external-ids.ts";
@@ -18,6 +24,7 @@ import type { SystemSpec } from "./system.ts";
 import type { SchemaRead } from "./schema-discover.ts";
 import { discoverSystem, DISCOVERED } from "./system-discover.ts";
 
+/** Which picture to draw, and of what. */
 export type DiagramView =
   | { kind: "flow"; name: string }
   | { kind: "entry"; id: string; depth?: number }
@@ -33,8 +40,10 @@ export type DiagramView =
   /** One sequence of a system: messages between components, top to bottom. */
   | { kind: "sequence"; name: string; seq: string };
 
+/** A shape's colour: what `check` says about it, `planned` for declared-only code, null for nothing. */
 export type DiagramVerdict = "ok" | "fail" | "unverified" | "planned" | null;
 
+/** One shape: what it stands for, its verdict and lane, and its box once laid out. */
 export interface DiagramNode {
   id: string;
   kind: "start" | "task" | "gateway" | "parallel" | "event" | "timer" | "external" | "hole" | "module" | "fn" | "layer" | "component" | "table" | "participant" | "anchor";
@@ -58,6 +67,7 @@ export interface DiagramNode {
   h: number;
 }
 
+/** One line between two shapes, with its kind and an optional label and verdict. */
 export interface DiagramEdge {
   from: string;
   to: string;
@@ -79,6 +89,7 @@ export interface DiagramGroup {
   h: number;
 }
 
+/** A drawn view: shapes, lines, lanes, and why it is empty or cut short. */
 export interface Diagram {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
@@ -117,6 +128,7 @@ export interface DiagramResult {
   message?: string;
 }
 
+/** Everything a view is computed from. */
 export interface DiagramInput {
   snapshot: AnalysisSnapshot | null;
   spec: SpecIR;
@@ -145,6 +157,7 @@ export interface DiagramProcess {
 /** Positions that win over the automatic layout, by node id. */
 export type Positions = Readonly<Record<string, { x: number; y: number; w?: number; h?: number }>>;
 
+/** Call-tree depth of an entry view: the default and the most a request may ask for. */
 export const DEFAULT_DEPTH = 2;
 
 export const MAX_DEPTH = 10;
@@ -152,12 +165,14 @@ export const MAX_DEPTH = 10;
 /** An entry's call tree stops growing here; `reason` says it was cut. */
 export const MAX_NODES = 400;
 
+/** Every view kind `parseView` accepts. */
 export const VIEW_KINDS = ["flow", "entry", "event", "layers", "process", "module", "system", "er", "sequence"] as const;
 
 /** A view from the query of `GET /api/diagram`, or why it names none. */
 export function parseView(query: URLSearchParams): DiagramView | string {
   const view = query.get("view");
 
+  // A query parameter that must be present and non-empty.
   const need = (name: string): string | null => {
     const value = query.get(name);
 
@@ -179,6 +194,7 @@ export function parseView(query: URLSearchParams): DiagramView | string {
       const depth = query.get("depth");
 
       if (depth === null) return { kind: "entry", id };
+      // Depth must be a plain integer within range.
       const n = /^\d+$/.test(depth) ? Number(depth) : NaN;
 
       return n >= 1 && n <= MAX_DEPTH ? { kind: "entry", id, depth: n } : `depth must be 1–${MAX_DEPTH}`;
@@ -354,6 +370,7 @@ function useIn(flow: Flow, id: string): number | null {
 export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string): Usages {
   const routes = new Set<string>();
 
+  // Collect the flows that name the ID, remembering their triggers: an entry whose flow names it is a user too.
   const found = (flows: readonly Flow[]): { name: string; file: string; line: number }[] => {
     const out: { name: string; file: string; line: number }[] = [];
 
@@ -376,9 +393,11 @@ export function usagesOf(snapshot: AnalysisSnapshot | null, spec: SpecIR, discov
   return { id, flows, discovered: fromDiscovered, entries };
 }
 
+/** The laid-out diagram of a view; places from the saved layout file win over computed ones. */
 export function diagramOf(input: DiagramInput): Diagram {
   const raw = unplaced(input);
 
+  // Views that place their own shapes (ER, sequence): only saved places override them.
   if (raw.placed) return input.saved ? { ...raw, nodes: raw.nodes.map((node) => {
     const manual = Object.hasOwn(input.saved!.shapes, node.id) ? input.saved!.shapes[node.id] : undefined;
 
@@ -434,6 +453,7 @@ function unplaced(input: DiagramInput): Diagram {
   return layersDiagram(input.snapshot, input.spec, input.results);
 }
 
+/** An empty diagram that says why. */
 function empty(reason: string): Diagram {
   return { nodes: [], edges: [], groups: [], reason };
 }
@@ -469,6 +489,7 @@ function codeRef(id: string, code: { file: string | null; line: number | null } 
 
 // ── verdicts ────────────────────────────────────────────────────────────────
 
+// Verdicts ordered by severity: a shape shows the worst result about it.
 type RankedVerdict = "fail" | "unverified" | "ok";
 
 const RANK = { fail: 3, unverified: 2, ok: 1 } satisfies Record<RankedVerdict, number>;
@@ -478,6 +499,7 @@ function isRanked(value: string): value is RankedVerdict {
   return Object.hasOwn(RANK, value);
 }
 
+/** The most severe ranked verdict in `values`, or null when none ranks. */
 function worst(values: readonly string[]): DiagramVerdict {
   let best: RankedVerdict | null = null;
 
@@ -486,6 +508,7 @@ function worst(values: readonly string[]): DiagramVerdict {
   return best;
 }
 
+/** A result's text, whichever shape of result it is. */
 function messageOf(result: DiagramResult): string {
   return result.evidence ?? result.message ?? "";
 }
@@ -512,6 +535,7 @@ function byArea(results: readonly DiagramResult[]): Map<string, DiagramVerdict> 
     if (!result.area || !isRanked(result.verdict)) continue;
     const parts = result.area.split(".");
 
+    // Propagate the verdict to every ancestor ID, so a module shows the worst of its members.
     for (let i = 1; i <= parts.length; i++) {
       const id = parts.slice(0, i).join(".");
       out.set(id, worst([out.get(id) ?? "", result.verdict]));
@@ -528,6 +552,7 @@ function layerOrder(snapshot: AnalysisSnapshot): string[] {
   const configured = Object.keys(snapshot.manifest.config.layers).filter((layer) => snapshot.nodes[layer]?.kind === "layer");
   const own = new Set(configured);
 
+  // Unconfigured layers (synthetic ones) by name, with `external` always last.
   const others = Object.keys(snapshot.nodes)
     .filter((id) => snapshot.nodes[id]?.kind === "layer" && !own.has(id))
     .sort((a, b) => Number(a === EXTERNAL) - Number(b === EXTERNAL) || compareText(a, b));
@@ -535,6 +560,7 @@ function layerOrder(snapshot: AnalysisSnapshot): string[] {
   return [...configured, ...others];
 }
 
+/** The layer of an ID: the snapshot's, else its first segment when that is a layer (or when there is no snapshot). */
 function layerOf(snapshot: AnalysisSnapshot | null, id: string): string | undefined {
   const known = snapshot?.nodes[id]?.layer;
 
@@ -555,12 +581,18 @@ function lanes(snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[])
 
 // ── flow ────────────────────────────────────────────────────────────────────
 
+/**
+ * A flow as BPMN-like shapes: the trigger as the start event, each item drawn
+ * in spec order, nested items after their parent. Node ids carry the spec
+ * line (`step:12`), which `diagramKeys` later turns into stable keys.
+ */
 function flowDiagram(input: DiagramInput, name: string): Diagram {
   const flow = input.spec.flows.find((f) => f.name === name);
 
   if (!flow) return empty(`no flow named \`${name}\``);
   const { snapshot } = input;
   const lines = byLine(input.results);
+  // IDs declared `planned` (fn, module or type) that the code does not have yet are drawn as planned.
   const planned = new Set(input.spec.planned.filter((p) => p.decl === "fn" || p.decl === "module" || p.decl === "type").map((p) => p.id));
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
@@ -568,6 +600,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
   const at = (item: { span: { start: { line: number } } }): number => item.span.start.line;
   const resultsAt = (item: { span: { start: { line: number } } }): DiagramResult[] => lines.get(`${flow.file}:${at(item)}`) ?? [];
 
+  // Small builders: add a shape, add a line (none from a null start), and the code+spec ref of a shape.
   const add = (node: Omit<DiagramNode, keyof Box>, group?: string): DiagramNode => {
     const placed = shapeOf(node, group);
     nodes.push(placed);
@@ -593,12 +626,14 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
     return ref;
   };
 
+  // A package or anything in the external layer is drawn as an external participant.
   const isExternal = (id: string): boolean => id === EXTERNAL || id.startsWith(`${EXTERNAL}.`) || snapshot?.nodes[id]?.layer === EXTERNAL;
 
   /** A trigger, step or `then <id>`: its shape, and a hole before it when `check` left the route into it unverified. */
   const target = (item: Trigger | FlowItem, id: string, from: string | null, label?: string): string => {
     const line = at(item);
     const found = resultsAt(item);
+    // The shape's verdict is the worst result on its line; the line into it shows the `static` (route) verdict only.
     const statics = found.filter((r) => r.criterion === "static");
     const isPlanned = planned.has(id) && snapshot?.nodes[id] === undefined;
     const verdict: DiagramVerdict = isPlanned ? "planned" : worst(found.map((r) => r.verdict));
@@ -630,6 +665,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
     return tail;
   };
 
+  // Draw one item after `from` and return the shape the next item should follow.
   const one = (item: Trigger | FlowItem, from: string | null, group: string | undefined): string | null => {
     switch (item.kind) {
       case "trigger":
@@ -645,6 +681,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
         link(from, gateway.id, "sequence");
         // The branch hangs off the gateway under its condition; the default path goes on from the gateway.
         let tail: string | null = gateway.id;
+        // Label the first line leaving the gateway with the condition: that is the branch.
         let first = true;
 
         for (const child of item.children) {
@@ -729,6 +766,7 @@ function flowDiagram(input: DiagramInput, name: string): Diagram {
     }
   };
 
+  // Draw from the top-level items; the first one (the trigger) has nothing before it.
   block(flow.top, null, undefined);
 
   return { nodes, edges, groups: lanes(snapshot, nodes) };
@@ -766,6 +804,7 @@ function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
 
+  // One shape per fn, created on first use, in the lane of its layer.
   const fn = (target: string): string => {
     const nodeId = `fn:${target}`;
 
@@ -776,11 +815,13 @@ function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
     return nodeId;
   };
 
+  // The event in the middle: dispatchers point into it, observers out of it.
   const center: DiagramNode = { id: `event:${id}`, kind: "event", label: event.name ?? id.slice(id.indexOf(".") + 1), ref: codeRef(id, event), verdict: areas.get(id) ?? null, group: event.layer, x: 0, y: 0, w: 0, h: 0 };
 
   for (const publisher of event.callers ?? []) edges.push({ from: fn(publisher), to: center.id, kind: "emits", label: "dispatch" });
   nodes.push(center);
 
+  // Observers: resolved call edges from the event, labelled with the observer's name and scope.
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call" || edge.source !== id || edge.resolution !== "resolved" || edge.target === null) continue;
     const observer = /observer `([^`]*)`/.exec(edge.binding ?? "")?.[1];
@@ -790,6 +831,11 @@ function eventDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
   return withReason({ nodes, edges, groups: lanes(snapshot, nodes) }, edges.length === 0 ? `\`${id}\` has neither a dispatch nor an observer keylang read` : null);
 }
 
+/**
+ * An entry point's call tree: the entry as the start, the fns it calls
+ * breadth first to `depth` levels, each fn once in the lane of its layer, and
+ * one `?` hole per fn for the calls keylang could not resolve.
+ */
 function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number): Diagram {
   const entry = snapshot.entries.find((e) => e.id === id);
   const root = snapshot.nodes[id];
@@ -799,6 +845,7 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];
   const shown = new Map<string, string>();
+  // Call edges by source, so each opened fn reads only its own.
   const calls = new Map<string, AnalysisSnapshot["edges"]>();
 
   for (const edge of snapshot.edges) {
@@ -812,6 +859,7 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
   /** The unresolved calls of each opened fn, by the shape of the fn: drawn as one hole per fn. */
   const holes = new Map<string, { reasons: Map<string, string>; file: string | null; line: number }>();
 
+  // One shape per ID, created on first use; its kind follows the snapshot node.
   const place = (target: string): string => {
     const known = shown.get(target);
 
@@ -871,6 +919,8 @@ function entryDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResul
       const from = shown.get(source)!;
       const seen = new Set<string>();
 
+      // A resolved call draws (or reuses) the callee and queues a new non-external
+      // one for the next level; an unresolved or ambiguous one becomes a hole reason.
       for (const edge of calls.get(source) ?? []) {
         if (nodes.length >= MAX_NODES) {
           cut = true;
@@ -934,12 +984,14 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
   const edges: DiagramEdge[] = [];
   const placed = new Set<string>();
 
+  // Add one shape in the lane of the code it stands for.
   const shape = (id: string, kind: DiagramNode["kind"], label: string, code: string): void => {
     placed.add(id);
     const layer = layerOf(snapshot, code);
     nodes.push(shapeOf({ id, kind, label, ref: codeRef(code, snapshot.nodes[code]), verdict: areas.get(code) ?? null }, layer));
   };
 
+  // One start per flow (a flow in two processes is drawn once), with its steps; a shared step is one shape.
   for (const process of shown) {
     for (const flow of process.flows) {
       const start = `start:${flow.name}`;
@@ -963,6 +1015,7 @@ function processDiagram(snapshot: AnalysisSnapshot, processes: readonly DiagramP
 
 /** The module an ID lies in: itself, or the nearest module above it (`a.b.f` → `a.b`); null when none. */
 export function moduleOfId(snapshot: AnalysisSnapshot, id: string): string | null {
+  // Walk up the dotted ID; a class is a module node too, but not the module it lies in.
   for (let at = id; at !== ""; at = at.includes(".") ? at.slice(0, at.lastIndexOf(".")) : "") {
     const node = snapshot.nodes[at];
 
@@ -985,6 +1038,7 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
   const areas = byArea(results);
   const counts = new Map<string, number>();
 
+  // Count resolved imports between modules where one end is the root module; packages stay as they are.
   for (const edge of snapshot.edges) {
     if ((edge.kind !== "import" && edge.kind !== "reexport") || edge.resolution !== "resolved" || !edge.target) continue;
     const from = moduleOfId(snapshot, edge.source) ?? edge.source;
@@ -1007,6 +1061,7 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
 
   add(root);
   const edges: DiagramEdge[] = [];
+  // Pairs sorted by key so shapes and lines come out in the same order every time; capped at MAX_NODES.
   const pairs = [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 
   for (const [key, count] of pairs) {
@@ -1023,6 +1078,11 @@ function moduleDiagram(snapshot: AnalysisSnapshot, results: readonly DiagramResu
 
 // ── layers ──────────────────────────────────────────────────────────────────
 
+/**
+ * The layers as a stack (top to bottom in their order), with a counted
+ * dependency line per pair of layers the code connects and one line per
+ * pair and effect of the `allow`/`deny` rules, coloured by their verdict.
+ */
 function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]): Diagram {
   const order = layerOrder(snapshot);
   const areas = byArea(results);
@@ -1030,6 +1090,7 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
   const edges: DiagramEdge[] = [];
   const counts = new Map<string, number>();
 
+  // Count every edge between two different layers.
   for (const edge of snapshot.edges) {
     if (edge.target === null) continue;
     const from = snapshot.nodes[edge.source]?.layer;
@@ -1042,6 +1103,7 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
 
   // SAFETY: every key is `${from}\u0000${to}` and layer names hold no NUL, so each split has exactly two parts.
   const pairs = [...counts.keys()].map((key) => key.split("\u0000") as [string, string]);
+  // Dependency lines in layer order, from then to.
   pairs.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || order.indexOf(a[1]) - order.indexOf(b[1]));
 
   for (const [from, to] of pairs) edges.push({ from: `layer:${from}`, to: `layer:${to}`, kind: "dependency", label: String(counts.get(`${from}\u0000${to}`)) });
@@ -1074,11 +1136,13 @@ function layersDiagram(snapshot: AnalysisSnapshot, spec: SpecIR, results: readon
     }
   }
 
+  // Drop the internal rule counter before returning.
   return { nodes, edges: edges.map((edge) => ("count" in edge ? (({ count: _count, ...rest }) => rest)(edge) : edge)), groups: [], direction: "down" };
 }
 
 // ── layout ──────────────────────────────────────────────────────────────────
 
+// Fixed shape sizes per kind, px: the layout is a grid, not a force simulation.
 const SIZE: Record<DiagramNode["kind"], { w: number; h: number }> = {
   start: { w: 36, h: 36 },
   event: { w: 36, h: 36 },
@@ -1120,6 +1184,7 @@ const ORDERING: ReadonlySet<DiagramEdge["kind"]> = new Set(["sequence", "call", 
  * `positions` override the computed place of a node. Pure: a new diagram.
  */
 export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
+  // The ordering edges as adjacency, ignoring self-loops and edges to unknown shapes.
   const index = new Map(diagram.nodes.map((node, i) => [node.id, i]));
   const out = new Map<string, string[]>();
   const indegree = new Map<string, number>();
@@ -1174,6 +1239,9 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   const slot = new Map<string, number>();
   const count = new Map<string, number>();
 
+  // Rank by rank: sort each rank's shapes by lane, spec line, the mean place of
+  // their predecessors (barycentre, to reduce crossings), then diagram order,
+  // and give each its slot in its (lane, rank) cell.
   for (const r of [...byRank.keys()].sort((a, b) => a - b)) {
     const pull = (node: DiagramNode): number => {
       const known = (preds.get(node.id) ?? []).map((id) => ordinal.get(id)).filter((value): value is number => value !== undefined);
@@ -1203,6 +1271,7 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
     return Math.ceil(n / Math.ceil(n / MAX_ROWS));
   };
 
+  // How many columns each rank needs: the most any lane's cell wraps into.
   for (const [key, n] of count) {
     const r = Number(key.split(":")[1]);
     columns.set(r, Math.max(columns.get(r) ?? 1, Math.ceil(n / MAX_ROWS)));
@@ -1211,11 +1280,13 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
   const left = new Map<number, number>();
   let x = LANE_PAD;
 
+  // The left edge of every rank, columns side by side.
   for (let r = 0; r <= Math.max(0, ...columns.keys()); r++) {
     left.set(r, x);
     x += (columns.get(r) ?? 1) * CELL_W;
   }
 
+  // Each lane is as tall as its fullest rank.
   const rows = new Map<number, number>();
 
   for (const key of count.keys()) {
@@ -1237,6 +1308,7 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
     y += rows.get(lane)! * CELL_H + 2 * LANE_PAD;
   }
 
+  // Place each shape centred in its grid cell; a manual position wins.
   const nodes = diagram.nodes.map((node): DiagramNode => {
     const size = SIZE[node.kind];
     const lane = laneOf(node);
@@ -1263,6 +1335,7 @@ export function layout(diagram: Diagram, positions: Positions = {}): Diagram {
 
   const right = Math.max(0, ...nodes.map((node) => node.x + node.w)) + LANE_PAD;
 
+  // Lanes span the full width and grow to enclose any shape moved outside their band.
   const groups = diagram.groups.map((group, lane): DiagramGroup => {
     const members = nodes.filter((node) => laneOf(node) === lane);
     const from = Math.min(top.get(lane) ?? 0, ...members.map((node) => node.y - LANE_PAD));
@@ -1289,6 +1362,7 @@ export interface SystemListing {
   components: number;
 }
 
+/** How many tables the system's data stores hold. */
 function tableCount(system: SystemSpec): number {
   return system.components.reduce((sum, component) => sum + component.tables.length, 0);
 }
@@ -1312,6 +1386,7 @@ function systemNamed(snapshot: AnalysisSnapshot | null, systems: readonly System
   return systems.find((system) => system.name === name) ?? null;
 }
 
+/** What the page shows beside a system's views: notes, sequences, table count; no file for the code system. */
 function summaryOf(system: SystemSpec): SystemSummary {
   return { name: system.name, file: system.name === CODE_SYSTEM ? null : system.file, notes: system.notes.map((note) => ({ ...note })), sequences: system.sequences.map((seq) => seq.name), tables: tableCount(system) };
 }
@@ -1329,9 +1404,11 @@ function systemDiagram(system: SystemSpec, results: readonly DiagramResult[]): D
   const criterion = `system ${system.name}`;
   const verdictOf = new Map<string, DiagramVerdict>();
 
+  // The worst `system` verdict per relation (`from verb to`).
   for (const result of results) if (result.criterion === criterion && result.area !== undefined) verdictOf.set(result.area, worst([verdictOf.get(result.area) ?? "", result.verdict]));
   const zones = new Map(system.zones.map((zone) => [zone.name, zone]));
 
+  // A zone's full path from the outermost zone, `outer / inner`, as the lane name.
   const zonePath = (name: string | null): string | undefined => {
     const parts: string[] = [];
 
@@ -1418,6 +1495,7 @@ function erDiagram(system: SystemSpec): Diagram {
     const laneTop = y;
     y += TABLE_HEAD + 10;
 
+    // Tables in rows of four; each row is as tall as its tallest table.
     for (let row = 0; row < component.tables.length; row += TABLES_PER_ROW) {
       const tables = component.tables.slice(row, row + TABLES_PER_ROW);
       let tallest = 0;
@@ -1440,10 +1518,12 @@ function erDiagram(system: SystemSpec): Diagram {
     groups.push({ id: component.name, label, kind: "lane", x: 0, y: laneTop, w: 0, h: y - laneTop - TABLE_GAP / 2 });
   }
 
+  // Every lane spans the widest row.
   const right = Math.max(0, ...nodes.map((node) => node.x + node.w)) + 20;
 
   for (const group of groups) group.w = right;
 
+  // Foreign keys: a line to the referenced table (looked up by table name).
   for (const component of system.components) {
     for (const table of component.tables) {
       for (const column of table.columns) {
@@ -1479,6 +1559,7 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
   if (!sequence) return { ...empty(`no sequence \`${name}\` in system \`${system.name}\``), system: summaryOf(system) };
   const order: string[] = [];
 
+  // Participants in order of first appearance.
   for (const message of sequence.messages) for (const who of [message.from, message.to]) if (!order.includes(who)) order.push(who);
   const kinds = new Map(system.components.map((component) => [component.name, component]));
   const center = (who: string): number => 20 + order.indexOf(who) * LIFELINE_GAP + PARTICIPANT_W / 2;
@@ -1497,6 +1578,7 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
 
   const edges: DiagramEdge[] = [];
   const top = PARTICIPANT_H + 30;
+  // Each message is a line between two invisible anchors on the lifelines at its own height; a self-message steps down.
   sequence.messages.forEach((message, i) => {
     const y = top + i * MESSAGE_GAP;
     const from = `anchor:${i}:from`;
@@ -1509,6 +1591,7 @@ function sequenceDiagram(system: SystemSpec, name: string): Diagram {
     if (message.async) edge.async = true;
     edges.push(edge);
   });
+  // Lifelines run from each participant to below the last message; listed first so they draw underneath.
   const bottom = top + sequence.messages.length * MESSAGE_GAP;
 
   for (const who of order) {

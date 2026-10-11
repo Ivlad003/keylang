@@ -5,6 +5,11 @@
 // `<dir>/baseline.json` under version control and change only on
 // `check --stale --accept`; `map` never writes them. A stale statement is a
 // reason to reread it, not a proof that it is wrong.
+//
+// Joins both pipelines: statements come from spec IR (Markdown → IR), their
+// fingerprints from the snapshot (source → graph). Entry points: `runStaleCheck`
+// (behind `check --stale`), `specStatements`, `staleReport`, `acceptBaseline`,
+// and `parseBaseline`/`baselineJson` for the committed file.
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -41,6 +46,7 @@ export interface Statement {
   subjects: string[];
 }
 
+/** A statement with its current fingerprint and how it compares with the accepted one. */
 export interface StaleFinding extends Statement {
   /** `new`: no accepted fingerprint yet; `stale`: the code changed since it was accepted. */
   state: "fresh" | "stale" | "new";
@@ -53,6 +59,7 @@ export interface StaleFinding extends Statement {
   incomplete: string[];
 }
 
+/** The outcome of comparing the specs with the baseline. */
 export interface StaleReport {
   /** In file, then position order. */
   findings: StaleFinding[];
@@ -75,6 +82,8 @@ export function specStatements(docs: readonly Document[]): Statement[] {
 
   for (const doc of docs) {
     if (doc.generated !== null) continue;
+    // Repeated keys within one file get ` #2`, ` #3`… in document order, so
+    // two identical statements keep separate fingerprints.
     const seen = new Map<string, number>();
 
     const add = (node: Node, base: string, label: string, subjects: Iterable<string>): void => {
@@ -88,8 +97,11 @@ export function specStatements(docs: readonly Document[]): Statement[] {
       if (section.kind !== "map" && section.kind !== "flow") continue;
       const flowRefs = section.kind === "flow" ? sectionRefs(section) : [];
 
+      // Walk the item tree; `around` is the IDs of the nearest enclosing step or
+      // trigger, which a nested `when`/`then`/`invariant` is about.
       const visit = (node: Node, around: readonly string[]): void => {
         const own = node.refs.map((ref) => ref.target);
+        // A description is about the item's own ID, else its first reference.
         const subject = node.id ?? own[0];
 
         if (node.description.length > 0 && subject !== undefined) add(node, subject, `description of \`${subject}\``, node.id !== null ? [node.id] : own);
@@ -104,6 +116,7 @@ export function specStatements(docs: readonly Document[]): Statement[] {
           }
         }
 
+        // A step or trigger with references becomes the context of its children.
         const next = own.length > 0 && (node.kind === "step" || node.kind === "trigger") ? own : around;
 
         for (const child of node.children) visit(child, next);
@@ -116,10 +129,12 @@ export function specStatements(docs: readonly Document[]): Statement[] {
   return out;
 }
 
+/** Every reference target in `node` and its descendants, in document order. */
 function subtreeRefs(node: Node): string[] {
   return [...node.refs.map((ref) => ref.target), ...node.children.flatMap(subtreeRefs)];
 }
 
+/** Every reference target of a section's items. */
 function sectionRefs(section: Section): string[] {
   return sectionNodes(section).flatMap(subtreeRefs);
 }
@@ -135,6 +150,8 @@ export function statementPrint(snapshot: AnalysisSnapshot, subjects: readonly st
   const parts: string[] = [];
   const incomplete: string[] = [];
 
+  // Hash `id=print` lines in subject order (subjects come sorted), so the
+  // fingerprint depends only on the code, not on how the statement was written.
   for (const id of subjects) {
     const print = snapshotBaseline(snapshot, id);
     parts.push(`${id}=${print ?? "?"}`);
@@ -152,7 +169,9 @@ function closureComplete(snapshot: AnalysisSnapshot, id: string): boolean {
 
   if (node?.closure) return node.closure.complete;
 
+  // A fn or type without a closure was not fingerprinted through its callees.
   if (node?.kind === "fn" || node?.kind === "type") return false;
+  // A container: complete only when every fn and type under it is.
   const prefix = `${id}.`;
 
   for (const [other, n] of Object.entries(snapshot.nodes)) {
@@ -178,6 +197,8 @@ export function staleReport(docs: readonly Document[], snapshot: AnalysisSnapsho
     return { ...statement, state, fingerprint, incomplete };
   });
 
+  // Obsolete entries: baseline keys with no statement now. Only files that
+  // were checked qualify (all files with `whole`); sorted for a stable report.
   const checked = new Set(docs.flatMap((doc) => (doc.generated === null ? [doc.path] : [])));
   const present = new Set(findings.map((f) => `${f.file}\u0000${f.key}`));
   const obsolete: StaleReport["obsolete"] = [];
@@ -200,6 +221,7 @@ export function acceptBaseline(baseline: StaleBaseline, report: StaleReport, che
   const out = new Map<string, Map<string, string>>();
   const replaced = new Set(checked);
 
+  // Copy the files that were not checked; the checked ones are rebuilt from findings.
   for (const [file, entries] of baseline) if (!replaced.has(file)) out.set(file, new Map(entries));
 
   for (const f of report.findings) {
@@ -229,6 +251,7 @@ export function baselineJson(baseline: StaleBaseline): string {
   return `${JSON.stringify(out, null, 2)}\n`;
 }
 
+// A lowercase hex SHA-256 digest.
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 
 /** Reads a committed baseline; throws `path: problem` naming the field when it is not one. */
@@ -242,6 +265,7 @@ export function parseBaseline(text: string, path: string): StaleBaseline {
   }
 
   if (!isJsonObject(value)) throw new Error(`${path}: expected an object of spec files`);
+  // Validate each level: file → object of keys → fingerprint string.
   const out = new Map<string, Map<string, string>>();
 
   for (const [file, entries] of Object.entries(value)) {
@@ -264,6 +288,7 @@ export function staleLine(f: StaleFinding): string {
   const where = `${f.file}:${f.line}:${f.col}`;
   const about = f.subjects.length > 0 ? f.subjects.map((id) => `\`${id}\``).join(", ") : "nothing in the code";
 
+  // A fresh finding is printed only when it is incomplete, hence its wording.
   const head =
     f.state === "stale"
       ? `${where}: stale ${f.label}: the code under it changed since it was accepted (${about})`
@@ -285,6 +310,7 @@ export function staleSummary(report: StaleReport): string {
   return parts.join(", ");
 }
 
+/** The result of `runStaleCheck`. */
 export interface StaleCheck {
   report: StaleReport;
   /** `<dir>/baseline.json`. */
@@ -304,6 +330,8 @@ export async function runStaleCheck(request: { root: string; base: string; paths
   const config = loadConfig(root);
 
   if (config.languages.length === 0) throw new Error("check --stale: no languages to analyse; the fingerprints come from the code");
+  // Paths given on the command line resolve against the caller's directory and
+  // must exist inside the spec directory; none means the whole spec directory.
   const specDir = join(root, config.dir);
   const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(request.base, path)) : [specDir];
 
@@ -313,6 +341,7 @@ export async function runStaleCheck(request: { root: string; base: string; paths
     if (!within(spec, specDir)) throw new Error(`check --stale: ${toPosix(relative(request.base, spec))} is outside \`${config.dir}/\`; the baseline covers this repository's specs only`);
   }
 
+  // A missing baseline is empty: every statement is new.
   const path = staleBaselinePath(config);
   const abs = join(root, path);
   const current = existingText(abs);
@@ -330,6 +359,7 @@ export async function runStaleCheck(request: { root: string; base: string; paths
   const next = acceptBaseline(baseline, report, checked);
   const text = baselineJson(next);
 
+  // Write only on a change, and only over the text read above.
   if (text !== current) safeWrite(root, path, text, { expect: current });
 
   return { report, path, accepted: report.findings.length };

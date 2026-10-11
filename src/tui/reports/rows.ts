@@ -2,12 +2,14 @@
 // of operation they show, and the few row shapes most reports share. One
 // module per group of kinds (setup, check, explain, draft, chat) describes
 // its kinds; `records.ts` puts them in one table.
+// Layer: TUI reports; `results-panel.ts` draws these rows.
 
 import type { OperationEnvelope, OperationMessage, OperationPayloads, OperationRequest } from "../../operations.ts";
 import type { Style } from "../screen.ts";
 import type { OperationRecord, State } from "../state.ts";
 import { MARK_STYLE, THEME } from "../theme.ts";
 
+/** Every operation kind a report can describe. */
 export type Kind = OperationRequest["kind"];
 
 /** The request of one kind. */
@@ -54,12 +56,16 @@ export interface ReportView {
   summary: string;
 }
 
+/** A report's title row. */
 export const BOLD: Style = { ...THEME.panel, bold: true };
 
+/** Secondary text: hints, notes, rules. */
 export const MUTED: Style = { ...THEME.panel, fg: 243 };
 
+/** Amber text for warnings. */
 export const WARNING: Style = { ...THEME.panel, fg: 179 };
 
+/** Red text for errors. */
 export const ERROR: Style = { ...THEME.panel, ...THEME.error };
 
 /** The outcome row under a report's title: green when the operation did what was asked, red otherwise. */

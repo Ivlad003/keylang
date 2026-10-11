@@ -10,6 +10,7 @@ import { preparedFor, type PreparedRef } from "./git.ts";
 // The module itself (the build resolves this name to src/git-changes.ts): its helpers run no git.
 export { changedPathSet, deletedModuleIds, diskCaseResolver, gitUnavailable, type ChangedFiles, type GitSummary } from "keylang-git-changes";
 
+/** The git state prepared for this root; throws, naming the command, when git was not read or is unavailable. */
 function state(root: string, label: string) {
   const found = preparedFor(root);
 
@@ -20,7 +21,9 @@ function state(root: string, label: string) {
   return found;
 }
 
+/** The prepared data for one ref; a ref that looks like an option is rejected, as the CLI version does. */
 function refOf(root: string, ref: string, label: string): PreparedRef {
+  // A leading dash would be read as a git flag by the CLI version, so it is never a ref here either.
   if (ref.startsWith("-")) throw new Error(`${label}: \`${ref}\` is not a git ref`);
   const found = state(root, label).refs.get(ref);
 
@@ -29,6 +32,7 @@ function refOf(root: string, ref: string, label: string): PreparedRef {
   return found;
 }
 
+// The summary and the feature base are always prepared together with the state, hence the non-null assertions.
 export const gitSummary: typeof cli.gitSummary = (root, label) => state(root, label).summary!;
 
 export const featureBaseOrigin: typeof cli.featureBaseOrigin = (root, label) => state(root, label).base!;
@@ -38,6 +42,7 @@ export const gitChangedFiles: typeof cli.gitChangedFiles = (root, ref, label = "
 
   if (changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
 
+  // Fresh copies, so a caller that mutates the result cannot change the prepared state.
   return { paths: new Set(changed.paths), deleted: [...changed.deleted], unborn: changed.unborn };
 };
 
@@ -46,6 +51,7 @@ export const gitFileAt: typeof cli.gitFileAt = (root, ref, path, label) => {
 
   if (at.changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
 
+  // No commit yet means no file existed at the ref: null, as the CLI answers.
   if (at.changed.unborn) return null;
 
   if (!at.files.has(path)) throw new Error(`${label}: git was not read for ${path} at \`${ref}\` in the browser`);
@@ -58,6 +64,7 @@ export const gitSpecFilesAt: typeof cli.gitSpecFilesAt = (root, ref, dir, label,
 
   if (at.changed === null) throw new Error(`${label}: \`${ref}\` is not a commit`);
 
+  // An unborn ref has no spec files, which is a valid empty answer rather than a missing one.
   if (at.changed.unborn) return new Map();
   const files = at.specs.get(dir);
 

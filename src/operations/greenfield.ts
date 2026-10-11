@@ -7,6 +7,11 @@
 // already there: nothing is written and the answer names it (`conflict`).
 // A project that has keylang.json goes the way of every drawing: proposals
 // (`diagram-propose.ts`).
+//
+// Place in the pipeline: a step before the pipeline even exists; it turns
+// the web editor's drawing into keylang.json, specs and README via
+// `greenfieldPlan` (`src/greenfield.ts`). Entry points: `runGreenfield`,
+// `greenfieldAvailability`.
 
 import { lstatSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -24,6 +29,7 @@ export const GREENFIELD_SPEC_DIR = "keylang";
 /** The longest idea the dialog sends. */
 export const MAX_IDEA = 20000;
 
+/** The drawing the web dialog sends: unvalidated, since it comes from the browser. */
 export interface GreenfieldRequest {
   /** The project root (absolute). */
   root: string;
@@ -35,6 +41,7 @@ export interface GreenfieldRequest {
   idea?: unknown;
 }
 
+/** What the dialog shows after a run: the status with its exit code, the files, and what to run next. */
 export interface GreenfieldResult {
   exitCode: 0 | 1 | 2;
   status: "written" | "conflict" | "invalid" | "failed";
@@ -48,10 +55,12 @@ export interface GreenfieldResult {
   next: string[];
 }
 
+/** A result without a plan: a status, its code, the reason, and the files involved. */
 function result(status: GreenfieldResult["status"], exitCode: 0 | 1 | 2, error: string | null, files: string[] = []): GreenfieldResult {
   return { exitCode, status, error, files, layers: [], features: [], notes: [], next: [] };
 }
 
+/** Whether anything is at `abs`, a dangling link included (`lstat` does not follow it). */
 function exists(abs: string): boolean {
   try {
     lstatSync(abs);
@@ -93,6 +102,8 @@ function newFileProblem(root: string, path: string): string | null {
 
   if (place !== null) return place;
 
+  // Walk up the path's parent directories: a file standing where a
+  // directory must be created would make the write fail halfway.
   for (let dir = dirname(path); dir !== "." && dir !== ""; dir = dirname(dir)) {
     let entry;
 
@@ -116,6 +127,8 @@ function newFileProblem(root: string, path: string): string | null {
 export function runGreenfield(request: GreenfieldRequest): GreenfieldResult {
   const { root } = request;
 
+  // Validate the request in order: the root, that no keylang.json is there,
+  // then each field the browser sent (model, languages, idea).
   if (!isAbsolute(root)) return result("invalid", 2, "greenfield: root must be an absolute path");
 
   try {
@@ -137,6 +150,8 @@ export function runGreenfield(request: GreenfieldRequest): GreenfieldResult {
   if (!isText(idea)) return result("invalid", 2, "idea: text");
 
   if (idea.length > MAX_IDEA) return result("invalid", 2, `idea: at most ${MAX_IDEA} characters`);
+  // Plan the files, then check every feature slug: it becomes a file name
+  // under `<dir>/features/`, so it must be one `keylang feature` accepts.
   const plan = greenfieldPlan({ model, languages: request.languages, idea, specDir: GREENFIELD_SPEC_DIR });
 
   if (isProblemText(plan)) return result("invalid", 2, plan);

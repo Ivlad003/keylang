@@ -4,20 +4,28 @@
 // store that runs on its own, and a layer of one program is not. The text is
 // the snapshot and the saved briefs only — no model — so the same inputs give
 // the same bytes.
+// Pipeline: AnalysisSnapshot (graph) → C4 text for `keylang export c4`.
+// Entry points: `renderC4`, `c4Marker`, `isC4Diagram`. Domain terms: layer
+// (a boundary), top module (a component), external package (System_Ext).
 
 import { SYSTEM_ID } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
+/** The diagram languages `export c4 --format` accepts. */
 export const C4_FORMATS = ["plantuml", "mermaid"] as const;
 
+/** One C4 output language. */
 export type C4Format = (typeof C4_FORMATS)[number];
 
+/** The C4 zoom levels keylang draws: components inside layers, or the repository as one container. */
 export const C4_LEVELS = ["component", "container"] as const;
 
+/** One C4 zoom level. */
 export type C4Level = (typeof C4_LEVELS)[number];
 
+/** What to draw: format, level and, for `component`, an optional single layer. */
 export interface C4Request {
   format: C4Format;
   level: C4Level;
@@ -35,6 +43,7 @@ export function c4Marker(format: C4Format): string {
 
 /** The text is a diagram `export c4` wrote: its first non-empty line is the marker of either format. */
 export function isC4Diagram(text: string): boolean {
+  // Skip a BOM and leading blank lines before comparing the first line with each format's marker.
   const first = text.replace(/^﻿/, "").split(/\r?\n/).find((line) => line.trim() !== "");
 
   return first !== undefined && C4_FORMATS.some((format) => first.trim() === c4Marker(format));
@@ -54,6 +63,7 @@ function aliases(): (id: string) => string {
     const known = byId.get(id);
 
     if (known !== undefined) return known;
+    // Replace characters a C4 alias cannot hold; on a clash, number the alias (`_2`, `_3`, ...).
     const base = `n_${id.replace(/[^A-Za-z0-9_]/g, "_")}`;
     let alias = base;
 
@@ -97,6 +107,7 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
   const alias = aliases();
   const nodes = snapshot.nodes;
   const name = snapshot.system.name ?? "repository";
+  // Only configured layers that exist as layer nodes in the snapshot are drawn.
   const layers = Object.keys(snapshot.manifest.config.layers).filter((layer) => nodes[layer]?.kind === "layer");
 
   if (request.layer !== undefined && !layers.includes(request.layer)) throw new Error(`export c4: no layer \`${request.layer}\`; layers: ${layers.join(", ")}`);
@@ -108,6 +119,7 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
   const packageOf = (id: string): string | null => (id.startsWith(`${EXTERNAL}.`) ? id.split(".").slice(0, 2).join(".") : null);
   const topModules = new Map<string, string[]>();
 
+  // Top modules: modules whose parent ID is the layer itself. They are the components.
   for (const [id, node] of Object.entries(nodes)) {
     if (node.kind !== "module" || !layers.includes(node.layer)) continue;
 
@@ -115,6 +127,7 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
     topModules.set(node.layer, [...(topModules.get(node.layer) ?? []), id]);
   }
 
+  // Sorted for byte-stable output.
   for (const list of topModules.values()) list.sort(compareText);
 
   const layerOf = (id: string): string | null => {
@@ -123,6 +136,8 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
     return layer !== undefined && layers.includes(layer) ? layer : null;
   };
 
+  // The drawn unit an ID collapses into: its package for external code; for
+  // layer code, the repository at container level or the top module at component level.
   const unitOf = (id: string): string | null => {
     const pkg = packageOf(id);
 
@@ -143,6 +158,8 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
   const outside = new Set<string>();
   let unresolved = 0;
 
+  // Fold every edge into a relation between drawn units, counting edges by kind.
+  // Unresolved edges are only counted; self-relations are dropped.
   for (const edge of snapshot.edges) {
     const from = unitOf(edge.source);
 
@@ -164,10 +181,12 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
       if (!container && !toPackage && layerOf(from) === layerOf(to)) continue;
     } else if (!inScope(from) && (toPackage || !inScope(to))) continue;
 
+    // Track the package and out-of-scope nodes the relations touch: they are drawn as externals.
     if (toPackage) packages.add(to);
     else if (!inScope(to)) outside.add(to);
 
     if (!inScope(from)) outside.add(from);
+    // One relation per (from, to) pair; NUL cannot occur in an ID, so the key is unambiguous.
     const key = `${from}\0${to}`;
     let rel = rels.get(key);
 
@@ -178,12 +197,14 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
   const text = (id: string): string => quoted(brief(id) ?? "");
   const out: string[] = [c4Marker(request.format)];
 
+  // Header: marker, diagram kind (and the C4 library include for PlantUML), title.
   if (!plantuml) out.push("%% Mermaid C4 is experimental: https://mermaid.js.org/syntax/c4.html");
   out.push(plantuml ? "@startuml" : container ? "C4Container" : "C4Component");
 
   if (plantuml) out.push(`!include <C4/${container ? "C4_Container" : "C4_Component"}>`);
   out.push(`title ${quoted(`${name} — ${container ? "containers" : request.layer !== undefined ? `components of ${request.layer}` : "components"}`).slice(1, -1)}`, "");
 
+  // Body: one container in a system boundary, or one boundary per layer with its components.
   if (container) {
     out.push(`System_Boundary(${alias("@boundary")}, ${quoted(name)}) {`);
     out.push(`  Container(${alias(SYSTEM)}, ${quoted(name)}, ${quoted(snapshot.manifest.config.languages.join(", "))}, ${text(SYSTEM)})`);
@@ -204,6 +225,7 @@ export function renderC4(snapshot: AnalysisSnapshot, brief: (id: string) => stri
     for (const id of [...outside].sort(compareText)) out.push(`Component_Ext(${alias(id)}, ${quoted(id)}, ${quoted(nodes[id]?.file ?? "module")}, ${text(id)})`);
   }
 
+  // Externals and relations, sorted so the same snapshot always gives the same text.
   for (const id of [...packages].sort(compareText)) out.push(`System_Ext(${alias(id)}, ${quoted(nodes[id]?.comment ?? id.slice(EXTERNAL.length + 1))}, "package")`);
   out.push("");
 

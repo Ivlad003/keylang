@@ -10,6 +10,8 @@
 // `base` reads a feature file at the base `keylang feature` takes (the
 // merge-base with the main branch, else `HEAD`) for the session's status line
 // (c4-zoom/11): git runs here, so the session's thread starts no process.
+// Layer: TUI. Spawned by the session's `OperationWorker` (in `background.ts`);
+// runs `runOperation` from `../operations.ts`, the same code the CLI runs.
 
 import { parentPort } from "node:worker_threads";
 import type { FeatureBase } from "../feature-status.ts";
@@ -31,6 +33,7 @@ export type OperationReply =
   | { operationId: number; type: "error"; error: string }
   | { type: "base"; baseId: number; base: FeatureBase };
 
+/** Sends one reply to the session thread; a no-op outside a worker. */
 const post = (reply: OperationReply): void => parentPort?.postMessage(reply);
 
 /** An operation running here: its signal, and the answer its commit waits for. */
@@ -39,8 +42,10 @@ interface RunningOperation {
   proceed: ((gate: CommitGate) => void) | null;
 }
 
+/** The operations in flight, by the session's operation ID. */
 const running = new Map<number, RunningOperation>();
 
+/** A progress reply; `step` is set only when the operation reported one. */
 function progressReply(operationId: number, text: string, step: BatchStep | undefined): OperationReply {
   const reply: OperationReply = { operationId, type: "progress", text };
 
@@ -49,10 +54,13 @@ function progressReply(operationId: number, text: string, step: BatchStep | unde
   return reply;
 }
 
+/** The text of a thrown value, for an `error` reply. */
 function failureText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+// Dispatch each call from the session: a base read, a commit/cancel answer for
+// a running operation, or a new run.
 parentPort?.on("message", (call: OperationCall) => {
   if (call.type === "base") {
     // Without an explicit ref a git failure is a state of the base, never an error.
@@ -63,6 +71,7 @@ parentPort?.on("message", (call: OperationCall) => {
 
   const { operationId } = call;
 
+  // `commit` and `cancel` answer an operation already running; a late answer for a finished one is dropped.
   if (call.type !== "run") {
     const entry = running.get(operationId);
 
@@ -76,9 +85,11 @@ parentPort?.on("message", (call: OperationCall) => {
     return;
   }
 
+  // A new run: register it so later `commit` and `cancel` calls can find it.
   const entry: RunningOperation = { controller: new AbortController(), proceed: null };
   running.set(operationId, entry);
 
+  // The commit gate: post the plan, then wait until the session answers `commit` or `cancel`.
   const beforeCommit = (plan?: CommitPlan): Promise<CommitGate> =>
     new Promise<CommitGate>((proceed) => {
       entry.proceed = proceed;
@@ -88,6 +99,7 @@ parentPort?.on("message", (call: OperationCall) => {
       post(reply);
     });
 
+  // Run, reply once with the result or the error, and forget the operation either way.
   runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text, step }) => post(progressReply(operationId, text, step)) })
     .then(
       (result) => post({ operationId, type: "result", result }),

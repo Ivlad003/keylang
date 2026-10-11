@@ -16,6 +16,11 @@
 // `function App\f`, or `function App\f ?? f` for an unqualified call (the
 // global function when the namespace declares none); a constant
 // `const App\X`; a file `include <path>`.
+//
+// Place in the pipeline: source → FileFacts → graph; the import resolver for
+// PHP that turns an extractor's specifier into a resolution (local,
+// internal file, external package, stdlib, generated or unresolved).
+// Entry points: `PhpResolver`, `packagePrefixes`.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,6 +35,7 @@ const LOCKS = ["composer.lock", "vendor/composer/installed.json"];
 /** Namespaces of PHP itself (`Random\Randomizer`, `Dom\HTMLDocument`). */
 const PHP_NAMESPACES = ["random\\", "dom\\", "ffi\\", "pdo\\", "uri\\"];
 
+/** Resolves PHP specifiers against the declarations of the analysed files and the packages of the composer lock. */
 export class PhpResolver implements SourceResolver {
   private readonly root: string;
   private readonly sources: ReadonlySet<string>;
@@ -46,6 +52,9 @@ export class PhpResolver implements SourceResolver {
     this.root = root;
     this.sources = sources;
 
+    // Index every declaration by its lower-cased qualified name, per table
+    // (class, function, const), and record every enclosing namespace so a
+    // bare namespace can be told from an unknown class.
     for (const facts of files) {
       for (const symbol of facts.symbols ?? []) {
         const key = asciiLowerCase(symbol.qualified);
@@ -57,6 +66,8 @@ export class PhpResolver implements SourceResolver {
       }
     }
 
+    // Read the first lock file that exists; the other is only a fallback.
+    // Each lock tried is recorded in `inputs`, absent ones as null.
     for (const lock of LOCKS) {
       const text = readText(join(root, lock));
       this.inputs.set(lock, text);
@@ -66,10 +77,14 @@ export class PhpResolver implements SourceResolver {
       break;
     }
 
+    // Longest prefix first, so a nested package namespace wins over its
+    // parent's; ties by prefix so the order is stable.
     this.packages.sort((a, b) => b.prefix.length - a.prefix.length || (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
   }
 
   resolve(fromFile: string, spec: string): Resolution {
+    // Decode the specifier: its table (class, function, const) and the names
+    // to try in order (`App\f ?? f` tries the namespaced function first).
     if (spec.startsWith("include ")) return this.include(fromFile, spec.slice("include ".length));
     const kind = spec.startsWith("function ") ? "function" : spec.startsWith("const ") ? "const" : "class";
     const names = (kind === "class" ? spec : spec.slice(kind.length + 1)).split(" ?? ").map((name) => name.replace(/^\\/, ""));
@@ -84,6 +99,8 @@ export class PhpResolver implements SourceResolver {
     const name = names[names.length - 1]!;
     const lower = asciiLowerCase(name);
 
+    // Not declared anywhere: a class name that is itself a namespace (a
+    // `use App\Domain;`) binds nothing; then a package prefix claims it.
     if (kind === "class" && this.namespaces.has(lower)) return { kind: "generated" };
     const pkg = this.packages.find((p) => lower.startsWith(p.prefix));
 
@@ -97,6 +114,7 @@ export class PhpResolver implements SourceResolver {
 
   /** `include <path>`: an analysed file, a file on disk keylang does not index, or nothing; composer's own files are generated. */
   private include(fromFile: string, path: string): Resolution {
+    // Absolute paths and paths that climb out of the root are not followed.
     if (path.startsWith("/") || path.startsWith("../") || path === "..") return { kind: "unresolved" };
 
     if (path === "vendor" || path.startsWith("vendor/")) return { kind: "generated" };
@@ -144,6 +162,7 @@ export function packagePrefixes(text: string): { prefix: string; name: string }[
   return out;
 }
 
+/** The file's text, or null when it does not exist or cannot be read. */
 function readText(abs: string): string | null {
   try {
     return readFileSync(abs, "utf8");

@@ -9,6 +9,12 @@
 // declares it (`owner`). Several areas give several edges; two classes for
 // one type in one area are an `ambiguous-binding` hole; a class the snapshot
 // does not have is a hole with the reason. Nothing is guessed from names.
+//
+// Pipeline: framework config facts → (this) → extra call edges and holes while
+// the graph resolves calls (source → FileFacts → graph). Entry point: the
+// `FrameworkBindings` class (`callThroughType`, `callThroughArgument`,
+// `interceptors`, `boundClasses`, `boundByName`); key terms: preference,
+// argument, virtualType (alias), plugin (interceptor), area/scope, token.
 
 import { EVERY_CLASS, typeLabel, type FrameworkInput, type ProviderFact, type TokenRef, type TypeName } from "./adapter.ts";
 
@@ -37,6 +43,7 @@ export interface BindingDeps {
   token(ref: TokenRef): string | null;
 }
 
+/** How a framework-made edge got its target: a preference, a constructor argument or a plugin method. */
 export type ConfigVia = "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after";
 
 /** One edge a binding makes, before the graph places it at a call. */
@@ -81,6 +88,7 @@ export interface BindingHole {
   source: string | null;
 }
 
+/** An edge from an intercepted call to a plugin's `before`/`around`/`after` method. */
 export interface PluginEdge {
   target: string;
   via: "plugin:before" | "plugin:around" | "plugin:after";
@@ -91,6 +99,7 @@ export interface PluginEdge {
   binding: string;
 }
 
+/** One class a config fact names (the value of a preference or argument), resolved and with its config site. */
 interface Declared {
   name: string;
   written: TypeName;
@@ -107,6 +116,7 @@ interface Declared {
   from: string | null;
 }
 
+/** One plugin declaration on a resolved target type, as one config file writes it. */
 interface Plugin {
   target: string;
   /** The intercepted type as the config writes it. */
@@ -130,14 +140,21 @@ interface Unaliased {
   aliases: string[];
 }
 
+/** The scope of a config that applies in every area. */
 const GLOBAL = "global";
 
+/** Plugin method prefixes in the order they run, with the edge kind each makes. */
 const KINDS = [
   ["before", "plugin:before"],
   ["around", "plugin:around"],
   ["after", "plugin:after"],
 ] as const;
 
+/**
+ * The framework facts of all active adapters, indexed once per graph build:
+ * preferences, constructor arguments and plugins by the type they apply to,
+ * plus the holes found while indexing.
+ */
 export class FrameworkBindings {
   private readonly deps: BindingDeps;
   /** Type id → its preferences, in config order. */
@@ -165,8 +182,11 @@ export class FrameworkBindings {
     // `virtualType V type=C`: V is C wherever a config names it.
     const aliases = new Map<string, { type: TypeName; scope: string }[]>();
 
+    // Index virtualTypes by name (ASCII lower case); a name may have one per area.
     for (const { facts } of configs) for (const a of facts.aliases) aliases.set(key(a.name), [...(aliases.get(key(a.name)) ?? []), { type: a.type, scope: facts.scope }]);
 
+    // Follow virtualType names to a real class: prefer the area's alias, then the global one,
+    // then any; stop at a name with a file (not an alias) or on a cycle.
     const unalias = (t: TypeName, scope: string): Unaliased => {
       const seen: string[] = [];
       let cur = t;
@@ -184,12 +204,14 @@ export class FrameworkBindings {
 
     this.unalias = (t, scope) => unalias(t, scope).type;
 
+    // Resolve a class a fact names (after unaliasing) and remember where the fact is written.
     const declared = (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from: string | null = null): Declared => {
       const { type, aliases: through } = unalias(written, scope);
 
       return { name: type.name, written: type, resolved: deps.resolve(type), scope, site: `${file}:${at.line}:${at.col}`, file, line: at.line, col: at.col, owner, aliases: through, from };
     };
 
+    // Index each config's preferences, constructor arguments and plugins by the type they apply to.
     for (const { facts, owner: dir } of configs) {
       const owner = deps.owner(dir);
 
@@ -213,6 +235,7 @@ export class FrameworkBindings {
       }
 
       for (const a of facts.arguments) {
+        // `*` as the type: a named argument for every class (Symfony `_defaults.bind`).
         if (a.type.name === EVERY_CLASS && a.type.file === undefined) {
           const value = { ...declared(a.value, facts.scope, facts.path, a, owner), param: a.param };
           this.everyClass.set(asciiLower(a.param), [...(this.everyClass.get(asciiLower(a.param)) ?? []), value]);
@@ -259,6 +282,7 @@ export class FrameworkBindings {
    * factory or a value provider names no class: a hole of its declaration.
    */
   private linkTokens(configs: readonly FrameworkInput["configs"][number][], declared: (written: TypeName, scope: string, file: string, at: { line: number; col: number }, owner: string | null, from?: string | null) => Declared): void {
+    // Group providers by token identity; factory/value providers are recorded and reported as holes.
     const providers = new Map<string, { fact: ProviderFact; file: string; scope: string; owner: string | null }[]>();
 
     for (const { facts, owner: dir } of configs) {
@@ -293,6 +317,7 @@ export class FrameworkBindings {
       });
     };
 
+    // Each injection becomes a constructor argument of the holder class, once per class its token provides.
     for (const { facts } of configs) {
       for (const inj of facts.injections ?? []) {
         const holder = this.deps.resolve(inj.type);
@@ -315,6 +340,7 @@ export class FrameworkBindings {
     }
   }
 
+  /** Record a hole of a config line. */
   private hole(file: string, at: { line: number; col: number }, text: string, reason: string, source: string | null): void {
     this.holes.push({ file, line: at.line, col: at.col, text, reason, source });
   }
@@ -343,6 +369,7 @@ export class FrameworkBindings {
     const out = emptyCall();
     const values = this.valuesOf(classId, param);
 
+    // One edge per area; two different classes for the argument in one area make the call ambiguous there.
     for (const [scope, list] of groupBy(values, (v) => v.scope)) {
       const distinct = distinctTargets(list);
 
@@ -383,6 +410,7 @@ export class FrameworkBindings {
   private effective(type: string, out: BoundCall): Map<string, Declared[]> {
     const result = new Map<string, Declared[]>();
     const own = this.preferences.get(type) ?? [];
+    // Global first, then areas in code-unit order, so edges and messages are stable.
     const scopes = [...new Set(own.map((d) => d.scope))].sort((a, b) => (a === GLOBAL ? -1 : b === GLOBAL ? 1 : a < b ? -1 : a > b ? 1 : 0));
 
     for (const scope of scopes) {
@@ -390,6 +418,7 @@ export class FrameworkBindings {
       const seen = new Set<string>([type]);
       let at = type;
 
+      // Follow `I → C → D …` in this area (falling back to global at each step) until no preference, an ambiguity, or a cycle.
       for (;;) {
         const list = this.preferences.get(at) ?? [];
         const here = list.filter((d) => d.scope === scope);
@@ -432,6 +461,7 @@ export class FrameworkBindings {
     return this.bound({ name: type }, this.preferences.get(type) ?? []);
   }
 
+  /** Shared by `boundByName` and `boundClasses`: walks the chain by node ID or, for types without a node, by name. */
   private bound({ name }: { name: string }, own: readonly Declared[]): BoundClasses {
     const out = emptyCall();
     const targets: BoundClasses["targets"] = [];
@@ -439,6 +469,7 @@ export class FrameworkBindings {
 
     for (const scope of scopes) {
       const chain: Declared[] = [];
+      // Seen set holds node IDs and `?<name>` keys for types without a node, so both kinds of cycle stop.
       const seen = new Set<string>([name, `?${key(name)}`]);
       let list = own;
 
@@ -485,6 +516,8 @@ export class FrameworkBindings {
     const through = aliases.length > 0 ? ` (virtualType ${aliases.map((v) => `\`${v}\``).join(", ")})` : "";
     const binding = `${lead ? `${lead} → ` : ""}\`${chain[0]!.from !== null ? `${chain[0]!.from} → ` : ""}${names}\`${through}`;
 
+    // The chain ends outside the snapshot, at a missing class, at a non-class, or at a class without the member:
+    // each is recorded as the call's reason instead of an edge.
     if (last.resolved.kind === "external") {
       out.external = true;
 
@@ -515,6 +548,7 @@ export class FrameworkBindings {
     }
 
     const first = chain[0]!;
+    // The same target reached in several areas is one edge whose scope lists them all.
     const existing = out.edges.find((e) => e.target === target && e.via === via);
 
     if (existing) {
@@ -532,6 +566,8 @@ export class FrameworkBindings {
     const out: Plugin[] = [];
     this.active = out;
 
+    // Per target type and plugin name: the global declaration, plus one per area whose merged declaration
+    // differs from it in the plugin class.
     for (const list of this.plugins.values()) {
       const byName = groupBy(list, (p) => p.name);
 
@@ -561,10 +597,12 @@ export class FrameworkBindings {
    * by `sortOrder`, then name; each plugin's `before`, `around`, `after`.
    */
   interceptors(types: readonly string[], member: string): PluginEdge[] {
+    // Cached per receiver types and member: the same call shape recurs across many call sites.
     const cacheKey = `${[...types].sort().join(",")}\0${asciiLower(member)}`;
     const cached = this.interceptorCache.get(cacheKey);
 
     if (cached) return cached;
+    // A plugin on any supertype of the receiver (or the interface it was reached through) applies.
     const supers = new Set(types.flatMap((t) => this.deps.supertypes(t)));
     const active = this.activePlugins().filter((p) => supers.has(p.target));
     active.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.scope < b.scope ? -1 : a.scope > b.scope ? 1 : 0));
@@ -576,6 +614,7 @@ export class FrameworkBindings {
       if (cls?.kind !== "node" || !this.deps.isClass(cls.id)) continue;
 
       for (const [prefix, via] of KINDS) {
+        // Magento naming: `beforeSave`, `aroundSave`, `afterSave` for the member `save`.
         const target = this.deps.member(cls.id, `${prefix}${member.charAt(0).toUpperCase()}${member.slice(1)}`);
 
         if (target) out.push({ target, via, name: p.name, site: p.site, scope: p.scope, owner: p.owner, binding: `plugin \`${p.name}\` (\`${p.pluginWritten}\`) on \`${p.targetWritten}\`` });
@@ -593,10 +632,12 @@ function tokenLabel(t: TokenRef): string {
   return t.kind === "string" ? `'${t.value}'` : t.name;
 }
 
+/** A call result with no edges and no reasons yet. */
 function emptyCall(): BoundCall {
   return { edges: [], ambiguous: null, missing: null, opaque: null, external: false };
 }
 
+/** Sort a call's edges by scope (global first) then target, for stable output. */
 function finish(out: BoundCall): BoundCall {
   out.edges.sort((a, b) => scopeOrder(a.scope, b.scope) || (a.target < b.target ? -1 : a.target > b.target ? 1 : 0));
 
@@ -616,6 +657,7 @@ function distinctTargets<T extends Declared>(list: readonly T[]): T[] {
   return [...seen.values()];
 }
 
+/** A class with the config line that names it, for messages. */
 function describe(d: Declared): string {
   return `\`${d.name}\` (${d.site})`;
 }
@@ -639,6 +681,7 @@ function merge(decls: readonly Plugin[]): Plugin | null {
   return out;
 }
 
+/** Group items by key, keeping their order inside each group. */
 function groupBy<T>(list: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();
 
@@ -647,14 +690,17 @@ function groupBy<T>(list: readonly T[], keyOf: (item: T) => string): Map<string,
   return out;
 }
 
+/** Order scopes with `global` first, then by code units. */
 function scopeOrder(a: string, b: string): number {
   return a === b ? 0 : a === GLOBAL ? -1 : b === GLOBAL ? 1 : a < b ? -1 : 1;
 }
 
+/** The lookup key of a PHP class name: no leading `\`, ASCII lower case. */
 function key(name: string): string {
   return asciiLower(name.replace(/^\\+/, ""));
 }
 
+/** Lower A–Z only, like PHP compares class names. */
 function asciiLower(name: string): string {
   return name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 }

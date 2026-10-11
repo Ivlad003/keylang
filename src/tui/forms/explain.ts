@@ -4,6 +4,11 @@
 // (`explain --stale`, `explain --missing|--stale [--llm]`). They share the
 // prompt kind `explain`; its `explainModel` or `explainPlan` says which.
 
+//
+// Layer: TUI forms. `app.ts` opens them from the palette and routes the
+// prompt's keys through `keys()`; each form ends in a shared operation
+// (`explain`, `explain-llm`, `explain-plan`, `explain-batch`) the CLI also runs.
+
 import { selectedAgent } from "../../agent-cli.ts";
 import { EXPLANATIONS } from "../../explain.ts";
 import { defaultBriefJobs, positiveIntegerProblem } from "../../explain-inventory.ts";
@@ -26,6 +31,7 @@ const EXPLAIN_PLAN_LISTS: readonly ExplainPlanForm["list"][] = ["stale-saved", "
 /** The details of the model's form, in ←→ order. */
 const DETAILS: readonly ExplanationDetail[] = ["short", "full", "brief"];
 
+/** The explain forms of a session, reaching it only through its `FormHost`. */
 export class ExplainForms {
   private readonly host: FormHost;
   /** `llmClient`, loaded with the first model form: the form says before a run why no model can be asked. */
@@ -65,6 +71,7 @@ export class ExplainForms {
 
   /** The explain form: the ID under the cursor, else the code of the line's diagnostic, is the visible default. */
   open(): void {
+    // In the merge view there is no cursor in a spec, so the form starts empty.
     let initial = "";
 
     if (this.state.mode !== "merge") {
@@ -87,10 +94,12 @@ export class ExplainForms {
     const typed = prompt.text.trim();
     let ids: string[];
 
+    // `K…` lists diagnostic codes by prefix (offline form only); anything else searches the snapshot's nodes.
     if (!prompt.explainModel && /^k\d*$/i.test(typed)) ids = Object.keys(EXPLANATIONS).filter((code) => code.startsWith(typed.toUpperCase())).sort(compareText);
     else {
       const analysis = this.state.analysis;
       const hits = analysis && typed !== "" ? searchNodes(analysis, this.state.briefs, { query: typed, limit: NODE_HITS, fuzzy: true }).map((hit) => hit.id) : [];
+      // Fuzzy search may repeat an ID; dedupe, then move an exact match to the top (a stable sort keeps the rest in search order).
       ids = [...new Set(hits)].sort((a, b) => Number(b === typed) - Number(a === typed));
     }
 
@@ -107,9 +116,11 @@ export class ExplainForms {
     return prompt.ids?.[prompt.index] ?? prompt.text.trim();
   }
 
+  /** The note under the form: what Enter would do with the current subject. */
   private note(): void {
     const prompt = this.state.prompt!;
 
+    // The model's form and the inventory form have notes of their own.
     if (prompt.explainModel) return this.modelNote(prompt.explainModel.detail);
 
     if (prompt.explainPlan) return this.refreshPlan();
@@ -127,6 +138,7 @@ export class ExplainForms {
       return;
     }
 
+    // An ID: say whether the snapshot knows it, with a suggestion when it does not.
     const analysis = this.state.analysis;
     const found = analysis ? nodeExplanation(analysis, subject, analysis.config.explain.detail) : null;
     const known = found === null ? "" : "unknown" in found ? `: not in the current snapshot${found.suggestion ? ` (did you mean ${found.suggestion}?)` : ""}` : ": in the current snapshot";
@@ -146,6 +158,7 @@ export class ExplainForms {
 
     const model = this.state.prompt?.explainModel;
 
+    // The model form explains IDs only; a code's help is always offline.
     if (model) {
       if (isDiagnosticCode(subject)) {
         this.state.message = `explain --llm: ${subject.toUpperCase()} is a diagnostic code: its help is offline (Ctrl+P Explain)`;
@@ -165,11 +178,13 @@ export class ExplainForms {
 
   /** Loads the model client off the key path, then shows the form's note again with what it says. */
   private loadModel(stillOpen: () => boolean, again: () => void): void {
+    // Load once; the import is lazy so the key path does not pay for the model client.
     if (this.llmSetup !== null) return;
     this.host.track(
       import("../../llm.ts").then(({ llmClient }) => {
         this.llmSetup = (agent) => llmClient(agent, { root: this.state.root });
 
+        // Redraw only when the same form is still open; the person may have closed it meanwhile.
         if (stillOpen()) {
           again();
           this.host.draw();
@@ -210,6 +225,7 @@ export class ExplainForms {
     const prompt = this.state.prompt!;
     const id = this.subject();
     const analysis = this.state.analysis;
+    // The settings tail every note repeats: detail, language and agent.
     const agent = analysis ? selectedAgent(analysis.config.agent) : null;
     const lang = analysis?.config.explain.lang ?? "en";
     const settings = `${detail} (←→) · lang ${lang} · agent ${agent ?? "none"} · keylang.json sets lang and agent`;
@@ -235,6 +251,7 @@ export class ExplainForms {
       return;
     }
 
+    // A fresh saved answer of the same detail and language is read, not asked again.
     const saved = readExplanation(analysis!.config, id, detail);
     const miss = savedAnswerMiss(analysis!, id, saved, lang, detail);
 
@@ -244,6 +261,7 @@ export class ExplainForms {
       return;
     }
 
+    // Name why a request is needed, then what the request would be (or why none can be made).
     const why = miss === "missing" || saved === null ? `no saved ${detail === "brief" ? "brief" : "answer"}` : miss === "stale" ? "the saved answer is stale" : miss === "lang" ? `the saved answer is in ${saved.lang}` : `the saved answer is ${saved.detail}`;
     const setup = this.llmSetup === null ? null : this.llmSetup(agent);
 
@@ -274,6 +292,7 @@ export class ExplainForms {
 
   /** The request the form makes, or the field it refuses with the CLI's message. */
   private planRequest(form: ExplainPlanForm): ExplainPlanRequest | { field: "limit" | "jobs"; text: string } {
+    // The saved-explanations list takes no limit or jobs; brief plans validate them as the CLI does.
     if (form.list === "stale-saved") return { kind: "explain-plan", root: this.state.root, list: "stale-saved" };
     const limit = form.limit.trim();
     const jobs = form.jobs.trim();
@@ -284,6 +303,7 @@ export class ExplainForms {
 
     if (jobsProblem !== null) return { field: "jobs", text: jobsProblem };
 
+    // A brief plan from the form is always a dry run with an estimate.
     const request: ExplainPlanRequest = { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list };
 
     if (limit !== "") request.limit = Number(limit);
@@ -303,6 +323,7 @@ export class ExplainForms {
     const selected = selectedRow(prompt, "list");
     const caret = caretAt(selected);
 
+    // Human names of the three lists; the list row also previews the next one (→).
     const names: Record<ExplainPlanForm["list"], string> = {
       "stale-saved": "stale saved explanations (answers and briefs)",
       missing: "brief plan: missing and stale briefs",
@@ -311,6 +332,7 @@ export class ExplainForms {
 
     const rows: FormRow[] = [{ id: "list", text: `list:   ${names[form.list]} · ←→ ${names[cycle(EXPLAIN_PLAN_LISTS, form.list, 1)]}` }];
 
+    // Limit and jobs exist only for brief plans.
     if (form.list !== "stale-saved") {
       rows.push({ id: "limit", text: `limit:  ${form.limit}${caret("limit")}${form.limit.trim() === "" ? "  (empty: every candidate)" : ""}` });
       rows.push({ id: "jobs", text: `jobs:   ${form.jobs}${caret("jobs")}${form.jobs.trim() === "" ? `  (empty: ${defaultBriefJobs(this.host.agentName())}, the requests a batch keeps in flight)` : ""}` });
@@ -327,6 +349,7 @@ export class ExplainForms {
           ? "keylang explain --missing --dry-run: the briefs a batch would ask for, bottom-up — nodes with no doc comment and no fresh brief, stale briefs included"
           : "keylang explain --stale --dry-run: only the stale briefs a batch would ask for again — not the saved answers, not gone ids, not missing briefs",
     ];
+    // The note follows the selected row: a field's refusal, a field's help, the batch's plan, or the dry run.
     const request = this.planRequest(form);
     const now = prompt.ids![prompt.index]!;
 
@@ -366,6 +389,7 @@ export class ExplainForms {
 
     this.state.prompt = null;
 
+    // The batch row runs the batch; any other row runs the inventory or dry run.
     if (prompt.ids?.[prompt.index] === "batch") return this.host.requestOperation("explain-batch", this.batchRequest(request));
     this.host.requestOperation("explain-plan", request);
   }
@@ -378,6 +402,7 @@ export class ExplainForms {
     const request: ExplainBatchRequest = { kind: "explain-batch", root: this.state.root, batch };
 
     if (limit !== undefined) request.limit = limit;
+    // Without typed jobs, the agent's default, so the batch's concurrency is explicit in the request.
     request.jobs = (plan.list === "briefs" ? plan.jobs : undefined) ?? defaultBriefJobs(this.host.agentName());
 
     return request;

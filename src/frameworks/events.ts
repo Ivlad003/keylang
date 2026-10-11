@@ -5,6 +5,9 @@
 // so a spec that names it survives code moving between modules. A name with
 // characters an ID segment does not allow (`.`, `/`, a leading digit) is
 // encoded; the node keeps the literal as `name`.
+//
+// Pipeline: framework configs and FileFacts (dispatch/observe sites) → graph
+// event nodes. Entry points: `eventSegment`, `eventIds`, `EVENTS_LAYER`.
 
 /** The generated group of event nodes: a reserved top-level name, like `external`. */
 export const EVENTS_LAYER = "events";
@@ -12,6 +15,7 @@ export const EVENTS_LAYER = "events";
 /** A character an ID segment may hold after the first (docs/grammar.md, Додаток А: `segment`). */
 const SEGMENT_REST = /[\p{L}\p{M}\p{N}_$-]/u;
 
+/** A character an ID segment may start with. */
 const SEGMENT_FIRST = /[\p{L}_$]/u;
 
 /**
@@ -34,10 +38,12 @@ export function eventIds(names: Iterable<string>): Map<string, string> {
   const out = new Map<string, string>();
   const taken = new Set<string>();
 
+  // Dedupe, then sort by code units (not locale) so suffixes are assigned the same way on every run.
   for (const name of [...new Set(names)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
     const base = eventSegment(name);
     let segment = base;
 
+    // Collisions after encoding get the next free numeric suffix.
     for (let n = 2; taken.has(segment); n++) segment = `${base}-${n}`;
     taken.add(segment);
     out.set(name, `${EVENTS_LAYER}.${segment}`);

@@ -1,14 +1,20 @@
 // Test-runner reports as evidence for `test <file> "<name>"` in a flow.
 // A report proves the current code only when it names the snapshot it ran
 // against; a third-party report without that link stays unverified.
+//
+// Feeds the evidence step of `check` (spec rules over flows), beside trace
+// evidence. Entry points: `loadReports` (JSON or JUnit XML files),
+// `parseJsonReport`, `parseJunit` and `matchTest` (a flow's `test` → verdict).
 
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { toPosix } from "./config.ts";
 import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 
+/** A test's outcome; a skip proves nothing. */
 export type TestStatus = "pass" | "fail" | "skip";
 
+/** One test result from a report, with the snapshot it ran against. */
 export interface TestCase {
   file: string;
   /** Enclosing suites, outermost first, joined with ` > `. Empty for a top-level test. */
@@ -31,6 +37,7 @@ export interface JsonReport {
   tests: { file: string; suite?: string; name: string; status: TestStatus }[];
 }
 
+/** The JSON report schema version this module reads. */
 export const REPORT_SCHEMA = 1;
 
 /** Read report files (JSON or JUnit XML). Malformed input is an error naming the file. */
@@ -39,10 +46,12 @@ export function loadReports(root: string, files: readonly string[]): TestCase[] 
     // A report saved with a byte order mark is the same report.
     const text = readFileSync(join(root, file), "utf8").replace(/^\uFEFF/, "");
 
+    // The format is sniffed, not taken from the extension: XML starts with `<`.
     return /^\s*</.test(text) ? parseJunit(file, text, root) : parseJsonReport(file, text);
   });
 }
 
+/** The cases of a keylang JSON report; every malformed field is an error naming the file and the field. */
 export function parseJsonReport(file: string, text: string): TestCase[] {
   let body: JsonValue;
 
@@ -52,6 +61,7 @@ export function parseJsonReport(file: string, text: string): TestCase[] {
     throw new Error(`${file}: invalid JSON report: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Validate the envelope: an object with a supported schema and a `tests` array.
   if (!isJsonObject(body)) throw new Error(`${file}: report must be an object`);
   const report = body;
 
@@ -63,6 +73,7 @@ export function parseJsonReport(file: string, text: string): TestCase[] {
   const snapshotId = optionalString(report.snapshotId, `${file}: \`snapshotId\``);
   const runId = optionalString(report.runId, `${file}: \`runId\``);
 
+  // Validate each row, naming its index in errors.
   return report.tests.map((item, i): TestCase => {
     const at = `${file}: tests[${i}]`;
 
@@ -100,6 +111,7 @@ function optionalString(value: JsonValue | undefined, field: string): string | n
 function repositoryPath(path: string, root: string): string {
   if (!isAbsolute(path)) return path;
 
+  // Try the root as given and as resolved through links: a reporter may print either.
   for (const base of new Set([root, realRoot(root)])) {
     const rel = relative(base, path);
 
@@ -109,6 +121,7 @@ function repositoryPath(path: string, root: string): string {
   return path;
 }
 
+/** The root with links resolved, or as given when it cannot be resolved. */
 function realRoot(root: string): string {
   try {
     return realpathSync(root);
@@ -130,6 +143,8 @@ export function parseJunit(file: string, text: string, repository: string): Test
   if (root.name !== "testsuites" && root.name !== "testsuite") throw new Error(`${file}: not a JUnit report (no <testsuite>)`);
   const cases: TestCase[] = [];
 
+  // Walk suites down to testcases. Each level's `<properties>` override the
+  // ones inherited from the suites around it.
   const visit = (element: XmlElement, inherited: ReadonlyMap<string, string>): void => {
     const scope = new Map(inherited);
 
@@ -146,16 +161,20 @@ export function parseJunit(file: string, text: string, repository: string): Test
       const { name, file: path, classname } = element.attributes;
 
       if (name === undefined) throw new Error(`${file}:${element.line}: <testcase> without name`);
+      // A failure or error child fails the case, a skipped child skips it; none passes it.
       const has = (tag: string): boolean => element.children.some((child) => child.name === tag);
       const status: TestStatus = has("failure") || has("error") ? "fail" : has("skipped") ? "skip" : "pass";
       const common = { name, status, snapshotId: scope.get("keylang.snapshotId") ?? null, runId: scope.get("keylang.runId") ?? null, report: file };
 
+      // With `file`, the classname is the suite; without it, the classname is
+      // the best guess at a file and the case is marked fileless.
       if (path !== undefined) cases.push({ file: repositoryPath(path, repository), suite: classname ?? "", ...common });
       else cases.push({ file: classname ?? "", suite: "", ...common, fileless: true });
 
       return;
     }
 
+    // Only suites and cases are descended into; other elements are ignored.
     for (const child of element.children) if (child.name === "testsuite" || child.name === "testsuites" || child.name === "testcase") visit(child, scope);
   };
 
@@ -190,10 +209,12 @@ function parseXml(file: string, text: string): XmlElement {
     return line;
   };
 
+  // Errors are rare, so they count lines from scratch.
   const fail: (offset: number, message: string) => never = (offset, message) => {
     throw new Error(`${file}:${text.slice(0, offset).split("\n").length}: invalid XML: ${message}`);
   };
 
+  // Match a sticky (`y`) regex exactly at the cursor.
   const sticky = (re: RegExp): RegExpExecArray | null => {
     re.lastIndex = at;
 
@@ -210,6 +231,8 @@ function parseXml(file: string, text: string): XmlElement {
   const stack: XmlElement[] = [];
   let root: XmlElement | null = null;
 
+  // A single forward scan: text up to the next `<` belongs to the open element,
+  // then the markup at `<` is dispatched by its opening characters.
   while (at < text.length) {
     const lt = text.indexOf("<", at);
     const chunk = text.slice(at, lt === -1 ? text.length : lt);
@@ -237,6 +260,7 @@ function parseXml(file: string, text: string): XmlElement {
       if (!declaration) fail(at, "unterminated declaration");
       at += declaration[0].length;
     } else if (text.startsWith("</", at)) {
+      // End tag `</name>`: it must close the innermost open element.
       const close = sticky(/<\/([^\s>]+)\s*>/y);
 
       if (!close) fail(at, "malformed end tag");
@@ -245,6 +269,7 @@ function parseXml(file: string, text: string): XmlElement {
       if (!open || open.name !== close[1]) fail(at, `</${close[1]}> does not close ${open ? `<${open.name}>` : "any element"}`);
       at += close[0].length;
     } else {
+      // Start tag: its name, then attributes until `>` or `/>`.
       const start = at;
       const tag = sticky(/<([^\s/>]+)/y);
 
@@ -257,6 +282,8 @@ function parseXml(file: string, text: string): XmlElement {
         at += space.length;
 
         if (text.startsWith("/>", at) || text.startsWith(">", at)) break;
+        // `name = "` or `name='`: the value runs to the next matching quote.
+        // Attributes must be separated by whitespace.
         const attribute = sticky(/([^\s=/>]+)\s*=\s*(["'])/y);
 
         if (!attribute || space === "") fail(at, `malformed attribute in <${element.name}>`);
@@ -268,6 +295,7 @@ function parseXml(file: string, text: string): XmlElement {
         at = end + 1;
       }
 
+      // Attach to the parent (or make it the root); a self-closing tag is never opened.
       const empty = text.startsWith("/>", at);
       at += empty ? 2 : 1;
 
@@ -296,7 +324,9 @@ const NAMED_ENTITIES = new Map([
   ["apos", "'"],
 ]);
 
+/** Text with XML's five named entities and decimal or hex character references decoded; anything else stays as written. */
 function decodeEntities(text: string): string {
+  // An out-of-range character reference is left as written instead of throwing.
   return text.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (whole, entity: string) => {
     if (!entity.startsWith("#")) return NAMED_ENTITIES.get(entity) ?? whole;
     const code = entity[1] === "x" ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10);
@@ -305,6 +335,7 @@ function decodeEntities(text: string): string {
   });
 }
 
+/** The verdict for one `test` line of a flow, with the reason shown to the user. */
 export interface TestEvidence {
   verdict: "ok" | "fail" | "unverified";
   message: string;
@@ -342,6 +373,7 @@ export function matchTest(cases: readonly TestCase[], file: string, name: string
   // Without a current result, the first one says why it does not count: another snapshot or none.
   const hit = current[0] ?? all[0]!;
 
+  // Only a current, non-skipped result is a verdict; everything else is unverified.
   if (hit.snapshotId === null) return { verdict: "unverified", message: `report ${hit.report} is not bound to a snapshot`, runId: hit.runId };
 
   if (hit.snapshotId !== snapshotId) return { verdict: "unverified", message: `stale report ${hit.report} (snapshot ${hit.snapshotId.slice(0, 12)})`, runId: hit.runId };

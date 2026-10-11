@@ -16,6 +16,11 @@
 // The adapter lists the config and the route modules (each owned by its
 // routes directory); placing their `loader`/`action` exports on the graph is
 // `src/framework-code/react-router.ts`.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse).
+// Entry points: `reactRouter`, plus the route helpers `routeModules`,
+// `routeId`, `flatRoutePath`, `isLayout`; key terms: app directory, route ID,
+// flat routes, layout route.
 
 import { posix } from "node:path";
 import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
@@ -23,18 +28,22 @@ import type { ConfigFacts, FrameworkAdapter, FrameworkContext } from "./adapter.
 
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
 
+/** Root `package.json` dependencies that mark a React Router framework-mode project. */
 const PACKAGES = ["@react-router/dev", "@react-router/fs-routes"];
 
 const EXTENSIONS = ["ts", "tsx", "js", "jsx", "mjs"];
 
+/** Extensions a route module may have (MDX routes included). */
 const ROUTE_MODULE = /\.(?:ts|tsx|js|jsx|mjs|md|mdx)$/;
 
 const TEST_FILE = /\.(?:test|spec)\.[^/.]+$/;
 
+/** A call of `flatRoutes(`: the route config uses file-system routes. */
 const FLAT_ROUTES = /\bflatRoutes\s*\(/;
 
 const STOREFRONT_ROUTING = /['"]@salesforce\/storefront-next-runtime\/routing['"]/;
 
+/** A literal `rootDirectory: "…"` (no template interpolation); group 1 is the directory. */
 const ROOT_DIRECTORY = /\brootDirectory\s*:\s*['"`]([^'"`$]+)['"`]/;
 
 const APP_DIRECTORY = /\bappDirectory\s*:\s*['"`]([^'"`$]+)['"`]/;
@@ -49,16 +58,19 @@ export const reactRouter: FrameworkAdapter = {
     const out: { path: string; owner: string | null }[] = [];
 
     for (const app of apps(context)) {
+      // The route config itself has no owner; each route module is owned by its routes directory.
       out.push({ path: app.config, owner: null });
 
       for (const dir of app.routeDirs) for (const path of routeModules(context.sources, dir)) out.push({ path, owner: dir });
     }
 
+    // Sorted by path (code units) so the config file order is stable.
     return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   },
   parse(path, text) {
     const facts: ConfigFacts = { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], error: null };
 
+    // Only a `routes.*` config without `flatRoutes()` is reported: as a hole at its default export.
     if (!/^routes\.[^/]+$/.test(posix.basename(path)) || FLAT_ROUTES.test(text)) return facts;
     const line = text.split("\n").findIndex((l) => /\bexport\s+default\b/.test(l)) + 1;
 
@@ -72,6 +84,7 @@ interface App {
   routeDirs: string[];
 }
 
+/** The app directories of the project: a literal `appDirectory`, else `app/` and `src/`, each needing `routes.*` and `root.*`. */
 function apps(context: Pick<FrameworkContext, "sources" | "read" | "dirs" | "analysed">): App[] {
   const configured = ["ts", "js", "mjs", "mts"].map((ext) => APP_DIRECTORY.exec(context.read(`react-router.config.${ext}`) ?? "")?.[1]).find((dir) => dir !== undefined);
   const candidates = configured !== undefined ? [normalize(configured)] : ["app", "src"];
@@ -83,12 +96,15 @@ function apps(context: Pick<FrameworkContext, "sources" | "read" | "dirs" | "ana
 
     if (config === null || has("root") === null) continue;
     const text = context.read(config) ?? "";
+    // The routes directory is `rootDirectory` when written as a literal, else `routes/`.
     const routeDirs = [`${dir}/${normalize(ROOT_DIRECTORY.exec(text)?.[1] ?? "routes")}`];
 
+    // Storefront Next's wrapper also merges each extension's `routes/` folder.
     if (FLAT_ROUTES.test(text) && STOREFRONT_ROUTING.test(text)) {
       for (const extension of context.dirs(`${dir}/extensions`)) routeDirs.push(`${dir}/extensions/${extension}/routes`);
     }
 
+    // A config without `flatRoutes()` still counts (its file is listed and holed), but contributes no route modules.
     out.push({ config, routeDirs: FLAT_ROUTES.test(text) ? routeDirs : [] });
   }
 
@@ -101,6 +117,7 @@ export function routeModules(sources: readonly string[], dir: string): string[] 
 
   return sources.filter((path) => {
     if (!path.startsWith(prefix) || TEST_FILE.test(path) || !ROUTE_MODULE.test(path)) return false;
+    // Directly in the folder, or `<folder>/route.<ext>`; deeper files are a route's helpers.
     const rest = path.slice(prefix.length).split("/");
 
     return rest.length === 1 || (rest.length === 2 && /^route\.[^.]+$/.test(rest[1]!));
@@ -124,6 +141,7 @@ export function flatRoutePath(id: string): string {
   const segments = splitSegments(id);
   const parts: string[] = [];
 
+  // Translate each segment by the fs-routes conventions; a bracketed segment is taken literally.
   for (const [i, raw] of segments.entries()) {
     const escaped = raw.startsWith("[") || raw.includes("[");
 
@@ -153,6 +171,7 @@ export function isLayout(id: string, ids: readonly string[]): boolean {
   });
 }
 
+/** Split a route ID at `.`, except inside `[…]` escapes. */
 function splitSegments(id: string): string[] {
   const out: string[] = [];
   let current = "";
@@ -173,10 +192,12 @@ function splitSegments(id: string): string[] {
   return out;
 }
 
+/** A directory as POSIX, relative, without `./` or a trailing slash. */
 function normalize(dir: string): string {
   return posix.normalize(dir.replace(/\\/g, "/")).replace(/^\.\/?/, "").replace(/\/$/, "");
 }
 
+/** Whether the root `package.json` depends on a React Router framework package; unparseable JSON is no. */
 function depends(context: Pick<FrameworkContext, "read">): boolean {
   let manifest: JsonValue;
 

@@ -8,6 +8,11 @@
 // content, else the file read again. The extractors record no arguments; the
 // first ones are read from the source text at the call's position. Language
 // independent: the facts have one shape for TS/JS, Python, Rust and PHP.
+// Pipeline: source → FileFacts (fact cache or re-extraction) + snapshot →
+// call/read sites placed in their nodes → matchers from data lists. Used by
+// coverage-report.ts and the integrations inventory. Entry points:
+// `snapshotFacts`, `callsOf`, `compileMatcher`, `callMatches`, `readMatches`,
+// `textMatches`, `callGraph`, `reachable`, `urlOf`, `literalArgument`.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -107,6 +112,7 @@ export async function snapshotFacts(config: Config, snapshot: AnalysisSnapshot):
 
   const out: FileFacts[] = [];
 
+  // Use the cached facts when the hash matches the snapshot's; otherwise extract the file again.
   for (const { path, sha256 } of snapshot.manifest.files) {
     if (!isAnalysed(path, config)) continue;
     const entry = stored[path];
@@ -130,6 +136,7 @@ export async function snapshotFacts(config: Config, snapshot: AnalysisSnapshot):
   return out;
 }
 
+/** A cache entry that has the shape of FileFacts (checked shallowly: the cache is keylang's own file). */
 function isFacts(value: JsonValue | undefined): value is JsonObject & FileFacts {
   return isJsonObject(value) && isJsonString(value.path) && Array.isArray(value.decls) && Array.isArray(value.imports) && Array.isArray(value.moduleCalls);
 }
@@ -143,6 +150,7 @@ interface FileSpans {
   modules: Map<string, string>;
 }
 
+/** Every fn and class span per file, and each file's module (the shortest module ID with that file). */
 function spansByFile(snapshot: AnalysisSnapshot): FileSpans {
   const spans = new Map<string, Span[]>();
   const modules = new Map<string, string>();
@@ -165,16 +173,19 @@ function spansByFile(snapshot: AnalysisSnapshot): FileSpans {
   return { spans, modules };
 }
 
+/** Whether the node has a full start and end position. */
 function hasSpan(node: SnapshotNode): boolean {
   return node.line !== null && node.col !== null && node.endLine !== undefined && node.endCol !== undefined;
 }
 
+// Position order: (line, col) a is at or before b.
 const before = (aLine: number, aCol: number, bLine: number, bCol: number): boolean => aLine < bLine || (aLine === bLine && aCol <= bCol);
 
 /** The innermost fn holding the position, else the innermost class, else the file's module. */
 function enclosing(spans: readonly Span[] | undefined, module: string | undefined, line: number, col: number): string | null {
   let best: Span | null = null;
 
+  // Among spans holding the position, prefer a fn over a class, then the one that starts last (the innermost).
   for (const span of spans ?? []) {
     if (!before(span.line, span.col, line, col) || !before(line, col, span.endLine, span.endCol)) continue;
 
@@ -195,6 +206,7 @@ export function callsOf(snapshot: AnalysisSnapshot, facts: readonly FileFacts[])
     const seen = new Set<string>();
     const calls: CallSite[] = [];
 
+    // Opaque calls carry no usable callee; the same callee at one position is counted once.
     const add = (c: CallFact): void => {
       if (c.opaque === true) return;
       const key = `${c.line}:${c.col}:${c.callee}`;
@@ -208,6 +220,7 @@ export function callsOf(snapshot: AnalysisSnapshot, facts: readonly FileFacts[])
       calls.push({ ...site, in: enclosing(fileSpans, module, c.line, c.col) });
     };
 
+    // Calls in declarations (recursing into members) and at module level, then in position order.
     const walk = (decl: DeclFact): void => {
       decl.calls.forEach(add);
       decl.members.forEach(walk);
@@ -217,6 +230,7 @@ export function callsOf(snapshot: AnalysisSnapshot, facts: readonly FileFacts[])
     file.moduleCalls.forEach(add);
     calls.sort((a, b) => a.line - b.line || a.col - b.col || compareText(a.callee, b.callee));
 
+    // Reads: plain name references (not member accesses of an object keylang tracks).
     const reads: ReadSite[] = file.valueRefs
       .filter((ref) => ref.member !== true)
       .map((ref) => ({ file: file.path, line: ref.line, col: ref.col, text: ref.name, in: enclosing(fileSpans, module, ref.line, ref.col) }));
@@ -240,6 +254,7 @@ export interface CompiledMatcher {
   languages: Set<string> | null;
 }
 
+/** Compile a matcher's patterns once; `imports` and `receivers` lose a leading PHP `\`. */
 export function compileMatcher(matcher: Matcher): CompiledMatcher {
   return {
     callees: (matcher.callees ?? []).map((source) => new RegExp(source)),
@@ -260,6 +275,7 @@ function withoutRoot(name: string): string {
 export function importMatches(source: string, pattern: string): boolean {
   const name = withoutRoot(source);
 
+  // `foo*` is a raw prefix; `foo/`, `foo\`, `foo.`, `foo::` a namespace prefix; else exact or followed by a separator.
   if (pattern.endsWith("*")) return name.startsWith(pattern.slice(0, -1));
 
   if (name === pattern) return true;
@@ -269,6 +285,7 @@ export function importMatches(source: string, pattern: string): boolean {
   return ["/", "\\", ".", "::"].some((sep) => name.startsWith(`${pattern}${sep}`));
 }
 
+// Split callees memoised per site object: the same sites are matched against many signals.
 const segmentCache = new WeakMap<CallSite, string[]>();
 
 /** The segments of a call's callee, split once. */
@@ -305,10 +322,12 @@ export function appliesTo(matcher: CompiledMatcher, language: Language | undefin
 export function callMatches(matcher: CompiledMatcher, site: CallSite, file: FileCalls, internal: boolean): boolean {
   if (!appliesTo(matcher, file.language)) return false;
 
+  // A callee pattern never claims a call that resolved to the repository's own code.
   if (!internal && matcher.callees.some((re) => re.test(site.callee))) return true;
 
   if (matcher.imports.length === 0 && matcher.receivers.length === 0) return false;
   const parts = segmentsOf(site);
+  // `methods` narrows both the import and the receiver tests to calls with a listed last name.
   const method = parts.at(-1) ?? site.callee;
   const methodOk = matcher.methods === null || matcher.methods.has(method);
 
@@ -336,6 +355,7 @@ export function callMatches(matcher: CompiledMatcher, site: CallSite, file: File
     if (sources.some((source) => matcher.imports.some((pattern) => importMatches(source, pattern)))) return true;
   }
 
+  // A receiver matches by its full class name or, for an unqualified pattern, by its last name.
   if (matcher.receivers.length > 0 && site.receiver !== undefined) {
     const written = withoutRoot(file.bound.get(site.receiver) ?? site.receiver);
 
@@ -348,6 +368,7 @@ export function callMatches(matcher: CompiledMatcher, site: CallSite, file: File
 /** Whether a read (`settings.PAYMENT_URL`) goes through a name an import the matcher lists binds. */
 export function readMatches(matcher: CompiledMatcher, read: ReadSite, file: FileCalls): boolean {
   if (!appliesTo(matcher, file.language) || matcher.imports.length === 0) return false;
+  // A read matches when its head is a name the listed import binds and it reads a member of it.
   const parts = segments(read.text);
   const source = parts[0] === undefined ? undefined : file.bound.get(parts[0]);
 
@@ -359,12 +380,14 @@ export function readMatches(matcher: CompiledMatcher, read: ReadSite, file: File
 }
 
 /** Lines that are comments in every language keylang reads, as far as one line shows. */
+// Starts with `//`, `#` (but not a Rust `#[` attribute), `/*`, `*` or `--`.
 const COMMENT_LINE = /^\s*(\/\/|#(?!\[)|\/\*|\*|--)/;
 
 /** Source lines the matcher's `text` patterns match, each placed in its node: 1-based line, column of the match. */
 export function textMatches(matcher: CompiledMatcher, file: FileCalls, source: string, place: (line: number, col: number) => string | null): ReadSite[] {
   if (matcher.text.length === 0 || !appliesTo(matcher, file.language)) return [];
   const out: ReadSite[] = [];
+  // The first pattern that matches a line wins; one site per line.
   source.split("\n").forEach((text, index) => {
     if (COMMENT_LINE.test(text)) return;
 
@@ -391,20 +414,22 @@ export function placer(snapshot: AnalysisSnapshot): (file: string, line: number,
 export function internalCallPositions(snapshot: AnalysisSnapshot): Set<string> {
   const out = new Set<string>();
 
+  // Ambiguous edges count as internal too: they resolved to repository code, just not to one target.
   for (const edge of snapshot.edges) if (edge.kind === "call" && edge.file !== null && (edge.target !== null || edge.resolution === "ambiguous")) out.add(`${edge.file}:${edge.line}:${edge.col}`);
 
   return out;
 }
 
-/** The resolved call edges as adjacency: source → targets, and target → sources. Hook (`via`) edges included. */
 /** Adjacency of resolved calls in both directions. */
 export interface CallGraph {
   out: Map<string, Set<string>>;
   in: Map<string, Set<string>>;
 }
 
+/** The resolved call edges as adjacency: source → targets, and target → sources. Hook (`via`) edges included. */
 export function callGraph(snapshot: AnalysisSnapshot): CallGraph {
   const out = new Map<string, Set<string>>();
+  // Only resolved call edges; unresolved and ambiguous ones are holes, not reach.
   const inward = new Map<string, Set<string>>();
 
   for (const edge of snapshot.edges) {
@@ -425,6 +450,7 @@ export function reachable(adjacency: ReadonlyMap<string, ReadonlySet<string>>, s
   const seen = new Set<string>();
   const stack = [...starts];
 
+  // Iterative depth-first search; the stack avoids recursion limits on deep graphs.
   while (stack.length > 0) {
     const id = stack.pop()!;
 
@@ -439,6 +465,7 @@ export function reachable(adjacency: ReadonlyMap<string, ReadonlySet<string>>, s
 
 /** A file of tests: its fns are not expected to be reached from an entry point. */
 export function isTestFile(path: string): boolean {
+  // Test directories, JS/TS `.test`/`.spec` files, Python `test_*.py`/`*_test.py`, PHP `*Test.php`.
   return /(^|\/)(tests?|__tests__|specs?|Test)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) || /(^|\/)test_[^/]*\.py$|_test\.py$/.test(path) || path.endsWith('Test.php');
 }
 
@@ -451,6 +478,12 @@ export function lineStarts(text: string): number[] {
   return starts;
 }
 
+/** How a call names its URL, and the host of a literal one. */
+export interface CallUrl {
+  url: "literal" | "dynamic" | "n/a";
+  host: string | null;
+}
+
 /**
  * The URL a call names: the host of a literal absolute URL among its first two
  * arguments (a literal prefix counts: `"https://api.x.com/" + id`),
@@ -458,12 +491,6 @@ export function lineStarts(text: string): number[] {
  * no arguments, only literals that are no URL, or no argument list keylang
  * can read at its position.
  */
-/** How a call names its URL, and the host of a literal one. */
-export interface CallUrl {
-  url: "literal" | "dynamic" | "n/a";
-  host: string | null;
-}
-
 export function urlOf(text: string, starts: readonly number[], line: number, col: number, callee: string): CallUrl {
   const args = firstArguments(text, starts, line, col, callee, 2);
 
@@ -471,6 +498,7 @@ export function urlOf(text: string, starts: readonly number[], line: number, col
   let dynamic = false;
 
   for (const arg of args) {
+    // Drop a keyword-argument name (`url=`, `url:`), then look for a string literal with an optional Python prefix.
     const value = arg.replace(/^[A-Za-z_]\w*\s*(=(?!=)|:(?!:))\s*/, "");
     const literal = /^(?:[rRbBuU]|[fF])?(['"`])/.exec(value);
 
@@ -482,6 +510,7 @@ export function urlOf(text: string, starts: readonly number[], line: number, col
     const quote = literal[1]!;
     const body = value.slice(literal[0].length);
     const end = body.indexOf(quote);
+    // The literal's text up to the first interpolation; its scheme and host, if it is an absolute URL.
     const prefix = (end === -1 ? body : body.slice(0, end)).split(/\$\{|\{|\$/)[0]!;
     const host = /^[a-z][a-z0-9+.-]*:\/\/([^/:?#\s]+)/i.exec(prefix)?.[1];
 
@@ -496,6 +525,7 @@ export function literalArgument(text: string, starts: readonly number[], line: n
   const first = firstArguments(text, starts, line, col, callee, 1)?.[0];
 
   if (first === undefined) return null;
+  // Only a whole, plain literal: no escapes and no `$` interpolation.
   const found = /^(['"`])([^'"`\\$]*)\1$/.exec(first);
 
   return found === null ? null : found[2]!;
@@ -506,6 +536,8 @@ function firstArguments(text: string, starts: readonly number[], line: number, c
   const at = (starts[line - 1] ?? -1) + col - 1;
 
   if (at < 0 || at >= text.length) return null;
+  // Find `name(` (or a Rust turbofish `name::<T>(`) in a small window after the
+  // call's position, but not past a statement or block boundary.
   const name = segments(callee).at(-1) ?? callee;
   const window = text.slice(at, at + 400);
   const found = new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(::\\s*<[^;{}]*?>\\s*)?\\(`).exec(window);
@@ -517,6 +549,8 @@ function firstArguments(text: string, starts: readonly number[], line: number, c
   let quote: string | null = null;
   let current = "";
 
+  // Split the argument list at top-level commas, tracking bracket depth and
+  // skipping quoted strings; bounded to 4000 characters.
   for (let i = open + 1; i < Math.min(text.length, open + 4000); i++) {
     const ch = text[i]!;
 

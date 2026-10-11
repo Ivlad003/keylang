@@ -1,5 +1,11 @@
 // Feature readiness: the status of a feature file (`keylang feature`) and
 // the open questions a model proposes for it (c4-zoom/11).
+//
+// Place in the pipeline: operations (see `operations.ts`) over a full
+// analysis (specs → IR → rules, plus the snapshot) and the git base of the
+// change. Entry points: `runFeature`, `featureReportOf`,
+// `runFeatureQuestions`. Key terms: gap (what blocks the feature), stage,
+// open question (`- ? …` in a flow).
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -38,6 +44,7 @@ export function featureSlugOf(path: string, dir: string): string | null {
  * (best-effort, as `check`).
  */
 export async function runFeature(request: FeatureRequest, context: OperationContext): Promise<OperationEnvelope<"feature">> {
+  // Validate the request and that the feature file exists before analysing.
   if (!isAbsolute(request.root)) return empty("feature", "failed", 2, "feature: root must be an absolute path");
 
   if (request.slug === "") return empty("feature", "failed", 2, "feature: a slug is required");
@@ -65,6 +72,8 @@ export async function runFeature(request: FeatureRequest, context: OperationCont
   }
 
   if (context.signal?.aborted) return empty("feature", "cancelled", null);
+  // The base the change is measured against (`--since`, or git's default);
+  // it decides which findings belong to this change.
   let base: FeatureBase;
 
   try {
@@ -98,6 +107,8 @@ export async function runFeature(request: FeatureRequest, context: OperationCont
  */
 export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureBase): FeatureReport | null {
   const config = analyzed.config;
+  // The files and modules changed since the base; without git (base
+  // unavailable) every rule failure counts, as nothing can be sliced.
   const changed = base.state === "unavailable" ? undefined : { files: new Set(base.changes.files), deleted: deletedModuleIds(config, base.changes.deleted) };
   // The spec weakened since the same base (K108): without git there is nothing to compare, and that is no gap.
   const weakened = base.state === "unavailable" ? [] : readWeakenings(config, base.ref, "feature", base.label).weakenings;
@@ -144,6 +155,8 @@ type QuestionLines = { questions: string[]; dropped: number };
 
 /** The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out. */
 export function questionLines(answer: string): QuestionLines {
+  // Keep only `- ? text` (or `* ? text`) lines, normalised to `- ? ` with
+  // single spaces; code fences and blank lines are not counted as dropped.
   const lines = answer.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith('```'));
   const questions = lines.filter((line) => /^[-*] \?\s+\S/.test(line)).map((line) => `- ? ${line.replace(/^[-*] \?\s+/, "").replace(/\s+/g, " ")}`);
   const kept = questions.slice(0, MAX_QUESTIONS);
@@ -159,11 +172,14 @@ export function questionLines(answer: string): QuestionLines {
  */
 export function withQuestions(text: string, questions: readonly string[], slug: string): string {
   const lines = text.split("\n");
+  // Find the first flow; without one, append a new flow with the questions.
   const heading = lines.findIndex((line) => /^#\s+flow\s+\S/.test(line));
 
   if (heading === -1) return `${text.replace(/\n*$/, "\n")}\n# flow ${slug}\n\n${questions.join("\n")}\n`;
   let at = heading + 1;
 
+  // Skip the heading's prose to the first item or the next heading; when it
+  // is an item list, insert after the leading `- ?` items.
   while (at < lines.length && !/^#\s/.test(lines[at]!) && !/^[-*+] /.test(lines[at]!)) at++;
 
   if (at < lines.length && /^[-*+] /.test(lines[at]!)) {
@@ -210,10 +226,13 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
   const doc = analyzed.docs.find((item) => item.path === file);
 
   if (!doc) return empty("feature-questions", "failed", 2, `feature questions: ${file}: not found`);
+  // This operation always needs a model: no fallback to an offline mode.
   const setup = await modelSetup("llm", config, "feature questions");
 
   if ("error" in setup) return empty("feature-questions", "failed", 2, setup.error.replace(" --mode llm", ""));
   const client = setup.client!;
+  // Gate the proposal before the model is asked, so a refused target costs
+  // no request.
   const specDir = rootRelative(root, config.dir);
   const generated = generatedIn(analyzed.docs);
   const problem = proposalProblem(root, specDir, file, generated);
@@ -225,6 +244,8 @@ export async function runFeatureQuestions(request: FeatureQuestionsRequest, cont
   if (refusal !== null) return { ...empty("feature-questions", "failed", refusal.exitCode, refusal.error) };
   const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
   const text = before ?? "";
+  // The prompt: the feature file plus what keylang knows around the IDs it
+  // names (or a note when there is no snapshot).
   const around = analyzed.snapshot ? contextText(contextForIds(analyzed, idsIn(doc))) : "(no code snapshot)";
   context.onProgress?.({ text: `asking ${client.agent}` });
   const { LlmCancelled } = await import("../llm.ts");

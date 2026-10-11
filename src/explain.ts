@@ -1,7 +1,10 @@
-// Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
+// Short explanations for diagnostic codes, printed by `keylang explain <code>`
+// (CLI). Every code in `diag.ts` has an entry: the `Record<Code, …>` type makes
+// a missing one a type error. Entry points: `EXPLANATIONS` and `explainCode`.
 
 import type { Code } from "./diag.ts";
 
+/** For each diagnostic code: why it fires, an example, and how to fix it. */
 export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: string }> = {
   K001: {
     cause: "A reference names an id that is not declared in a fully indexed module.",
@@ -152,10 +155,12 @@ const K005_REASON_LINES = [
   "- scope: `deny app app.checkout.buy` names a fn instead of its module → `deny app app.checkout`",
 ];
 
+/** Whether `text` is a known diagnostic code; own keys only, so `constructor` is not one. */
 function isCode(text: string): text is Code {
   return Object.hasOwn(EXPLANATIONS, text);
 }
 
+/** The explanation of a code as printed lines (case-insensitive code), or null for an unknown code. */
 export function explainCode(code: string): string | null {
   const upper = code.toUpperCase();
   const text = isCode(upper) ? EXPLANATIONS[upper] : undefined;
@@ -163,6 +168,7 @@ export function explainCode(code: string): string | null {
   if (!text) return null;
   const lines = [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`];
 
+  // K005 has several distinct mistakes; list each with its right form.
   if (upper === "K005") lines.push(...K005_REASON_LINES);
 
   return lines.join("\n");

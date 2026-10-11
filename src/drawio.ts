@@ -11,6 +11,10 @@
 // comes from, and a shape keylang does not know becomes a
 // `<!-- keylang:drawio note … -->` comment. An unchanged drawing gives the
 // flow's text back unchanged, so a round trip proposes nothing. Pure.
+//
+// A view on the spec side (SpecIR → diagram → draw.io) and an editor input
+// (draw.io → flow text → proposal). Entry points: `renderDrawio`,
+// `parseDrawio`, `flowFromDrawio`, `flowSection`, `drawioFlowName`.
 
 import { inflateRawSync } from "node:zlib";
 import { xmlEscape } from "./bpmn-export.ts";
@@ -26,11 +30,13 @@ const VERDICT_COLOUR = {
   planned: { stroke: "#757575", fill: "#f5f5f5" },
 } satisfies Record<NonNullable<DiagramVerdict>, { stroke: string; fill: string }>;
 
+/** Colours of a shape or edge without a verdict. */
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
 /** draw.io style keys and their values, written `key=value;`. */
 type StyleParts = Record<string, string | number>;
 
+/** A draw.io style string from its parts, in insertion order. */
 function style(parts: StyleParts): string {
   return `${Object.entries(parts)
     .map(([key, value]) => `${key}=${value}`)
@@ -45,6 +51,7 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): string {
   // Small shapes carry their text below, as the canvas's captions.
   const below = { verticalLabelPosition: "bottom", verticalAlign: "top", labelPosition: "center", align: "center" };
 
+  // One draw.io shape per diagram kind, matching the web canvas.
   switch (node.kind) {
     case "start":
       return style({ ellipse: "", ...base, ...below, strokeWidth: 2, perimeter: "ellipsePerimeter" });
@@ -65,6 +72,7 @@ export function nodeStyle(node: Pick<DiagramNode, "kind" | "verdict">): string {
   }
 }
 
+/** The style of an edge: verdict colour, dashed for the non-sequence kinds, open arrows for calls and dependencies. */
 function edgeStyle(edge: DiagramEdge): string {
   const colour = (edge.verdict && VERDICT_COLOUR[edge.verdict]) || NEUTRAL;
   const dashed = edge.kind === "deny" || edge.kind === "emits" || edge.kind === "continues" || edge.kind === "call" || edge.kind === "dependency";
@@ -72,6 +80,7 @@ function edgeStyle(edge: DiagramEdge): string {
   return style({ edgeStyle: "orthogonalEdgeStyle", rounded: 0, html: 1, strokeColor: colour.stroke, fontColor: "#424242", fontSize: 10, endArrow: edge.kind === "call" || edge.kind === "dependency" ? "open" : "classic", dashed: dashed ? 1 : 0, labelBackgroundColor: "#ffffff" });
 }
 
+/** The style of a lane: a vertical-title swimlane. */
 const LANE_STYLE = style({ swimlane: "", horizontal: 0, startSize: 26, fillColor: "#eef2f4", swimlaneFillColor: "#ffffff", strokeColor: "#b0bec5", fontColor: "#37474f", fontStyle: 1, fontSize: 12, html: 1 });
 
 /** Text as draw.io reads an `html=1` label: `&`, `<` and `>` escaped, so a condition `a < b` is no tag. */
@@ -93,6 +102,7 @@ export function renderDrawio(input: DiagramInput, view: string): string {
   const diagram = diagramOf(input);
 
   if (diagram.nodes.length === 0) throw new Error(`export drawio: nothing to draw${diagram.reason ? `: ${diagram.reason}` : ""}`);
+  // The page is big enough for every shape and lane, plus a margin.
   const width = Math.max(800, ...diagram.nodes.map((node) => node.x + node.w + 40), ...diagram.groups.map((group) => group.x + group.w));
   const height = Math.max(600, ...diagram.nodes.map((node) => node.y + node.h + 40), ...diagram.groups.map((group) => group.y + group.h));
   const attr = (name: string, value: string | number | undefined): string => (value === undefined || value === "" ? "" : ` ${name}="${xmlEscape(String(value))}"`);
@@ -101,14 +111,20 @@ export function renderDrawio(input: DiagramInput, view: string): string {
   out.push(`  <diagram id="keylang" name="${xmlEscape(view)}">`);
   out.push(`    <mxGraphModel dx="${width}" dy="${height}" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="${width}" pageHeight="${height}" math="0" shadow="0">`);
   out.push("      <root>");
+  // Cells 0 and 1 are draw.io's fixed root and default layer; the root
+  // carries the view name so the import knows which flow it is.
   out.push(`        <object id="0" label=""${attr("keylang_view", view)}>`, "          <mxCell />", "        </object>");
   out.push('        <mxCell id="1" parent="0" />');
 
+  // Lanes first so shapes draw on top of them; lane IDs are prefixed to stay
+  // apart from shape IDs.
   for (const group of diagram.groups) {
     out.push(`        <object id="${xmlEscape(`lane:${group.id}`)}"${attr("label", htmlText(group.label))}${attr("keylang_id", group.id)} keylang_kind="lane">`);
     out.push(`          <mxCell style="${LANE_STYLE}" vertex="1" parent="1">`, `            <mxGeometry x="${group.x}" y="${group.y}" width="${group.w}" height="${group.h}" as="geometry" />`, "          </mxCell>", "        </object>");
   }
 
+  // Shapes keep the diagram's IDs (`step:12`), which the import matches
+  // back to flow lines; the `keylang_*` attributes say what each stands for.
   for (const node of diagram.nodes) {
     const ref = node.ref;
     out.push(`        <object id="${xmlEscape(node.id)}"${attr("label", labelOf(node))}${attr("keylang_id", ref?.id ?? (node.kind === "gateway" ? node.label : undefined))} keylang_kind="${node.kind}"${attr("keylang_line", ref?.specLine)}${attr("keylang_verdict", node.verdict ?? undefined)}${attr("keylang_reason", node.reason)}${attr("keylang_file", ref?.file)}>`);
@@ -126,6 +142,7 @@ export function renderDrawio(input: DiagramInput, view: string): string {
 
 // ── reading XML ─────────────────────────────────────────────────────────────
 
+/** An element of the minimal XML tree `parseXml` builds; `text` is its direct text, concatenated. */
 export interface XmlElement {
   name: string;
   attrs: Record<string, string>;
@@ -133,6 +150,7 @@ export interface XmlElement {
   text: string;
 }
 
+/** The five predefined XML entities. */
 const ENTITY = new Map([
   ["amp", "&"],
   ["lt", "<"],
@@ -141,6 +159,7 @@ const ENTITY = new Map([
   ["apos", "'"],
 ]);
 
+/** Character and predefined entity references decoded; an unknown named entity stays as written. */
 function decode(text: string): string {
   return text.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, name: string) => {
     if (name.startsWith("#x")) return String.fromCodePoint(parseInt(name.slice(2), 16));
@@ -166,6 +185,8 @@ export function parseXml(text: string): XmlElement {
     throw new Error(`not well-formed XML at offset ${at}: ${what}`);
   };
 
+  // A hand-rolled scanner: text up to the next `<` goes to the open element,
+  // then the markup at `<` is dispatched by its opening characters.
   while (at < text.length) {
     const lt = text.indexOf("<", at);
 
@@ -177,6 +198,8 @@ export function parseXml(text: string): XmlElement {
     if (lt > at) stack.at(-1)!.text += decode(text.slice(at, lt));
     at = lt;
 
+    // Comments, processing instructions and declarations are skipped; CDATA
+    // is kept verbatim as text.
     if (text.startsWith("<!--", at)) {
       const end = text.indexOf("-->", at + 4);
 
@@ -199,6 +222,7 @@ export function parseXml(text: string): XmlElement {
       if (end === -1) fail("unclosed declaration");
       at = end + 1;
     } else if (text.startsWith("</", at)) {
+      // An end tag must close the innermost open element.
       const end = text.indexOf(">", at);
 
       if (end === -1) fail("unclosed end tag");
@@ -208,6 +232,7 @@ export function parseXml(text: string): XmlElement {
       if (!open || open === root || open.name !== name) fail(`</${name}> closes ${open && open !== root ? `<${open.name}>` : "nothing"}`);
       at = end + 1;
     } else {
+      // A start tag: name, quoted attributes, optional self-closing `/`.
       const tag = /^<([A-Za-z_][\w.:-]*)((?:\s+[A-Za-z_][\w.:-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/.exec(text.slice(at));
 
       if (!tag) fail("a tag that cannot be read");
@@ -229,6 +254,7 @@ export function parseXml(text: string): XmlElement {
 
 // ── reading a .drawio ───────────────────────────────────────────────────────
 
+/** One cell of a draw.io page: a shape (vertex) or an edge, with its keylang attributes. */
 export interface DrawioCell {
   id: string;
   /** The label as draw.io shows it, HTML and line breaks dropped. */
@@ -241,6 +267,7 @@ export interface DrawioCell {
   style: string;
 }
 
+/** The cells of a draw.io page and the view it was exported as. */
 export interface DrawioModel {
   /** `keylang_view` of the root cell, else the page's name. */
   view: string | null;
@@ -249,12 +276,14 @@ export interface DrawioModel {
 
 /** HTML of a label as plain text: tags out, `<br>` and `<div>` as spaces, entities decoded, spaces collapsed. */
 function plain(label: string): string {
+  // The no-break space draw.io writes for `&nbsp;` becomes a plain space.
   return decode(label.replace(/<br\s*\/?>|<\/div>|<\/p>/gi, " ").replace(/<[^>]*>/g, ""))
     .replace(/ /g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/** The first descendant element named `name`, depth first. */
 function find(element: XmlElement, name: string): XmlElement | null {
   for (const child of element.children) {
     if (child.name === name) return child;
@@ -276,6 +305,7 @@ export function parseDrawio(text: string): DrawioModel {
   const page = find(doc, "diagram");
   let model = page ? find(page, "mxGraphModel") : find(doc, "mxGraphModel");
 
+  // No model element: the page's text is the compressed model.
   if (!model && page && page.text.trim() !== "") {
     let inner: string;
 
@@ -293,6 +323,8 @@ export function parseDrawio(text: string): DrawioModel {
   const cells: DrawioCell[] = [];
   let view: string | null = null;
 
+  // A cell is a bare `<mxCell>` or one wrapped in `<object>`/`<UserObject>`,
+  // where the wrapper holds the ID, label and custom attributes.
   for (const child of root?.children ?? []) {
     const wrapped = child.name === "object" || child.name === "UserObject";
     const cell = wrapped ? (child.children.find((c) => c.name === "mxCell") ?? null) : child.name === "mxCell" ? child : null;
@@ -328,6 +360,7 @@ const TRIGGER_KINDS = new Set(["route", "cron", "consumer", "webhook"]);
 /** Ids of shapes the export makes for a flow but which no line edits: holes, `calls`, parallel gateways. */
 const DERIVED = /^(?:hole:\d+|calls:\d+:\d+|parallel:\d+(?::join)?)$/;
 
+/** One line of the flow section being rebuilt. */
 interface Entry {
   text: string;
   indent: number;
@@ -335,6 +368,7 @@ interface Entry {
   cell: string | null;
 }
 
+/** The number of leading spaces. */
 function indentOf(line: string): number {
   return /^ */.exec(line)![0].length;
 }
@@ -354,6 +388,7 @@ function lineOf(cell: DrawioCell): string | null {
   const kind = cell.attrs.keylang_kind;
   const id = (cell.attrs.keylang_id ?? "").trim() || cell.label;
 
+  // The ID comes from `keylang_id`, else the label; a parallel split needs neither.
   if (id === "" && kind !== "parallel") return null;
 
   switch (kind) {
@@ -386,6 +421,8 @@ function lineOf(cell: DrawioCell): string | null {
 
 /** The line of an existing item rewritten for the shape's new ID or label, or null when nothing on it changed. */
 function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): string | null {
+  // Replace the first occurrence of the old text on the line; null when
+  // nothing changed or the old text is not there.
   const swap = (from: string, to: string): string | null => {
     if (to === "" || to === from) return null;
     const at = line.indexOf(from);
@@ -407,6 +444,7 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
       const kind = cell.attrs.keylang_trigger;
 
       if (kind === undefined) return named === line ? null : named;
+      // Rewrite (or drop) the entry kind word after `- trigger`.
       const next = named.replace(/^(\s*- trigger)(?:\s+(?:route|cron|consumer|webhook))?(\s+)/, (_all, head: string, space: string) => `${head}${TRIGGER_KINDS.has(kind) ? ` ${kind}` : ""}${space}`);
 
       return next === line ? null : next;
@@ -442,6 +480,8 @@ function rewritten(line: string, item: Trigger | FlowItem, cell: DrawioCell): st
  */
 export function flowFromDrawio(model: DrawioModel, name: string, current: { text: string; flow: Flow; firstLine: number } | null): string {
   const lines = current ? current.text.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n") : [`# flow ${name}`, ""];
+  // The flow items a shape can stand for, keyed `<kind>:<line>` as the
+  // export names shapes.
   const items = new Map<string, Trigger | FlowItem>();
 
   if (current) {
@@ -450,6 +490,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     });
   }
 
+  // Tie each existing line to the item (and so the shape ID) it holds.
   const entries: Entry[] = lines.map((text) => ({ text, indent: indentOf(text), cell: null }));
   const entryOf = new Map<string, Entry>();
 
@@ -500,6 +541,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
   const notes = vertices.filter((cell) => cell.attrs.keylang_kind === undefined && cell.label !== "" && !/(?:^|;)swimlane(?:;|$)/.test(cell.style));
   const pending = new Set(fresh.map((cell) => cell.id));
 
+  /** The index after the last non-blank line. */
   const flowEnd = (): number => {
     let end = entries.length;
 
@@ -525,6 +567,11 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
       .filter((line) => /^test\s/.test(line))
       .map((line) => ({ text: listLine(indent + 2, line), indent: indent + 2, cell: null }));
 
+  /**
+   * Insert the line of a new shape after `after` (at the flow's end when
+   * null). `branch`: the edge carries the gateway's condition; `sibling`:
+   * the shape follows a parallel group, so it is never nested.
+   */
   const place = (cell: DrawioCell, after: Entry | null, branch: boolean, sibling = false): void => {
     const body = lineOf(cell)!;
 
@@ -560,6 +607,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     const code = /^(parallel:\d+):join$/.exec(join);
 
     if (code) return code[1]!;
+    // A drawn join: breadth-first back along incoming edges, bounded at 50 steps.
     let frontier = [join];
     const seen = new Set(frontier);
 
@@ -583,6 +631,9 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
     return null;
   };
 
+  // Place new shapes in passes: a shape waits until the shape its edge
+  // leaves (or its group's split) is placed, so a chain lands in order. A
+  // pass with no progress (a cycle of new shapes) stops the loop.
   for (let progress = true; progress && pending.size > 0; ) {
     progress = false;
 
@@ -605,6 +656,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
         // Its edge leaves a shape that is no line (a hole, a parallel gateway, a note): the end of the flow.
         place(cell, null, false);
       } else {
+        // Into a gateway's branch only when the edge is labelled with its condition.
         const source = from === null ? undefined : byId.get(from);
         place(cell, anchor, edge !== null && source !== undefined && edge.label !== "" && edge.label === source.label);
       }
@@ -625,6 +677,7 @@ export function flowFromDrawio(model: DrawioModel, name: string, current: { text
 
   const body = entries.map((entry) => entry.text).join("\n");
 
+  // A new flow ends with exactly one newline.
   if (!current) return `${body.replace(/\n+$/, "")}\n`;
   // The section ends as it ended: the same trailing newlines.
   const tail = /\n*$/.exec(current.text.replace(/\r\n/g, "\n"))![0];
@@ -646,6 +699,7 @@ export function drawioFlowName(model: DrawioModel): string | null {
 export function flowSection(text: string, name: string): { text: string; firstLine: number } | null {
   const normal = text.replace(/\r\n/g, "\n");
   const sections = parse("spec.md", normal).sections;
+  // Parse the spec to find the flow's heading; the section runs to the next heading.
   const index = sections.findIndex((section) => section.kind === "flow" && section.name?.value === name && section.heading !== null);
 
   if (index === -1) return null;

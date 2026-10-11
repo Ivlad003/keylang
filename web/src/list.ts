@@ -1,3 +1,4 @@
+// Web page (web/src), the left-hand view list; entry point `VirtualList`.
 // The view list of the diagram page: flows, discovered flows, entry points and
 // the layers view, grouped (flows by the trigger's layer, entry points by
 // kind) and filtered by a search over names, labels and IDs. Virtualised: one
@@ -7,6 +8,7 @@
 
 import type { PageQuery } from "./api.ts";
 
+/** One pickable row of the list: a view (flow, entry point, layers, a doc, a change) and the query that opens it. */
 export interface ListItem {
   /** Stable across refreshes: the view's kind and name or ID. */
   key: string;
@@ -19,6 +21,7 @@ export interface ListItem {
   query: PageQuery;
 }
 
+/** A drawn row: a collapsible group header or an item under it. */
 type Row = { type: "group"; group: string; count: number; open: boolean } | { type: "item"; item: ListItem };
 
 /** One row, px: the CSS of `.row` has the same height. */
@@ -27,6 +30,7 @@ export const ROW_HEIGHT = 26;
 /** Rows drawn above and below the visible ones. */
 const OVERSCAN = 8;
 
+/** The virtualised, grouped and filtered list inside `container`; `onPick` runs when an item is clicked. */
 export class VirtualList {
   private readonly container: HTMLElement;
   private readonly spacer: HTMLDivElement;
@@ -37,6 +41,7 @@ export class VirtualList {
   private active: string | null = null;
   private marked: ReadonlySet<string> | null = null;
   private readonly closed = new Set<string>();
+  /** The pending animation frame of a render, 0 when none is pending. */
   private frame = 0;
 
   constructor(container: HTMLElement, onPick: (item: ListItem) => void) {
@@ -44,22 +49,26 @@ export class VirtualList {
     this.onPick = onPick;
     this.spacer = document.createElement("div");
     this.spacer.className = "spacer";
+    // The spacer is as tall as all rows, so the scrollbar is right; drawn rows sit in it, absolutely placed.
     container.replaceChildren(this.spacer);
     container.addEventListener("scroll", () => this.schedule());
     new ResizeObserver(() => this.schedule()).observe(container);
   }
 
+  /** Replaces the items, keeping the filter and the closed groups. */
   setItems(items: ListItem[]): void {
     this.items = items;
     this.rebuild();
   }
 
+  /** Filters by a text search: every whitespace-separated word must occur; scrolls back to the top. */
   setFilter(text: string): void {
     this.needle = text.trim().toLowerCase();
     this.container.scrollTop = 0;
     this.rebuild();
   }
 
+  /** Highlights the item of the open view; null highlights none. */
   setActive(key: string | null): void {
     this.active = key;
     this.schedule();
@@ -83,6 +92,7 @@ export class VirtualList {
     if (at === -1) return;
     const top = at * ROW_HEIGHT;
 
+    // Scroll only when the row is out of sight, and then centre it.
     if (top < this.container.scrollTop || top + ROW_HEIGHT > this.container.scrollTop + this.container.clientHeight) this.container.scrollTop = Math.max(0, top - this.container.clientHeight / 2);
     this.schedule();
   }
@@ -96,9 +106,11 @@ export class VirtualList {
     return this.needle.split(/\s+/).every((word) => item.search.includes(word));
   }
 
+  /** Recomputes the row list (groups in the items' first-seen order, then their matching items) and redraws. */
   private rebuild(): void {
     const byGroup = new Map<string, ListItem[]>();
 
+    // Bucket the matching items by group; a Map keeps the groups in the order the caller gave the items.
     for (const item of this.items) {
       if (!this.matches(item)) continue;
       const list = byGroup.get(item.group);
@@ -123,6 +135,7 @@ export class VirtualList {
     this.render();
   }
 
+  /** Coalesces scroll and resize events into one render per animation frame. */
   private schedule(): void {
     if (this.frame) return;
     this.frame = requestAnimationFrame(() => {
@@ -131,6 +144,7 @@ export class VirtualList {
     });
   }
 
+  /** Draws only the rows in the visible window plus `OVERSCAN` on each side; the rest of the list has no DOM. */
   private render(): void {
     const first = Math.max(0, Math.floor(this.container.scrollTop / ROW_HEIGHT) - OVERSCAN);
     const last = Math.min(this.rows.length, Math.ceil((this.container.scrollTop + this.container.clientHeight) / ROW_HEIGHT) + OVERSCAN);
@@ -140,6 +154,7 @@ export class VirtualList {
     this.spacer.replaceChildren(...nodes);
   }
 
+  /** One row's button, placed at its index; a group header toggles the group, an item picks it. */
   private row(row: Row, index: number): HTMLElement {
     const button = document.createElement("button");
     button.type = "button";

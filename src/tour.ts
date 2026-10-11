@@ -7,6 +7,11 @@
 // put together in a fixed order. No model: a process description a model
 // wrote is shown with its provenance. The same snapshot, specs and saved
 // files give the same bytes, in any language the snapshot holds.
+//
+// Sits at the end of source → FileFacts → graph, next to the map: it reads
+// the snapshot plus the compiled specs (SpecIR) and renders text. Entry points:
+// `buildTour` (the `Tour` data, which the CLI may print as JSON) and
+// `tourMarkdown` (the page).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,6 +37,7 @@ const TOP_LABELS = 5;
 
 const TOP_BLIND = 5;
 
+// Call sites listed per data-logic signal, and functions in «start here».
 const SITES_TO_READ = 3;
 
 const START_HERE = 10;
@@ -39,8 +45,10 @@ const START_HERE = 10;
 /** The domain of the flows no process names (business processes) or of all of them (none named yet). */
 const OTHER_FLOWS = "Other flows";
 
+// The single domain when no process README exists: flows grouped by layer.
 const DISCOVERED_FLOWS = "Discovered flows by layer";
 
+/** One discovered flow as the tour lists it, with a link to its diagram. */
 export interface TourFlow {
   name: string;
   /** The offline description of `flows discover` (doc comments); null without one. */
@@ -58,6 +66,7 @@ export interface TourFlow {
   holes: number;
 }
 
+/** A business process: a named group of discovered flows. */
 export interface TourProcess {
   name: string;
   description: string | null;
@@ -66,6 +75,7 @@ export interface TourProcess {
   flows: TourFlow[];
 }
 
+/** Everything the tour shows, section by section, before rendering. */
 export interface Tour {
   snapshotId: string;
   system: {
@@ -134,6 +144,7 @@ function diagramLink(view: "flow" | "discovered", name: string): string {
   return `/diagrams#${new URLSearchParams({ view, name }).toString()}`;
 }
 
+/** The file's text, or null when it cannot be read. */
 function readOrNull(abs: string): string | null {
   try {
     return readFileSync(abs, "utf8");
@@ -169,11 +180,15 @@ function layerOrder(snapshot: AnalysisSnapshot): string[] {
   return [...configured, ...others];
 }
 
+/** Per-layer counts (files, fns, modules, imports across layers) and the modules to read first. */
 function layersOf(snapshot: AnalysisSnapshot): Tour["layers"] {
   const order = layerOrder(snapshot);
   const stats = new Map(order.map((layer) => [layer, { files: new Set<string>(), fns: 0, modules: 0, in: 0, out: 0, packages: 0 }]));
   const moduleFns = new Map<string, number>();
 
+  // One pass over the nodes: count per layer, fns per file module, and each
+  // module's imports into other layers (in for the target, out for the source)
+  // or into packages.
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     const layer = stats.get(node.layer);
 
@@ -221,9 +236,11 @@ function layersOf(snapshot: AnalysisSnapshot): Tour["layers"] {
   });
 }
 
+/** The business processes: from the saved process README when there is one, else the discovered flows by layer; plus the hand-written flows. */
 function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specDir: string): Tour["processes"] {
   const { config, spec } = inputs;
   const viewDir = join(config.root, specDir, DISCOVERED_DIR);
+  // View files read once each: several flows share a layer's file.
   const views = new Map<string, string>();
 
   const viewText = (file: string): string => {
@@ -239,6 +256,7 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
     entry: flow.entry,
     layer: flow.layer,
     file: specPath(specDir, `${DISCOVERED_DIR}/${flow.file}`),
+    // The flow is in the written view when the file has its exact heading line.
     inView: viewText(flow.file).split("\n").includes(`# flow ${flow.name}`),
     link: diagramLink("discovered", flow.name),
     steps: flow.steps.length,
@@ -247,12 +265,14 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
 
   const byName = new Map(flows.map((flow) => [flow.name, flow]));
 
+  // Flows as one pseudo-process per layer, layers and flows sorted by name.
   const byLayer = (list: readonly DiscoveredFlow[]): TourProcess[] => {
     const layers = [...new Set(list.map((flow) => flow.layer))].sort(compareText);
 
     return layers.map((layer) => ({ name: layer, description: null, flows: list.filter((flow) => flow.layer === layer).sort((a, b) => compareText(a.name, b.name)).map(tourFlow) }));
   };
 
+  // Hand-written flows, once per name (a flow may be continued in several files).
   const specified = (() => {
     const seen = new Set<string>();
     const out: Tour["processes"]["specified"] = [];
@@ -266,6 +286,7 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
     return out;
   })();
 
+  // No saved process names: all discovered flows go under one domain.
   const saved = existsSync(viewDir) ? readProcesses(config.root, specDir) : [];
 
   if (saved.length === 0) {
@@ -284,6 +305,7 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
       domains.push(domain);
     }
 
+    // A process lists flow names; one the snapshot no longer discovers is skipped.
     const own = process.flows.flatMap((name) => {
       const flow = byName.get(name);
 
@@ -298,6 +320,7 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
     domain.processes.push(process.agent === "" ? { name: process.name, description, flows: own } : { name: process.name, description, provenance: { agent: process.agent, date: process.date }, flows: own });
   }
 
+  // Flows no process claims go to a last «Other flows» domain.
   const rest = flows.filter((flow) => !named.has(flow.name));
 
   if (rest.length > 0) domains.push({ name: OTHER_FLOWS, processes: byLayer(rest) });
@@ -305,6 +328,7 @@ function processesOf(inputs: TourInputs, flows: readonly DiscoveredFlow[], specD
   return { source: "names", domains, specified };
 }
 
+/** Entry points counted by kind, in first-seen order, with up to five distinct labels each. */
 function entriesOf(snapshot: AnalysisSnapshot): Tour["entries"] {
   const kinds: Tour["entries"]["kinds"] = [];
 
@@ -339,6 +363,7 @@ function eventsOf(snapshot: AnalysisSnapshot): Tour["events"] {
   return { events, note: events.length > 0 ? null : "no event nodes in the snapshot: a framework's events (events.xml, dispatch, signals) need its adapter (business-flows/08)" };
 }
 
+/** The integrations report reduced to counts, distinct hosts and topics (sorted). */
 function integrationsOf(report: IntegrationsReport): Tour["integrations"] {
   return {
     outgoing: report.outgoing.map((integration) => ({
@@ -360,7 +385,10 @@ function integrationsOf(report: IntegrationsReport): Tour["integrations"] {
   };
 }
 
+/** The coverage report reduced to its headline numbers, the top holes and the top data-logic signals. */
 function blindSpotsOf(report: CoverageReport): Tour["blindSpots"] {
+  // The most frequent signals first (a stable sort keeps the report's order on
+  // ties), each with its first few sites to read.
   const signals = [...report.dataLogic.signals]
     .sort((a, b) => b.count - a.count)
     .slice(0, TOP_BLIND)
@@ -389,6 +417,7 @@ function blindSpotsOf(report: CoverageReport): Tour["blindSpots"] {
 function startHereOf(snapshot: AnalysisSnapshot, spec: SpecIR, flows: readonly DiscoveredFlow[]): Tour["startHere"] {
   const through = new Map<string, string[]>();
 
+  // Which flows name each fn, hand-written and discovered alike; a name counts once.
   const add = (id: string, flow: string): void => {
     const names = through.get(id) ?? [];
 
@@ -415,6 +444,8 @@ function startHereOf(snapshot: AnalysisSnapshot, spec: SpecIR, flows: readonly D
 export async function buildTour(inputs: TourInputs): Promise<Tour> {
   const { config, snapshot, spec } = inputs;
   const specDir = config.dir;
+  // Compute the shared inputs once: discovered flows (minus the triggers
+  // hand-written flows already cover), data-logic sites, coverage and integrations.
   const specified = specifiedTriggers(spec.flows);
   const flows = discoverFlows(snapshot, specified).flows;
   const signals = loadDataLogic();
@@ -447,6 +478,7 @@ export async function buildTour(inputs: TourInputs): Promise<Tour> {
 
 const percent = (share: number): string => `${(share * 100).toFixed(1)} %`;
 
+/** Inline code; a backtick inside would end the span, so it becomes `'`. */
 const code = (text: string): string => `\`${text.replace(/`/g, "'")}\``;
 
 /** One table cell: no pipe or line break. */
@@ -459,6 +491,7 @@ export function tourMarkdown(tour: Tour): string {
   out.push(`# Project tour${system.name === null ? "" : `: ${system.name}`}`, "");
   out.push("A view over the current snapshot (`keylang tour`): nothing here is a spec, and `check` does not read it. Without a model; a description a model wrote names its model.", "");
 
+  // Section 1: the repository's own description and the layer briefs.
   out.push("## 1. What the system is", "");
   out.push(system.brief === null ? "The repository says nothing about itself: no README paragraph and no manifest `description`." : `${proseLine(system.brief)} (${system.source})`, "");
   out.push(`- languages: ${system.languages.length > 0 ? system.languages.join(", ") : "—"}`);
@@ -467,6 +500,7 @@ export function tourMarkdown(tour: Tour): string {
   for (const layer of tour.layers) out.push(`- ${code(layer.name)}: ${layer.brief === null ? "no README in the layer's directory, no doc on its index module" : proseLine(layer.brief)}`);
   out.push("");
 
+  // Section 2: one table of top modules per layer, with a «more» row when cut.
   out.push("## 2. Layers and modules", "");
   out.push("Size in files and fns; coupling as imports between modules: in from other layers, out to other layers, into packages.", "");
 
@@ -488,6 +522,8 @@ export function tourMarkdown(tour: Tour): string {
     out.push("");
   }
 
+  // Section 3: the intro depends on where the processes came from; then
+  // domain → process → flows, then the hand-written flows.
   out.push("## 3. Business processes", "");
   const { processes } = tour;
 
@@ -523,6 +559,7 @@ export function tourMarkdown(tour: Tour): string {
   if (processes.specified.length === 0) out.push("None yet: `keylang flows adopt <name>` proposes a discovered flow as a spec.");
   out.push("");
 
+  // Section 4: entry points by kind, then events (or why there are none).
   out.push("## 4. Entry points and events", "");
   out.push(`${tour.entries.total} entry point(s) (\`keylang entries\`).`, "");
 
@@ -538,10 +575,12 @@ export function tourMarkdown(tour: Tour): string {
 
   if (tour.events.events.length > 0) out.push("");
 
+  // Section 5: outgoing integrations, incoming webhooks, queues.
   out.push("## 5. Integrations", "");
   const { integrations } = tour;
   out.push(`Outgoing: ${integrations.outgoing.length} integration(s) (\`keylang integrations\`).`, "");
 
+  // An integration with no call site is known only from its imports, so say that instead of reach.
   for (const integration of integrations.outgoing) {
     const parts = [`${integration.sites} call site(s)`, ...(integration.hosts.length > 0 ? [integration.hosts.join(", ")] : []), integration.sites === 0 ? `imported ${integration.imports} time(s)` : `reached from ${integration.reachedFrom} entry point(s)`];
     out.push(`- **${integration.id}** (${integration.label}, ${integration.kind}) · ${parts.join(" · ")}`);
@@ -556,6 +595,7 @@ export function tourMarkdown(tour: Tour): string {
   const { queues } = integrations;
   out.push(`Queues: ${queues.publishers} publisher(s), ${queues.consumers} consumer(s), ${queues.pairs} pair(s)${queues.topics.length > 0 ? `; topics ${queues.topics.map(code).join(", ")}` : ""}.`, "");
 
+  // Section 6: reach, the modules with most holes and the data-logic signals.
   out.push("## 6. Blind spots and logic in data", "");
   const blind = tour.blindSpots;
   out.push(`${blind.reach.reachable} of ${blind.reach.fns} fn reachable from ${blind.reach.entries} entry point(s) over resolved calls (${percent(blind.reach.share)}); ${blind.orphans} orphan fn; ${blind.unflowed} entry point(s) without a hand-written flow (\`keylang coverage\`).`, "");
@@ -572,6 +612,7 @@ export function tourMarkdown(tour: Tour): string {
   if (blind.dataLogic.signals.length === 0) out.push("- none");
   out.push("");
 
+  // Section 7: the ranked list from `startHereOf`.
   out.push("## 7. Where to start reading", "");
   out.push("The fns most flows go through, then the most called.", "");
   tour.startHere.forEach((fn, i) => out.push(`${i + 1}. ${code(fn.id)} — ${fn.file}:${fn.line} · ${fn.flows} flow(s), ${fn.callers} caller(s)${fn.brief === null ? "" : ` · ${proseLine(fn.brief)}`}`));

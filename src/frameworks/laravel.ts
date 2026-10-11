@@ -8,10 +8,14 @@
 //
 // Detected from `laravel/framework` in the root `composer.json`, or an
 // `artisan` beside `bootstrap/app.php`.
+//
+// Pipeline: config side of the framework adapters (detect → files → parse);
+// the code side is in `src/framework-code/laravel.ts`. Entry point: `laravel`.
 
 import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { FrameworkAdapter } from "./adapter.ts";
 
+/** Laravel's wiring files: route files, service providers, the bootstrap files and the console kernel. */
 const CONFIG_FILE = /^(?:routes\/[^/]+\.php|app\/Providers\/.+\.php|bootstrap\/(?:app|providers)\.php|app\/Console\/Kernel\.php)$/;
 
 export const laravel: FrameworkAdapter = {
@@ -20,15 +24,18 @@ export const laravel: FrameworkAdapter = {
   detect(context) {
     const composer = readJson(context.read("composer.json"));
 
+    // A dependency on the framework package in either section is enough.
     for (const field of ["require", "require-dev"]) {
       const deps = isJsonObject(composer) ? composer[field] : undefined;
 
       if (isJsonObject(deps) && "laravel/framework" in deps) return true;
     }
 
+    // Without composer.json: the `artisan` script beside `bootstrap/app.php` marks a Laravel app.
     return context.read("artisan") !== null && context.read("bootstrap/app.php") !== null;
   },
   files(context) {
+    // Only files the analysis reads count: the rest stay holes either way.
     return context.sources.filter((path) => CONFIG_FILE.test(path) && context.analysed(path)).map((path) => ({ path, owner: null }));
   },
   // The files are PHP: what they say is read from the facts of the code (`src/framework-code/laravel.ts`).
@@ -37,6 +44,7 @@ export const laravel: FrameworkAdapter = {
   },
 };
 
+/** Parse a JSON file, tolerating a BOM; missing or malformed JSON is `null`, so detection just fails. */
 function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 

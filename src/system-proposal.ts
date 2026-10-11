@@ -8,6 +8,11 @@
 // section. A component taken off the canvas takes its lines with it. The
 // system of the code (`@code`) is adopted as a new file. Pure: files come
 // in through `read`.
+//
+// Sits on the web/TUI editing side, after the diagram view: it turns an
+// `EditorModel` back into Markdown that the parser (Markdown → IR) reads again.
+// Entry point: `systemChanges`, which returns the changed file and the notes on
+// what the canvas could not express.
 
 import type { ChangedTarget, EditorModel } from "./diagram-proposal.ts";
 import { sectionNodes, type Node } from "./ir.ts";
@@ -16,6 +21,7 @@ import { compareText } from "./span.ts";
 import type { SystemSpec } from "./system.ts";
 import { systemMarkdown } from "./system-discover.ts";
 
+/** What `systemChanges` needs: the edited canvas, the system it shows and a way to read spec files. */
 export interface SystemChangeInput {
   model: EditorModel;
   /** The view's system: a `# system` of the specs, or the system of the code. */
@@ -42,10 +48,12 @@ function block(lines: readonly string[], node: Node, indent: string): string[] {
 
 type SystemChanges = { targets: ChangedTarget[]; notes: string[] };
 
-/** The section's text with its components and zones as the canvas draws them; null when the canvas says nothing new. */
+/** The section's text with its components and zones as the canvas draws them; no target when the canvas says nothing new. */
 export function systemChanges(input: SystemChangeInput): SystemChanges {
   const { model, system } = input;
   const notes: string[] = [];
+  // A system with no file is the system of the code: adopting it writes a new
+  // `system/<name>.md`, which must not overwrite an existing one.
   const adopting = system.file === "";
   const target = adopting ? `${input.specDir === "" ? "" : `${input.specDir}/`}system/${input.adoptAs}.md` : system.file;
   const before = input.read(target);
@@ -56,6 +64,8 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
   const components = model.nodes.filter((node) => node.kind === "component");
   const names = new Map<string, string>();
 
+  // Keep only components that can be written back: a known kind, a valid
+  // segment as name, and a name not taken by an earlier shape.
   for (const node of components) {
     const kind = node.component ?? "service";
 
@@ -77,6 +87,8 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     names.set(node.key, node.label);
   }
 
+  // Relation lines per source component. A connection label is `<verb>[: caption]`;
+  // an unlabelled one means `calls`, and one between dropped shapes is skipped.
   const relations = new Map<string, string[]>();
 
   for (const edge of model.edges) {
@@ -108,6 +120,9 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
   const removed = new Set<number>();
   let insertAt: number | null = null;
 
+  // Take a written component or zone out of the text: mark its lines removed,
+  // keep the first such line as the insertion point, and remember the item so a
+  // kept component can carry its other lines and a zone its label.
   const take = (node: Node): void => {
     if (insertAt === null) insertAt = node.span.start.line - 1;
 
@@ -128,6 +143,7 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
   // A system of the code adopted: its section starts after the heading.
   const headingLine = section?.heading ? section.heading.span.start.line : 1;
 
+  // The section ends right before the next heading, or at the end of the file.
   const end = (() => {
     const next = doc.sections.find((item) => item !== section && item.heading !== null && item.heading.span.start.line > headingLine);
 
@@ -142,6 +158,8 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     while (insertAt > headingLine && lines[insertAt - 1]?.trim() === "") insertAt--;
   }
 
+  // The lines of one canvas component: its item line, then what it had as
+  // written (but its relations), then its relations as the canvas draws them.
   const componentLines = (key: string, indent: string): string[] => {
     const node = components.find((item) => item.key === key)!;
     const name = names.get(key)!;
@@ -161,6 +179,9 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     return out;
   };
 
+  // Group components by zone in reading order of the canvas (top to bottom,
+  // left to right, then by key), so the Markdown follows what the user sees.
+  // A `planned:` lane prefix is the canvas's, not part of the zone name.
   const byZone = new Map<string | null, string[]>();
 
   for (const node of components.filter((item) => names.has(item.key)).sort((a, b) => a.y - b.y || a.x - b.x || compareText(a.key, b.key))) {
@@ -168,6 +189,7 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     byZone.set(zone, [...(byZone.get(zone) ?? []), node.key]);
   }
 
+  // Components outside any zone come first, then each lane as a `zone` item.
   const generated: string[] = [];
 
   for (const key of byZone.get(null) ?? []) generated.push(...componentLines(key, ""));
@@ -187,6 +209,8 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     for (const key of byZone.get(zone) ?? []) generated.push(...componentLines(key, "  "));
   }
 
+  // Explain what the rewrite drops or breaks: removed components, and
+  // sequences that name a participant no longer on the canvas.
   for (const [name] of written) if (![...names.values()].includes(name)) notes.push(`component \`${name}\` is not on the canvas: its lines are taken out`);
 
   for (const sequence of system.sequences) {
@@ -195,6 +219,8 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
     if (gone.length > 0 && names.size > 0) notes.push(`sequence \`${sequence.name}\` names ${gone.map((who) => `\`${who}\``).join(", ")}, not on the canvas: \`check\` will say K401 until it is fixed`);
   }
 
+  // Splice: surviving lines before the insertion point, the generated items,
+  // then the surviving rest.
   const kept = lines.map((line, i) => (removed.has(i) ? null : line));
   const head = kept.slice(0, insertAt).filter((line): line is string => line !== null);
   // A list right under a heading or prose starts after a blank line.
@@ -204,6 +230,7 @@ export function systemChanges(input: SystemChangeInput): SystemChanges {
   const out = [...head, ...generated, ...kept.slice(insertAt).filter((line): line is string => line !== null)];
   let next = out.join("\n");
 
+  // Keep the file's line endings and a final newline; an unchanged text is no change.
   if (before !== null && /\r\n/.test(before)) next = next.replace(/\n/g, "\r\n");
 
   if (!next.endsWith("\n")) next += "\n";

@@ -8,6 +8,7 @@
  * comment that only mentions copyright is documentation.
  */
 export function isLicense(text: string): boolean {
+  // Strip leading comment markers and whitespace so the notice word is first.
   const body = text.replace(/^[\s/*!#]+/, "");
 
   return /^(?:SPDX-|copyright\b|\(c\)\s*\d|©)/i.test(body) || text.includes("SPDX-License-Identifier");
@@ -15,6 +16,8 @@ export function isLicense(text: string): boolean {
 
 /** `/** … *\/`, `/*! … *\/` or `/* … *\/` without delimiters and the ` * ` that starts each line. */
 export function blockCommentBody(text: string): string {
+  // Drop the opening and closing delimiters, then from each line the leading
+  // `*` gutter and one space (a `*/` at line start is not a gutter).
   return text
     .replace(/^\/\*[*!]?/, "")
     .replace(/\*\/$/, "")
@@ -35,11 +38,14 @@ export function lineCommentsBody(lines: readonly string[], marker: RegExp): stri
 export function jsdocDescription(body: string): string {
   const lines: string[] = [];
 
+  // The description ends at the first line that starts with a block tag.
   for (const line of body.split("\n")) {
     if (/^\s*@\w/.test(line)) break;
     lines.push(line);
   }
 
+  // Inline links: `{@link target}`, `{@linkcode target label}` or
+  // `{@linkplain target|label}`; keep the label when there is one.
   return lines.join("\n").replace(/\{@link(?:code|plain)?\s+([^\s|}]+)(?:\s*\|\s*|\s+)?([^}]*)\}/g, (_, target: string, label: string) => (label.trim() !== "" ? label.trim() : target));
 }
 

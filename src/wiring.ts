@@ -2,6 +2,11 @@
 // named dependencies it is built from. The graph must be acyclic: its
 // topological order is the order `keylang wire` initializes in. Checks here
 // read specs and snapshot nodes only; the generated code is checked as code.
+//
+// Part of resolve/rules (Markdown -> IR -> SpecIR -> checks), and shared with
+// the generator `wire-gen.ts`. Entry points: `checkWiring` (K301, K302, K002,
+// K102), `wireOrder` (the build order or a cycle) and `wireImport` (how the
+// generated file imports a factory).
 
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { languageOf } from "./languages.ts";
@@ -30,6 +35,7 @@ export interface WireImport {
   member?: string;
 }
 
+/** The build order of all wired IDs, or the first cycle as a closed path (its first ID repeated at the end). */
 export type WireOrder = { order: string[] } | { cycle: string[] };
 
 /**
@@ -42,6 +48,9 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
   const order: string[] = [];
   const path: string[] = [];
 
+  // Depth-first search with the usual three colors: `visiting` is on the
+  // current path, so meeting it again closes a cycle; an ID is appended to
+  // `order` only after all it depends on (its post-order).
   const visit = (id: string): string[] | null => {
     if (state.get(id) === "done") return null;
 
@@ -49,6 +58,7 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
     state.set(id, "visiting");
     path.push(id);
 
+    // Both the default dependency and every `when` branch must be built first; `compose` decorators are imported, not built.
     for (const dep of byId.get(id)?.deps ?? []) {
       for (const target of [dep.target.target, ...dep.when.map((when) => when.target.target)]) {
         const cycle = visit(target);
@@ -64,6 +74,7 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
     return null;
   };
 
+  // Roots in declaration order, so the order is the same on every run.
   for (const w of wires) {
     const cycle = visit(w.target.target);
 
@@ -85,7 +96,9 @@ export function wireImport(view: WiringView, id: string): WireImport | { problem
   if (file === null) return { problem: "has no source file" };
   const language = languageOf(file);
 
+  // The generator writes TypeScript and can only import TS/JS modules.
   if (language !== "typescript" && language !== "javascript") return { problem: `is ${language ?? "not TS/JS"} code (${file}); \`keylang wire\` generates TypeScript and imports TS/JS only` };
+  // Split the ID into its parent and own name: a parent that is a class makes `id` a method.
   const parent = id.slice(0, id.lastIndexOf("."));
   const own = id.slice(id.lastIndexOf(".") + 1);
 
@@ -110,6 +123,7 @@ export function wireImport(view: WiringView, id: string): WireImport | { problem
 function exportedAs(view: WiringView, id: string): string | null {
   const module = id.slice(0, id.lastIndexOf("."));
   const own = id.slice(id.lastIndexOf(".") + 1);
+  // Prefer the plain export under its own name, then an alias, then the default export.
   const rows = view.exports.filter((row) => row.module === module && row.symbol === id);
   const row = rows.find((r) => r.form === undefined && r.name === own) ?? rows.find((r) => r.form === "alias") ?? rows.find((r) => r.form === "default");
 
@@ -128,6 +142,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
   if (wires.length === 0) return diagnostics;
   const seen = new Set<string>();
 
+  // Duplicates first: a factory wired twice, and a dependency name used twice in one wire.
   for (const w of wires) {
     if (seen.has(w.target.target)) diagnostics.push(diagnostic("K002", w.file, w.span, `\`${w.target.target}\` is wired twice`));
     seen.add(w.target.target);
@@ -140,6 +155,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
     }
   }
 
+  // A cycle is reported once, at the wire of its first ID.
   const order = wireOrder(wires);
 
   if ("cycle" in order) {
@@ -148,6 +164,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
     if (first) diagnostics.push(diagnostic("K301", first.file, first.span, `wiring cycle ${order.cycle.join(" → ")}: a factory would get a dependency that is not built yet`));
   }
 
+  // Every ID a wire mentions, with the role it plays and the span to report at.
   const uses = (w: Wire): { id: string; span: Span; role: string }[] => [
     { id: w.target.target, span: w.span, role: "wire" },
     ...w.deps.flatMap((d) => [
@@ -158,6 +175,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
   ];
 
   for (const w of wires) {
+    // Without a snapshot the kinds and exports are unknown, so K302 is skipped.
     if (view) {
       for (const use of uses(w)) {
         const problem = useProblem(view, use.id, use.role);
@@ -166,6 +184,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
       }
     }
 
+    // A wiring dependency is a dependency of the factory, so `deny` rules apply to it as to code.
     for (const d of w.deps) {
       for (const target of [d.target.target, ...d.when.map((c) => c.target.target), ...d.compose.map((c) => c.target.target)]) {
         const rule = denyingRule(spec, w.target.target, target, kindOf, format);
@@ -182,6 +201,7 @@ export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: 
 function useProblem(view: WiringView, id: string, role: string): string | null {
   const kind = view.kinds.get(id);
 
+  // Unknown here means unresolved: the resolver already reports it, so no second diagnostic.
   if (kind === undefined) return null;
 
   if (role === "compose" && kind !== "fn") return `is a ${kind}; a decorator must be a fn of one argument`;

@@ -5,6 +5,7 @@
 
 import { Buffer as BufferPolyfill } from "buffer";
 
+/** A stream write that drops its text and reports success, as a write that did not need to wait. */
 const noop = (): boolean => true;
 
 export const Buffer = BufferPolyfill;
@@ -49,7 +50,9 @@ export const process: BrowserProcess = {
   on: () => {},
   off: () => {},
   once: () => {},
+  // A microtask is the closest browser equivalent of Node's tick queue.
   nextTick: (fn, ...args) => void queueMicrotask(() => fn(...args)),
+  // High-resolution time from `performance.now()` (ms): as [seconds, nanoseconds], or as nanoseconds in a bigint.
   hrtime: Object.assign((): [number, number] => {
     const ms = performance.now();
 

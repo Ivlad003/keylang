@@ -4,6 +4,10 @@
 // do to them, and the conversation; `clip-view.ts` draws them and
 // `clip-chat.ts` answers what is sent. The clip never speaks by itself: its
 // window opens on a click or F7 only.
+//
+// Layer: TUI. `app.ts` routes pointer events and keys here through `Clip`;
+// geometry is pure functions of the session state, so tests and the view
+// compute the same rectangles.
 
 import type { Verdict } from "../verdict.ts";
 import { MERGE_CLICK } from "./actions.ts";
@@ -57,6 +61,7 @@ export interface ClipState {
   chat: ChatState;
 }
 
+/** The clip's size in cells. */
 const CLIP_COLS = 5;
 
 const CLIP_ROWS = 3;
@@ -64,6 +69,7 @@ const CLIP_ROWS = 3;
 /** Below this many columns or rows the clip is a badge in the status line and the window takes the width. */
 const NARROW_COLS = 60;
 
+/** Below this many rows the terminal counts as narrow too. */
 const NARROW_ROWS = 12;
 
 /** The window's size with its frame, and the least it is resized to. */
@@ -71,8 +77,10 @@ const CHAT_COLS = 40;
 
 const CHAT_ROWS = 10;
 
+/** The least width a resize leaves the window (or the area's width, when smaller). */
 export const CHAT_MIN_COLS = 30;
 
+/** The least height a resize leaves the window (or the area's height, when smaller). */
 export const CHAT_MIN_ROWS = 7;
 
 /** The window's height on a narrow terminal. */
@@ -81,11 +89,13 @@ const NARROW_CHAT_ROWS = 8;
 /** Who said a message, before its first row; its other rows are indented under the text. */
 const SPEAKER: Record<ChatMessage["role"], string> = { you: "ти › ", clip: "◕◕ › " };
 
+/** The cells of a speaker label; continuation rows are indented by as many. */
 const SPEAKER_CELLS = 5;
 
 /** The row after the last message while the model's reply is awaited: no message, and not in the conversation. */
 export const THINKING = "думаю… Esc — скасувати";
 
+/** The speaker label of the thinking row: the waiting eyes. */
 const THINKING_SPEAKER = "◔◔ › ";
 
 /** What Enter says while the reply is awaited: one request at a time. */
@@ -97,6 +107,7 @@ const WHEEL_ROWS = 3;
 /** What a narrow terminal answers to moving or resizing the window. */
 const NARROW_WINDOW = "the chat window takes the whole width of a narrow terminal: it neither moves nor resizes";
 
+/** The clip of a new session: shown, in its corner, the chat folded and empty. */
 export function newClip(): ClipState {
   return {
     enabled: true,
@@ -164,10 +175,12 @@ function inside(rect: Rect, area: Rect): Rect {
   };
 }
 
+/** Whether `cell` lies in `rect`. */
 function contains(rect: Rect, cell: Cell): boolean {
   return cell.x >= rect.x && cell.x < rect.x + rect.width && cell.y >= rect.y && cell.y < rect.y + rect.height;
 }
 
+/** Whether two rectangles share a cell. */
 function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
@@ -227,6 +240,7 @@ export function chatRect(state: Pick<State, "cols" | "rows" | "clip">, editor: R
 
   if (chat.place !== null) return inside({ ...chat.place, width, height }, area);
   const clip = clipPlace(state, editor);
+  // Above the clip when it fits, else just below it; right edges aligned.
   const y = clip.y - height >= area.y ? clip.y - height : clip.y + CLIP_ROWS;
 
   return inside({ x: clip.x + CLIP_COLS - width, y, width, height }, area);
@@ -235,15 +249,18 @@ export function chatRect(state: Pick<State, "cols" | "rows" | "clip">, editor: R
 /** What a cell of the window is to the pointer: `✕` folds it, the top edge moves it, the bottom-right corner resizes it, the rest focuses it. */
 type ChatPart = "close" | "move" | "resize" | "window";
 
+/** The part of the window under `cell`, or null outside it. */
 function chatPart(rect: Rect, cell: Cell): ChatPart | null {
   if (!contains(rect, cell)) return null;
   const right = rect.x + rect.width - 1;
 
+  // The top edge: its last three cells before the corner are the `✕`, the rest is the handle that moves it.
   if (cell.y === rect.y) return cell.x >= right - 3 && cell.x < right ? "close" : "move";
 
   return cell.y === rect.y + rect.height - 1 && cell.x === right ? "resize" : "window";
 }
 
+/** Where the history and the input line lie in a window. */
 type ChatLayout = { history: Rect; input: Rect };
 
 /** The rows of a window: the history over the input line, one cell in from the frame. */
@@ -289,11 +306,13 @@ function messageRows(message: ChatMessage, width: number): readonly HistoryRow[]
   return rows;
 }
 
+/** `text` wrapped into rows of `width` cells: `speaker` before the first row, indentation before the rest. */
 function speakerRows(role: HistoryRow["role"], speaker: string, text: string, width: number): HistoryRow[] {
   const room = Math.max(1, width - SPEAKER_CELLS);
   const rows: HistoryRow[] = [];
   let lead = speaker;
 
+  // Each source line wraps on its own; an empty line keeps an empty row so paragraphs stay apart.
   for (const line of text.split("\n")) {
     for (const row of line === "" ? [""] : wrapCells(line, room)) {
       rows.push({ role, text: `${lead}${row}` });
@@ -306,6 +325,7 @@ function speakerRows(role: HistoryRow["role"], speaker: string, text: string, wi
 
 /** The rows `height` rows of the history show, `scroll` rows back from its end; a short history starts at the top. */
 export function shownHistory<T>(rows: readonly T[], height: number, scroll: number): T[] {
+  // Clamp the scroll so the top of the history is the furthest it goes back.
   const end = rows.length - clamp(scroll, 0, Math.max(0, rows.length - height));
 
   return rows.slice(Math.max(0, end - height), end);
@@ -330,6 +350,7 @@ function resized(rect: Rect, dx: number, dy: number, area: Rect): ChatState["siz
   const cols = area.x + area.width - rect.x;
   const rows = area.y + area.height - rect.y;
 
+  // The minimum gives way when the area itself is smaller than it.
   return { cols: clamp(rect.width + dx, Math.min(CHAT_MIN_COLS, cols), cols), rows: clamp(rect.height + dy, Math.min(CHAT_MIN_ROWS, rows), rows) };
 }
 
@@ -364,6 +385,7 @@ interface Press {
   moved: boolean;
 }
 
+/** The direction of each arrow key, for Alt+arrows. */
 const ARROWS = new Map<string, Cell>([
   ["left", { x: -1, y: 0 }],
   ["right", { x: 1, y: 0 }],
@@ -467,6 +489,7 @@ export class Clip {
     const chat = this.state.clip.chat;
     const arrow = ARROWS.get(event.name);
 
+    // Alt+arrows move the window, Alt+Shift+arrows resize it.
     if (arrow !== undefined && event.alt) return this.nudge(arrow, event.shift);
 
     switch (event.name) {
@@ -485,6 +508,7 @@ export class Clip {
         return;
     }
 
+    // Plain text only: a Ctrl or Alt chord is not typing.
     if (event.text !== undefined && !event.ctrl && !event.alt) chat.input += event.text;
   }
 
@@ -505,6 +529,7 @@ export class Clip {
     if (!assistantShown(this.state)) return false;
     const press = this.press;
 
+    // While the button is held, the pressed thing follows the pointer.
     if (event.action === "drag") {
       if (press === null) return false;
       this.dragTo(press, event);
@@ -512,6 +537,7 @@ export class Clip {
       return true;
     }
 
+    // The release ends the press: no motion means a click, else the new place is kept.
     if (event.action === "up") {
       if (press === null) return false;
       this.press = null;
@@ -526,6 +552,7 @@ export class Clip {
 
     const target = this.targetAt(event);
 
+    // Not on the clip or its window: a left press elsewhere takes the focus away, and the session handles the event.
     if (target === null) {
       if (event.action === "down" && event.button === 0) this.state.clip.chat.focused = false;
 
@@ -555,6 +582,7 @@ export class Clip {
 
     if (modal) return true;
 
+    // Only the left button starts a press; remember the rectangle the drag is measured from.
     if (event.button === 0) this.press = { target, from: { x: event.x, y: event.y }, origin: this.rectOf(target), moved: false };
 
     return true;
@@ -576,6 +604,7 @@ export class Clip {
     return null;
   }
 
+  /** The rectangle a press on `target` moves or resizes. */
   private rectOf(target: Target): Rect {
     if (target === "clip") return clipPlace(this.state, this.host.editor());
 
@@ -607,6 +636,7 @@ export class Clip {
     return target === "clip" || ((target === "move" || target === "resize") && !narrow(this.state));
   }
 
+  /** A click: the clip or its badge opens the chat, `✕` folds it, anywhere else in the window focuses it. */
   private click(target: Target): void {
     if (target === "clip" || target === "badge") return this.open();
 

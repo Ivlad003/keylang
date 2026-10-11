@@ -3,6 +3,11 @@
 // and interfaces, the names a file's `use` statements bind, and the literals
 // of attributes, properties and call arguments (`LiteralFact`). Everything is
 // a fact of the syntax; a name keylang cannot qualify is no class.
+//
+// Pipeline: source → FileFacts → (framework code readers) → config facts for
+// the graph. Entry points: `PhpCode` (class index and lookups), `callsOf`,
+// `dispatchesIn`, the literal helpers (`arg`, `str`, `cls`, `strings`,
+// `eventName`) and `codeFacts`/`hasFacts`.
 
 import type { ArgFact, CallFact, DeclFact, FileFacts, LiteralFact } from "../extract/facts.ts";
 import type { ConfigFacts, TypeName } from "../frameworks/adapter.ts";
@@ -29,6 +34,8 @@ export class PhpCode {
   constructor(files: readonly FileFacts[]) {
     this.files = files.filter((f) => f.path.endsWith(".php"));
 
+    // Index every non-fn declaration by its qualified name (from the extractor's
+    // symbol table); the first file to declare a name wins.
     for (const file of this.files) {
       const locals = localNames(file);
       this.locals.set(file.path, locals);
@@ -53,6 +60,7 @@ export class PhpCode {
     return local ?? written.replace(/^\\+/, "");
   }
 
+  /** The class of a qualified name, compared without ASCII case. */
   get(qualified: string): PhpClass | undefined {
     return this.classes.get(key(qualified));
   }
@@ -62,6 +70,7 @@ export class PhpCode {
     const out: PhpClass[] = [];
     let at = this.get(qualified);
 
+    // Follow `extends` while the base is a class keylang read; stop on a cycle.
     while (at && !out.includes(at)) {
       out.push(at);
       at = at.base ? this.get(at.base) : undefined;
@@ -78,6 +87,7 @@ export class PhpCode {
   /** The class or a base implements `iface` (qualified), directly or through interfaces keylang has read. */
   implements(cls: PhpClass, iface: string): boolean {
     const seen = new Set<string>();
+    // Depth-first over the interfaces of the class and its bases, then the interfaces those extend.
     const stack = this.lineage(cls.qualified).flatMap((c) => c.implements);
 
     while (stack.length > 0) {
@@ -119,6 +129,7 @@ function localNames(file: FileFacts): Map<string, string> {
   const out = new Map<string, string>();
 
   for (const imp of file.imports) {
+    // Only class imports bind class names: `use function`, `use const`, includes and `??` fallbacks do not.
     if (/^(function|const|include) /.test(imp.source) || imp.source.includes(" ?? ")) continue;
 
     for (const binding of imp.bindings) if (!out.has(key(binding.local))) out.set(key(binding.local), imp.source.replace(/^\\+/, ""));
@@ -132,6 +143,7 @@ export function key(name: string): string {
   return name.replace(/^\\+/, "").replace(/[A-Z]+/g, (s) => s.toLowerCase());
 }
 
+/** Whether two class names are the same class, ignoring a leading `\` and ASCII case. */
 export function sameClass(a: string, b: string): boolean {
   return key(a) === key(b);
 }
@@ -152,10 +164,12 @@ export function arg(args: readonly ArgFact[] | undefined, name: string | null, p
   return positional[position]?.value ?? null;
 }
 
+/** The value of a string literal, else null. */
 export function str(value: LiteralFact | null | undefined): string | null {
   return value?.kind === "string" ? value.value : null;
 }
 
+/** The name of a `X::class` literal, else null. */
 export function cls(value: LiteralFact | null | undefined): string | null {
   return value?.kind === "class" ? value.name : null;
 }
@@ -184,6 +198,7 @@ export function eventName(value: LiteralFact | null | undefined): string | null 
   return null;
 }
 
+/** A `TypeName` from a qualified class name. */
 export function type(name: string): TypeName {
   return { name };
 }
@@ -228,6 +243,9 @@ const DISPATCH_STATICS = new Set(["dispatch", "dispatchsync", "dispatchnow", "pu
 export function dispatchesIn(code: PhpCode, file: FileFacts): { symbol: string; call: CallFact; event: string }[] {
   const out: { symbol: string; call: CallFact; event: string }[] = [];
 
+  // Three call shapes dispatch: a global helper (`event(new X)`), a static call
+  // on a class or facade (`X::dispatch()`, `Bus::dispatch(new J)`), and an
+  // instance `->dispatch(new X)` on a dispatcher the repository does not declare.
   for (const { call, symbol } of callsOf(file)) {
     if (symbol === null || call.opaque) continue;
     const parts = call.callee.split(".");

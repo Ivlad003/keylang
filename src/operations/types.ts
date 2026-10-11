@@ -2,6 +2,12 @@
 // the payload of its result, the envelope a result comes in, and what an
 // operation may use besides its request. Types, but for two constants: the
 // default target of `wire` and the kinds that write.
+//
+// Place in the pipeline: the contract between the transports (CLI, TUI,
+// MCP, web) and the operations layer; `operations.ts` re-exports it.
+// Key terms: request (`kind` + absolute `root`), envelope (status, exit
+// code, payload, messages, files written/removed, proposals), context
+// (progress, cancel signal, commit gate, an injected `analyze`).
 
 import type { Analysis, AnalysisRequest } from "../analyze.ts";
 import type { C4Format, C4Level } from "../c4-export.ts";
@@ -497,6 +503,7 @@ export interface FlowExportRequest {
   version?: string;
 }
 
+/** What `flow export` yields: the bundle's header and text, and the file written (if any). */
 export interface FlowExportPayload {
   header: BundleHeader;
   text: string;
@@ -532,6 +539,7 @@ export interface FlowImportRequest {
   pending?: "refuse" | "replace";
 }
 
+/** What `flow import` yields: both proposed texts, the layer map used, the IDs carried over, and the proposals written. */
 export interface FlowImportPayload {
   header: BundleHeader;
   /** The feature spec and the migration table, relative to the root. */

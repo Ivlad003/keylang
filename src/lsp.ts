@@ -8,6 +8,13 @@
 //
 // Hand-written on purpose: framing and lifecycle are stricter than
 // `vscode-languageserver` (docs/adr/0006-lsp-transport.md).
+//
+// Place in the pipeline: a transport, like the CLI, the TUI and MCP. The
+// buffers overlay the disk for `analyze()` (Markdown → IR → resolve/rules,
+// source → snapshot); the answers themselves come from `lsp-features.ts`.
+// Entry point: `serveLsp`. Key terms: generation (a counter bumped on every
+// change), overlay (unsaved buffer text by absolute path), push vs. pull
+// diagnostics.
 
 import { existsSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -52,17 +59,21 @@ interface TextDocumentParams {
   text?: string;
 }
 
+/** JSON-RPC and LSP error codes the server answers with. */
 const ERRORS = { parse: -32700, invalidRequest: -32600, methodNotFound: -32601, internal: -32603, notInitialized: -32002, cancelled: -32800 } as const;
 
 /** Changes that arrive together are analysed once. */
 const SETTLE_MS = 60;
 
+/** Serves LSP over the two streams until `exit` or the end of input; returns the exit code (0 after `shutdown`, 1 without it, 2 on a broken stream). */
 export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout): Promise<number> {
   const server = new Server((message) => {
     const json = JSON.stringify(message);
     write.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
   });
 
+  // Accumulate bytes and cut complete messages out of them: a header block
+  // ending in a blank line, then exactly `Content-Length` bytes of JSON.
   let buffer = Buffer.alloc(0);
 
   for await (const chunk of read) {
@@ -122,6 +133,7 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
 /** An analysis of the buffers as they were at `generation`, or why it failed. */
 type Finished = { generation: number; overlay: ReadonlyMap<string, string> } & ({ analysis: Analysis } | { analysis: null; error: unknown });
 
+/** The session: open buffers, the analysis state machine, and the request bookkeeping. */
 class Server {
   exitCode: number | null = null;
   private root = process.cwd();
@@ -153,10 +165,12 @@ class Server {
     this.send = send;
   }
 
+  /** Answers a message that cannot be served with a JSON-RPC error. */
   reject(id: number | string | null, code: number, message: string): void {
     this.send({ jsonrpc: "2.0", id, error: { code, message } });
   }
 
+  /** Dispatches one parsed message: a response to the server's own request, a notification, or a request answered asynchronously. */
   receive(message: JsonObject): void {
     const id = message.id;
 
@@ -221,12 +235,14 @@ class Server {
     void task.finally(() => this.pending.delete(task));
   }
 
+  /** Waits for every request in flight to be answered, then stops the settle timer. */
   async drain(): Promise<void> {
     while (this.pending.size > 0) await Promise.all(this.pending);
 
     if (this.timer) clearTimeout(this.timer);
   }
 
+  /** Handles a notification: buffer changes start a new generation; `exit` sets the exit code. */
   private notify(method: string, params: JsonObject): void {
     if (method === "exit") {
       this.exitCode = this.shutdown ? 0 : 1;
@@ -291,6 +307,9 @@ class Server {
   private edited(text: string | null, changes: JsonValue | undefined): string | null {
     let out = text;
 
+    // Apply the changes in order: a change without a range replaces the
+    // whole text; a ranged one is spliced in (logged once, since full sync
+    // was asked for).
     for (const change of Array.isArray(changes) ? changes : []) {
       if (!isJsonObject(change) || !isJsonString(change.text)) continue;
 
@@ -311,6 +330,7 @@ class Server {
   }
 
   /** A new generation: the analysis running now, if any, no longer covers the buffers. */
+  // Debounce: changes within SETTLE_MS of each other publish once.
   private changed(): void {
     this.generation++;
 
@@ -343,6 +363,9 @@ class Server {
    * another analysis runs, this waits for it and then starts one for all the
    * changes so far; a request cancelled meanwhile starts none.
    */
+  // Loop until an analysis covering `needed` has finished: reuse a
+  // running one, else start one for every change so far, and re-check
+  // after it (more changes may have arrived meanwhile).
   private async current(needed: number, cancelled: () => boolean = () => false): Promise<Workspace> {
     for (;;) {
       const done = this.finished;
@@ -367,6 +390,7 @@ class Server {
     }
   }
 
+  /** Sends the diagnostics of the newest generation: a refresh request for a pulling client, else a push per open buffer. */
   private async publish(): Promise<void> {
     const generation = this.generation;
     let ws: Workspace;
@@ -380,6 +404,8 @@ class Server {
     // A newer change publishes its own generation.
     if (generation !== this.generation) return;
 
+    // Push mode: publish every open buffer, and clear the diagnostics of
+    // buffers published last time that are closed now.
     if (this.pulls) {
       // Ask the client to pull again: a change in one file can change another's findings.
       if (this.refreshes) this.send({ jsonrpc: "2.0", id: `keylang-${++this.serverRequests}`, method: "workspace/diagnostic/refresh", params: null });
@@ -400,6 +426,7 @@ class Server {
     for (const uri of open) this.published.add(uri);
   }
 
+  /** A path as the analysis names it: relative to the root and POSIX when inside, else absolute. */
   private relative(abs: string): string {
     return toPosix(within(abs, this.root) ? relative(this.root, abs) : abs);
   }
@@ -412,6 +439,7 @@ class Server {
     this.send({ jsonrpc: "2.0", method: "window/showMessage", params: { type: 1, message: `keylang: ${message}` } });
   }
 
+  /** Answers one request after the lifecycle checks, from an analysis that covers the current buffers. */
   private async request(method: string, params: JsonObject, cancelled: () => boolean): Promise<LspResult> {
     if (method === "initialize") {
       // LSP: `initialize` is sent once. It counts only when it succeeds: a failed one may be sent again.
@@ -480,10 +508,14 @@ class Server {
 
   /** The capabilities; the server's state changes only once everything else succeeded. */
   private initialize(params: JsonObject): ReturnType<typeof serverCapabilities> {
+    // Read only the capabilities the server uses: pull diagnostics and
+    // diagnostic refresh.
     const capabilities = isJsonObject(params.capabilities) ? params.capabilities : {};
     const textDocument = isJsonObject(capabilities.textDocument) ? capabilities.textDocument : {};
     const workspaceCapabilities = isJsonObject(capabilities.workspace) ? capabilities.workspace : {};
     const diagnostics = isJsonObject(workspaceCapabilities.diagnostics) ? workspaceCapabilities.diagnostics : {};
+    // The root: from `rootUri`, else the first workspace folder, else
+    // `rootPath`; then the enclosing keylang repository (`findRoot`).
     const folders = params.workspaceFolders;
     const folder = Array.isArray(folders) ? folders[0] : undefined;
     const folderUri = isJsonObject(folder) && isJsonString(folder.uri) ? folder.uri : undefined;
@@ -527,6 +559,7 @@ function serverCapabilities() {
   };
 }
 
+/** A failure with the JSON-RPC error code it is answered with. */
 class LspError extends Error {
   readonly code: number;
   constructor(code: number, message: string) {
@@ -535,19 +568,23 @@ class LspError extends Error {
   }
 }
 
+/** The absolute path of a URI: a `file:` URL decoded, anything else resolved as a path. */
 function filePath(uri: string): string {
   return uri.startsWith("file:") ? fileURLToPath(uri) : resolve(uri);
 }
 
+/** An LSP range: two positions, end exclusive. */
 interface LspRange {
   start: LspPosition;
   end: LspPosition;
 }
 
+/** Whether a JSON value is a well-formed range. */
 function isRange(value: JsonValue | undefined): value is JsonObject & LspRange {
   return isJsonObject(value) && isPosition(value.start) && isPosition(value.end);
 }
 
+/** Whether a JSON value is a position with integer line and character. */
 function isPosition(value: JsonValue | undefined): value is JsonObject & LspPosition {
   return isJsonObject(value) && Number.isInteger(value.line) && Number.isInteger(value.character);
 }
@@ -589,6 +626,8 @@ function replaceRange(text: string, range: LspRange, insert: string): string {
 function offsetAt(text: string, position: LspPosition): number {
   let start = 0;
 
+  // Skip `position.line` line breaks; a line past the last one clamps to
+  // the end of the text.
   for (let line = 0; line < position.line; line++) {
     const next = lineBreak(text, start);
 
@@ -603,6 +642,7 @@ function offsetAt(text: string, position: LspPosition): number {
 
 /** The first line break at or after `from`: `\r\n`, `\n` or `\r`, as LSP counts lines. */
 function lineBreak(text: string, from: number): { at: number; after: number } | null {
+  // `\r\n` counts as one break; a lone `\r` is a break too.
   for (let i = from; i < text.length; i++) {
     const code = text.charCodeAt(i);
 

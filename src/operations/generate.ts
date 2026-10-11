@@ -1,6 +1,14 @@
 // The operations that generate files from the code: the map (`map`,
 // `map --check`), the baseline, the harness files (`agents`), the container
 // of `# wiring` (`wire`), and `init`, which sets a repository up with them.
+//
+// Place in the pipeline: operations (see `operations.ts`) at the end of
+// source → FileFacts → snapshot → map/index, plus the generated files
+// derived from it (the baseline rules, the harness files, the wiring
+// container). Each writer computes a plan, passes the commit gate, checks
+// the plan again, then writes. Entry points: `runMap`, `runMapCheck`,
+// `runBaseline`, `runAgents`, `runInit`, `runWire`, and the CLI's line
+// helpers (`mapSummary`, `mapCheckLines`, ...).
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
@@ -41,6 +49,8 @@ export async function runMapCheck(request: MapCheckRequest, context: OperationCo
 
   if (map === null) return empty("map-check", "failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
   context.onProgress?.({ text: "comparing with the files on disk" });
+  // Compare the rendered map with the disk: hand-written files where the
+  // map goes are conflicts, generated ones that differ are stale.
   const diff = diffMap(analyzed.config, map);
   const rel = (abs: string): string => toPosix(relative(request.root, abs));
 
@@ -93,6 +103,8 @@ export async function runMap(request: MapRequest, context: OperationContext): Pr
 
   if (map === null) return empty("map", "failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
 
+  // Plan: the expected bytes of every map, explained-map, index and cache
+  // file. A conflict (hand-written file in the way) stops before the gate.
   const payload: MapPayload = {
     conflicts: [],
     refused: [],
@@ -128,6 +140,8 @@ export async function runMap(request: MapRequest, context: OperationContext): Pr
   }
 
   if (context.signal?.aborted) return { ...empty("map", "cancelled", null), payload };
+  // Re-check the plan after the gate: any target, config, source or brief
+  // that changed refuses the whole commit.
   let problems: string[];
 
   try {
@@ -148,6 +162,8 @@ export async function runMap(request: MapRequest, context: OperationContext): Pr
 
   context.onProgress?.({ text: "writing the map" });
 
+  // Commit step by step; a cancel lets the current step finish and leaves
+  // the rest not attempted, which the payload names.
   const commitOptions: NonNullable<Parameters<typeof commitMap>[1]> = {};
 
   if (context.signal) commitOptions.signal = context.signal;
@@ -184,6 +200,8 @@ export function mapConflictLines(conflicts: readonly string[], path: (file: stri
  * as they always were; the payload lists them.
  */
 export function mapStepLines(steps: readonly CommittedStep[], path: (file: string) => string = (file) => file): string[] {
+  // Only map and explained-map steps are printed; the index and the fact
+  // cache are written silently.
   const shown = steps.filter((step) => step.state === "completed" && (step.artifact === "map" || step.artifact === "explained"));
 
   return [...shown.flatMap((step) => (step.action === "write" ? [`${path(step.path)}: written`] : [])), ...shown.flatMap((step) => (step.action === "remove" ? [`${path(step.path)}: removed`] : []))];
@@ -264,6 +282,8 @@ export async function runBaseline(request: BaselineRequest, context: OperationCo
     snapshot: analyzed.snapshot.snapshotId,
   };
 
+  // A hand-written baseline is never touched; in check mode or when it is
+  // current, report without writing.
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
 
   if (plan.state === "manual") return { ...empty("baseline", "completed", 1), payload, messages: lines([`${plan.path}: manual file without keylang:generated marker`]) };
@@ -353,6 +373,7 @@ export async function runAgents(request: AgentsRequest, context: OperationContex
   };
 
   if (plan.error !== null) return { ...empty("agents", "failed", 2, `${plan.error.file}: ${plan.error.message}`), payload };
+  // The whole plan is built (and validated) before anything is written.
   const changed = payload.files.filter((file) => file.action !== "keep");
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
 
@@ -396,6 +417,8 @@ export async function runAgents(request: AgentsRequest, context: OperationContex
   const done = commit.steps.filter((step) => step.state === "completed");
   const messages: OperationMessage[] = lines(done.map((step) => `${step.path}: ${step.action === "write" ? "written" : "removed"}`));
 
+  // Report each step: completed ones as written or removed; failed and not
+  // attempted ones as errors (or warnings after a cancel).
   for (const step of commit.steps) {
     if (step.state === "failed") messages.push({ level: "error", text: `${step.path}: ${step.error ?? "failed"}` });
     else if (step.state === "not-attempted") messages.push({ level: commit.outcome === "failed" ? "error" : "warning", text: `${step.path}: not ${step.action === "write" ? "written" : "removed"}` });
@@ -441,6 +464,8 @@ const GITIGNORE_LINES = ["# keylang: local cache (index, facts, proposals, trace
 
 /** A line that ignores the root `.keylang` directory: `.keylang`, `.keylang/`, `/.keylang` or `/.keylang/`, with trailing spaces as git ignores them. */
 function ignoresKeylangCache(text: string): boolean {
+  // Matches `.keylang`, `.keylang/`, `/.keylang` or `/.keylang/` with
+  // optional trailing spaces, on any line.
   return text.split(/\r?\n/).some((line) => /^\/?\.keylang\/? *$/.test(line));
 }
 
@@ -455,6 +480,8 @@ function withKeylangCacheIgnored(current: string | null): string {
   const block = GITIGNORE_LINES.map((line) => `${line}${nl}`).join("");
 
   if (text === "") return block;
+  // Keep the bytes as they are; add a final newline if missing, then one
+  // blank line unless the file already ends with one.
   const ended = text.endsWith("\n") ? text : `${text}${nl}`;
 
   return `${ended}${/\n[ \t\r]*\n$/.test(ended) ? "" : nl}${block}`;
@@ -564,6 +591,8 @@ export async function runInit(request: InitRequest, context: OperationContext): 
   };
 
   // The stages report their progress under their own name; they never see `beforeCommit`, it is init's.
+  // Stages run as sub-operations with their own progress prefix; the commit
+  // gate is init's alone, so stages get no `beforeCommit`.
   const stage = (name: string): OperationContext => {
     const staged: OperationContext = {};
 
@@ -575,6 +604,8 @@ export async function runInit(request: InitRequest, context: OperationContext): 
     return staged;
   };
 
+  // Check mode mirrors the stages without writing: agents (a broken harness
+  // file stops it), baseline, then the `.gitignore` entry.
   if (request.check) {
     payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
 
@@ -662,6 +693,8 @@ export async function runInit(request: InitRequest, context: OperationContext): 
   };
 
   const stopped = (): OperationEnvelope<"init"> => ({ ...empty("init", "cancelled", null), payload, messages, written, removed });
+  // Map, baseline and agents run in turn whatever the stage before did;
+  // only a cancel stops the sequence.
   const mapRequest: MapRequest = { kind: "map", root };
 
   if (request.label !== undefined) mapRequest.label = request.label;
@@ -677,6 +710,7 @@ export async function runInit(request: InitRequest, context: OperationContext): 
   collect(payload.agents);
 
   if (payload.agents.status === "cancelled") return stopped();
+  // The run's code is the first non-zero stage code, in stage order.
   const code = [gitignoreCode(payload.gitignore), payload.map.exitCode, payload.baseline.exitCode, payload.agents.exitCode].find((exit) => exit !== 0) ?? 0;
 
   return { ...empty("init", code === 0 ? "completed" : "failed", code), payload, messages, written, removed };
@@ -723,6 +757,8 @@ export async function runWire(request: WireRequest, context: OperationContext): 
   if (!snapshot) return empty("wire", "failed", 2, "wire: no supported source files; run `keylang init`");
   const payload: WirePayload = { file: out, check: request.check, state: "stale", diagnostics: [], written: false, refused: [], error: null, snapshot: snapshot.snapshotId };
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
+  // Errors on the lines of a `# wiring` section block generation: any of
+  // them could change the generated container.
   const blocking = wiringErrors(analyzed);
 
   if (blocking.length > 0) {
@@ -738,6 +774,8 @@ export async function runWire(request: WireRequest, context: OperationContext): 
   let text: string;
   let current: string | null;
 
+  // Generate the text and read what is on disk now; the read is the
+  // `expect` of the write below.
   try {
     text = generateWire({ root: request.root, out, wires, snapshot });
     const abs = landing(join(request.root, out));
@@ -770,6 +808,8 @@ export async function runWire(request: WireRequest, context: OperationContext): 
   if (context.signal?.aborted) return { ...empty("wire", "cancelled", null), payload };
   let problems: string[];
 
+  // Re-check after the gate: the target must still hold the bytes read, and
+  // the specs, tsconfig.json, keylang.json and the sources must be unchanged.
   try {
     const target = writeProblem(request.root, out, { generated: true, expect: current });
     // The target is a source file too (its own layer); its change is the expect check's to name.
@@ -815,6 +855,7 @@ export async function runWire(request: WireRequest, context: OperationContext): 
  * writes nothing; a form may call it as the path is typed.
  */
 export function wireOutProblem(root: string, out: string): string | null {
+  // The extension check comes first: it needs no file system access.
   if (!/\.(ts|mts|cts)$/.test(out)) return `wire: --out must name a TypeScript file (.ts, .mts or .cts), got \`${out}\``;
 
   try {
@@ -828,6 +869,8 @@ export function wireOutProblem(root: string, out: string): string | null {
 
 /** Error diagnostics on the lines of a `# wiring` section, whatever their code: any of them can change what is generated. */
 function wiringErrors(analysis: Analysis): Diagnostic[] {
+  // For each document, the line range of every `# wiring` section: from its
+  // heading to the line before the next section's heading (or the end).
   const ranges = new Map<string, [number, number][]>();
 
   for (const doc of analysis.docs) {
@@ -872,6 +915,7 @@ function wireSpecProblems(config: Config, before: WireSpecInputs): string[] {
   const now = wireSpecInputs(config);
   const problems: string[] = [];
 
+  // A spec added, changed or removed, or a changed tsconfig.json, is a reason.
   for (const [path, hash] of now.specs) {
     const old = before.specs.get(path);
 

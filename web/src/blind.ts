@@ -1,3 +1,4 @@
+// Web page (web/src), the «Сліпі зони» (blind spots) mode; entry point `BlindSpots`.
 // «Сліпі зони» of the diagram page (business-flows/13 and 22): the report of
 // `keylang coverage --json` (`GET /api/coverage`) in its five sections — the
 // share of fns the entry points reach, the orphans, the modules with most
@@ -8,6 +9,7 @@
 import { ApiError, type Api, type Coverage } from "./api.ts";
 import { button, codeLink, make } from "./dom.ts";
 
+/** What the blind-spots view needs from the page: the repository root, navigation and the status line. */
 export interface BlindHost {
   root(): string | undefined;
   explore(id: string): void;
@@ -22,6 +24,7 @@ const GROUP_FROM = 40;
 /** At most this many rows of a long section; the CLI's text keeps a top-10 too. */
 const MAX_ROWS = 200;
 
+/** The «Сліпі зони» panel: loads the coverage report and draws its five sections. */
 export class BlindSpots {
   private readonly container: HTMLElement;
   private readonly api: Api;
@@ -34,6 +37,7 @@ export class BlindSpots {
     this.host = host;
   }
 
+  /** Loads and draws the report; a call while one is loading joins it instead of asking again. */
   show(): Promise<void> {
     this.loading ??= this.load().finally(() => (this.loading = null));
 
@@ -67,6 +71,7 @@ export class BlindSpots {
     return block;
   }
 
+  /** A table of the first `MAX_ROWS` rows, with a note on how many more `total` has; "нічого" when empty. */
   private table(head: string[], rows: (Node | string)[][], total: number): HTMLElement {
     if (rows.length === 0) return make("p", { className: "none", text: "нічого" });
     const table = make("table");
@@ -90,6 +95,7 @@ export class BlindSpots {
     if (items.length <= GROUP_FROM) return this.table(head, items.map(row), items.length);
     const groups = new Map<string, T[]>();
 
+    // Bucket by key, then order the groups largest first, ties by key, so the order is stable across loads.
     for (const item of items) groups.set(keyOf(item), [...(groups.get(keyOf(item)) ?? []), item]);
     const box = make("div", { className: "blind-groups" });
 
@@ -105,6 +111,7 @@ export class BlindSpots {
     return box;
   }
 
+  /** Replaces the panel with the header and the five sections of `report`, in the CLI's order. */
   private render(report: Coverage): void {
     const root = this.host.root();
     const { reach } = report;
@@ -120,11 +127,13 @@ export class BlindSpots {
       "blind-orphans",
       `2. Сироти (${report.orphans.length})`,
       "Fn, яких не досягає жодна точка входу: мертвий код або вхід, якого keylang не знає.",
+      // Orphans are grouped by the first segment of their ID, the top-level layer or folder.
       this.grouped(report.orphans, (o) => o.id.split(".")[0] ?? o.id, ["fn", "код", "викликачів", "втікає як значення", ""], (o) => [make("code", { text: o.id }), codeLink(root, o.file, o.line), String(o.callers), o.escapes ?? "—", this.explore(o.id)]),
     );
 
     const reasons = make("ul", { className: "reasons" });
 
+    // The 20 most common reasons calls stayed unresolved, above the table of modules.
     for (const r of report.holes.reasons.slice(0, 20)) reasons.append(make("li", {}, make("b", { text: String(r.count) }), ` ${r.kind}: ${r.reason}`));
 
     const holes = this.section(
@@ -152,12 +161,14 @@ export class BlindSpots {
           u.label,
           make("code", { text: u.id }),
           codeLink(root, u.file, u.line),
+          // A discovered flow opens as a diagram only when the view holds it; otherwise the cell says how to get it.
           u.discovered ? (u.discovered.inView ? button(u.discovered.name, () => this.host.discovered(u.discovered!.name), { className: "link", title: u.discovered.file }) : `${u.discovered.name} (не в представленні: \`keylang flows discover\`)`) : "—",
           this.explore(u.id),
         ],
       ),
     );
 
+    // Signal IDs to their human labels, for the sites table.
     const labels = new Map(report.dataLogic.signals.map((s) => [s.id, s.label]));
     const signals = make("ul", { className: "reasons" });
 

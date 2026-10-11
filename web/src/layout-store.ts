@@ -1,3 +1,4 @@
+// Web page (web/src), diagram layout persistence.
 // Where the diagram editor (editor.ts, business-flows/23) keeps the positions
 // a person gave the shapes of a view: `keylang/diagrams/<view>.layout.json`
 // in git (business-flows/24), through `GET`/`PUT /api/layout`. The page
@@ -35,6 +36,7 @@ export interface Position {
 /** The positions of one view, by shape key. */
 export type Layout = Record<string, Position>;
 
+/** Where the editor loads and saves a view's layout; swapped by `useLayoutStore`. */
 export interface LayoutStore {
   /** The saved layout of a view (`flow:checkout`, `layers`…), or null when none is. */
   load(view: string): Promise<Layout | null>;
@@ -69,6 +71,7 @@ export class FileLayoutStore implements LayoutStore {
   }
 
   async load(view: string): Promise<Layout | null> {
+    // An empty view key means a view with no file of its own: nothing to load.
     if (view === "") return null;
     const answer = await this.api.layout(view);
 
@@ -80,6 +83,7 @@ export class FileLayoutStore implements LayoutStore {
   }
 }
 
+// The store in use: memory until the page installs the file store.
 let current: LayoutStore = new MemoryLayoutStore();
 
 /** The store the editor reads and writes. */

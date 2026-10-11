@@ -2,13 +2,18 @@
 // check` prints on stdout. The CLI writes it; the TUI exports the same bytes
 // to a file. It works on the report's data, never on a rendered screen, and
 // the format never changes the verdicts or the exit code.
+// Pipeline: check results (check-results.ts) → text for one output format.
+// Entry points: `checkReportText`, `isCheckFormat`; formats: human, json,
+// SARIF 2.1.0, GitHub workflow commands.
 
 import type { CheckResult } from "./check-results.ts";
 import { explainCode } from "./explain.ts";
 import type { CoverageItem } from "./snapshot.ts";
 
+/** The values `--format` accepts, in the order help lists them. */
 export const CHECK_FORMATS = ["human", "json", "sarif", "github"] as const;
 
+/** One `--format` value. */
 export type CheckFormat = (typeof CHECK_FORMATS)[number];
 
 /** What a format shows: the `--format json` data and the human lines of the same report. */
@@ -19,6 +24,7 @@ export interface CheckReportData {
   lines: string[];
 }
 
+/** Whether `name` is a supported `--format` value. */
 export function isCheckFormat(name: string): name is CheckFormat {
   return CHECK_FORMATS.some((format) => format === name);
 }
@@ -34,9 +40,11 @@ export function checkReportText(format: CheckFormat, report: CheckReportData): s
   return `${JSON.stringify(sarifLog(report), null, 2)}\n`;
 }
 
+/** One `::error`/`::warning`/`::notice` workflow command per non-ok result; ok results print nothing. */
 function githubText(results: readonly CheckResult[]): string {
   let out = "";
 
+  // Map verdicts onto GitHub annotation levels: fail → error, warning → warning, unverified → notice.
   for (const result of results) {
     if (result.verdict === "ok") continue;
     const level = result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "notice";
@@ -46,9 +54,11 @@ function githubText(results: readonly CheckResult[]): string {
   return out;
 }
 
+/** A SARIF 2.1.0 log with one run: every non-ok result, and one rule per distinct rule id. */
 function sarifLog(report: CheckReportData) {
   const { snapshotId, results } = report;
   const reported = results.filter((result) => result.verdict !== "ok");
+  // Sorted so rule indexes, and hence the SARIF output, are stable across runs.
   const ruleIds = [...new Set(reported.map(ruleOf))].sort();
 
   return {
@@ -104,6 +114,7 @@ const EVIDENCE_RULES = new Map([
   ["trace", "flow: the trace of a test contradicts the step"],
 ]);
 
+/** The short description of a SARIF rule: the first line of a K-code's explanation, or a flow evidence kind's text. */
 function ruleText(id: string): string {
   if (id === "unverified") return "evidence for this criterion is incomplete";
 
@@ -111,10 +122,12 @@ function ruleText(id: string): string {
 }
 
 // GitHub workflow commands: https://docs.github.com/actions/reference/workflow-commands-for-github-actions
+// Escape the message part of a workflow command, as GitHub decodes it.
 function githubData(text: string): string {
   return text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
 
+/** Escape a property value (`file=`, `title=`), which additionally must not contain `:` or `,`. */
 function githubProperty(text: string): string {
   return githubData(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
 }

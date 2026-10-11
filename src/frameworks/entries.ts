@@ -6,6 +6,10 @@
 // facts and lookups the graph lends; a class the config names that the
 // snapshot does not have is an entry point with `unresolved` and a hole of the
 // config line, never a guess.
+//
+// Pipeline: framework config facts → (this) → observer edges, entry points
+// and holes the graph and snapshot take in. Entry point: `frameworkEntries`;
+// key terms: observer, area (scope), entry point, hole, controller convention.
 
 import { typeLabel, type ConfigEntryKind, type FrameworkInput, type ObserverFact, type TypeName } from "./adapter.ts";
 import type { BindingHole, ResolvedType } from "./bindings.ts";
@@ -60,6 +64,7 @@ export interface ObserverEdge {
   binding: string;
 }
 
+/** Everything the framework configs add to the graph: observer edges, event names, entry points and holes. */
 export interface FrameworkEntries {
   observers: ObserverEdge[];
   /** Event names the configs declare observers for (disabled ones too): event nodes even without a dispatch keylang read. */
@@ -68,13 +73,16 @@ export interface FrameworkEntries {
   holes: BindingHole[];
 }
 
+/** The scope of a config that applies in every area. */
 const GLOBAL = "global";
 
 /** The area a framework runs an entry kind in: its binding there wins over the global one. */
 const ENTRY_AREA: Record<ConfigEntryKind, string> = { rest: "webapi_rest", graphql: "graphql", cron: "crontab", consumer: GLOBAL, cli: GLOBAL };
 
+/** The order HTTP verbs are listed in a controller's label, so labels are stable. */
 const HTTP_ORDER = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
+/** An observer as one config file declares it, with the area that file configures. */
 interface Declared {
   fact: ObserverFact;
   scope: string;
@@ -84,6 +92,7 @@ interface Declared {
   disabledIn?: string[];
 }
 
+/** Turn every adapter's parsed configs into observer edges, entry points and holes; configs that failed to parse are skipped. */
 export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryDeps): FrameworkEntries {
   const out: FrameworkEntries = { observers: [], events: [], entries: [], holes: [] };
   const events: FrameworkEntries["events"] = [];
@@ -92,6 +101,7 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
     const configs = input.configs.filter((c) => c.facts.error === null);
     const observers: Declared[] = [];
 
+    // First pass per config: collect declared observers (merged below) and place class-based entries at once.
     for (const { facts, owner: dir } of configs) {
       const owner = deps.owner(dir);
 
@@ -103,6 +113,7 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
       for (const fact of facts.classEntries ?? []) {
         const at = { file: facts.path, line: fact.line, col: fact.col };
         const text = `${fact.kind} ${fact.label}`;
+        // A global entry resolves in the area its kind runs in (REST in `webapi_rest`…); an area config in its own.
         const found = target(deps, fact.target, fact.method, facts.scope === GLOBAL ? ENTRY_AREA[fact.kind] : facts.scope);
         out.entries.push(entryOf(deps, input.name, fact.kind, found, fact.label, at));
 
@@ -110,6 +121,7 @@ export function frameworkEntries(inputs: readonly FrameworkInput[], deps: EntryD
       }
     }
 
+    // Only observers still in effect after area merging become entries and edges; an unresolved one is a hole instead of an edge.
     for (const observer of effectiveObservers(observers)) {
       const { fact, scope, file, owner } = observer;
       const method = fact.method ?? "execute";
@@ -150,9 +162,11 @@ function target(deps: EntryDeps, type: TypeName, method: string, area: string): 
   if (resolved.kind === "missing") return { id: written, unresolved: `\`${typeLabel(type)}\` is named by the config, but no analysed file declares it` };
 
   if (resolved.kind === "external") return { id: written, unresolved: `\`${typeLabel(type)}\` belongs to a package keylang does not read` };
+  // An interface or class the config binds through preferences: pick the bound class of this area, else of the global scope.
   const own = deps.member(resolved.id, method);
   const bound = deps.bound(resolved.id, method);
 
+  // Exactly one candidate is certain; several, or a reason from the bindings, leave the entry unresolved.
   if (bound !== null) {
     const targets = [...new Set(bound.targets.filter((t) => t.scope.split(",").includes(area)).map((t) => t.target))];
     const global = [...new Set(bound.targets.filter((t) => t.scope.split(",").includes(GLOBAL)).map((t) => t.target))];
@@ -163,6 +177,7 @@ function target(deps: EntryDeps, type: TypeName, method: string, area: string): 
     if (bound.reason !== null || chosen.length > 1) return { id: own ?? resolved.id, unresolved: bound.reason ?? `\`${typeLabel(type)}\` is bound to ${chosen.map((t) => `\`${t}\``).join(" and ")}` };
   }
 
+  // No binding: a concrete class's own member is certain; an interface's member is a guess the entry reports.
   if (deps.isClass(resolved.id) && own !== null) return { id: own, unresolved: null };
 
   if (own !== null) return { id: own, unresolved: `no preference binds \`${typeLabel(type)}\` to a class, so what runs \`${method}\` is unknown` };
@@ -170,6 +185,7 @@ function target(deps: EntryDeps, type: TypeName, method: string, area: string): 
   return { id: resolved.id, unresolved: `\`${typeLabel(type)}\` has no method \`${method}\` keylang read` };
 }
 
+/** The entry point for a found target: placed at the fn's declaration when known, else at the config line. */
 function entryOf(deps: EntryDeps, framework: string, kind: ConfigEntry["kind"], found: EntryTarget, label: string, at: { file: string; line: number }): ConfigEntry {
   const place = deps.place(found.id) ?? at;
   const entry: ConfigEntry = { kind, id: found.id, label, framework, file: place.file, line: place.line, source: `${at.file}:${at.line}` };
@@ -189,11 +205,13 @@ function effectiveObservers(declared: readonly Declared[]): Declared[] {
   const out: Declared[] = [];
   const groups = new Map<string, Declared[]>();
 
+  // Group declarations by event and observer name: these are what areas override.
   for (const d of declared) {
     const key = `${d.fact.event}\0${d.fact.name}`;
     groups.set(key, [...(groups.get(key) ?? []), d]);
   }
 
+  // Fold declarations in order: one naming a class replaces the previous; one without only changes method or disabled.
   const merge = (list: readonly Declared[]): Declared | null => {
     const [first, ...rest] = list;
 
@@ -209,6 +227,8 @@ function effectiveObservers(declared: readonly Declared[]): Declared[] {
     return cur;
   };
 
+  // Per group: one entry per area whose effective observer differs from the global one, then the global one
+  // (noting the areas that disable it).
   for (const list of groups.values()) {
     const global = merge(list.filter((d) => d.scope === GLOBAL));
     const live = (d: Declared | null): d is Declared => d !== null && !d.fact.disabled && d.fact.instance !== null;
@@ -230,6 +250,7 @@ function effectiveObservers(declared: readonly Declared[]): Declared[] {
     if (live(global)) out.push(disabledIn.length > 0 ? { ...global, disabledIn } : global);
   }
 
+  // Sorted by event, file and line so the edges and entries come out in a stable order.
   return out.sort((a, b) => (a.fact.event < b.fact.event ? -1 : a.fact.event > b.fact.event ? 1 : 0) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0) || a.fact.line - b.fact.line);
 }
 
@@ -246,9 +267,12 @@ function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[
   const out: ConfigEntry[] = [];
   const dirs = new Map<string, string[]>();
 
+  // Module name → its directories (a name may live in more than one place).
   for (const m of input.modules ?? []) dirs.set(m.name, [...(dirs.get(m.name) ?? []), m.dir]);
+  // Interface names compare in ASCII lower case, as `supertypeNames` returns them.
   const methods = new Map(Object.entries(convention.methods).map(([name, method]) => [asciiLower(name), method]));
 
+  // For each route: every module it names → each controller file under that module's controller dir → each class in it.
   for (const { facts } of input.configs) {
     for (const route of facts.routes ?? []) {
       for (const module of route.modules) {
@@ -284,6 +308,7 @@ function controllerEntries(input: FrameworkInput, deps: EntryDeps): ConfigEntry[
   return out;
 }
 
+/** Lower A–Z only, like PHP compares class names. */
 function asciiLower(name: string): string {
   return name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 }

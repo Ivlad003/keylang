@@ -1,5 +1,8 @@
 // Snapshot → generated `map/<layer>.md` files, and the explained map: the same
-// tree with an explanation under every node (ADR 0004).
+// tree with an explanation under every node (ADR 0004). The last step of the
+// code pipeline (source → FileFacts → graph → snapshot → map/index). Entry
+// points: `renderMap` and `renderExplainedMap`. Output must be byte-stable:
+// every list is sorted by code units, never by locale.
 
 import { posix } from "node:path";
 import { modelName, SYSTEM_ID, type NodeExplanation } from "./explanations.ts";
@@ -7,10 +10,12 @@ import { EXTERNAL } from "./graph.ts";
 import { compareText } from "./span.ts";
 import type { AnalysisSnapshot, SnapshotEdge, SnapshotNode } from "./snapshot.ts";
 
+/** The first line of every generated map file (see `isGeneratedMap`). */
 export const GENERATED_MARK = "<!-- keylang:generated — не редагувати, `keylang map` -->";
 
 /** True when the first non-empty line is a generator marker. The text after `keylang:generated` may vary. */
 export function isGeneratedMap(text: string): boolean {
+  // Skip a BOM and blank lines; only the first real line can carry the mark.
   const line = text.replace(/^\uFEFF/, "").split(/\r?\n/).find((l) => l.trim() !== "");
 
   return line !== undefined && line.startsWith("<!--") && line.includes("keylang:generated");
@@ -33,6 +38,7 @@ export function codeHref(mapDir: string, filePath: string, line: number): string
   return `${encoded}#L${line}`;
 }
 
+/** One path segment percent-encoded, parentheses included. */
 function encodeSegment(seg: string): string {
   return encodeURIComponent(seg).replaceAll("(", "%28").replaceAll(")", "%29");
 }
@@ -61,6 +67,7 @@ export function renderExplainedMap(snapshot: AnalysisSnapshot, mapDir: string, e
   return out;
 }
 
+/** What every render step needs: the snapshot, its tree, the output directory and, for the explained map, the explanations. */
 interface Render {
   snapshot: AnalysisSnapshot;
   children: Map<string, string[]>;
@@ -69,6 +76,7 @@ interface Render {
   explain: ExplainNode | null;
 }
 
+/** One file per layer: the mark, the explained map's contents line, the layer, then its modules and events. */
 function renderLayers(r: Render): Map<string, string> {
   const out = new Map<string, string>();
 
@@ -87,6 +95,7 @@ function renderLayers(r: Render): Map<string, string> {
   return out;
 }
 
+/** The layer IDs of the snapshot, sorted. */
 function layerIds(snapshot: AnalysisSnapshot): string[] {
   return Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.kind === "layer").sort();
 }
@@ -113,6 +122,7 @@ function ref(r: Render, id: string): string {
 function contents(r: Render, layerId: string): string {
   const modules: string[] = [];
 
+  // Depth-first in map order, modules only: a class or a declaration ends the branch.
   const visit = (id: string): void => {
     const node = r.snapshot.nodes[id];
 
@@ -148,6 +158,8 @@ function describe(r: Render, id: string, depth: number): string {
  * into a link; one it does not know (a model's invention) stays plain code.
  */
 export function descriptionText(e: NodeExplanation, link: (id: string) => string | null = () => null): string {
+  // One line of text; escape `<` and `-->` outside backtick spans (odd split
+  // parts are the spans themselves, kept verbatim).
   let text = e.text
     .replace(/\s+/g, " ")
     .trim()
@@ -155,8 +167,11 @@ export function descriptionText(e: NodeExplanation, link: (id: string) => string
     .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
     .join("");
 
+  // Escape a start that Markdown would read as a block: an ordered list
+  // marker, or a bullet, heading, quote, table, rule or fence character.
   if (/^\d+[.)]/.test(text)) text = text.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(text)) text = `\\${text}`;
+  // Backticked dotted IDs become links to their anchors, keeping code style.
   text = text.replace(/`([\p{L}_$][\p{L}\p{M}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{M}\p{N}_$-]*)+)`/gu, (code, id: string) => {
     const target = link(id);
 
@@ -175,10 +190,12 @@ interface Counts {
   none: number;
 }
 
+/** The explained map's start page: the system section, a per-layer count table and the module index. */
 function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode): string {
   const r: Render = { snapshot, children, mapDir: "", explain };
   const counts = new Map<string, Counts>();
 
+  // Tally each node's explanation origin under its layer; packages are not counted.
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     if (node.layer === EXTERNAL) continue;
     let c = counts.get(node.layer);
@@ -195,6 +212,8 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
   const total: Counts = { doc: 0, llm: 0, stale: 0, none: 0 };
   const rows: string[] = [];
 
+  // One table row per layer, `|` escaped so the explanation stays in its cell;
+  // a layer with no counted nodes gets empty count cells.
   for (const layer of layerIds(snapshot)) {
     const c = counts.get(layer);
     const e = explain(layer);
@@ -256,6 +275,8 @@ function index(r: Render): string[] {
 
   const groups = new Map<string, string[]>();
 
+  // Group by the first letter of the name; the sort above already orders the
+  // groups and their lines.
   for (const e of entries) {
     const letter = [...e.name][0]!.toUpperCase();
     const layer = r.snapshot.nodes[e.id]!.layer;
@@ -270,6 +291,7 @@ function index(r: Render): string[] {
 }
 
 
+/** Each ID's direct children, keyed by the ID with its last segment removed. */
 function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
   const children = new Map<string, string[]>();
 
@@ -303,16 +325,19 @@ function sortIds(snapshot: AnalysisSnapshot, ids: readonly string[]): string[] {
   });
 }
 
+/** The last segment of an ID. */
 function nameOf(id: string): string {
   return id.slice(id.lastIndexOf(".") + 1);
 }
 
+/** A node's name linked to its line in the code; plain when the node has no place. */
 function linkedName(mapDir: string, node: SnapshotNode, name: string): string {
   if (!node.file || node.line === null) return name;
 
   return `[${name}](${codeHref(mapDir, node.file, node.line)})`;
 }
 
+/** A module line, its description, its dependency lines, then its children, recursively. */
 function renderModule(r: Render, id: string, depth: number): string {
   const { snapshot, mapDir } = r;
   const node = snapshot.nodes[id];
@@ -324,6 +349,7 @@ function renderModule(r: Render, id: string, depth: number): string {
   if (node.comment) head += ` <!-- ${node.comment} -->`;
   let s = `${pad}- module ${head}\n${describe(r, id, depth + 1)}`;
 
+  // Dependencies come before the members, in the order they are written.
   for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${ref(r, edge.target!)}\n`;
   const nested = r.children.get(id) ?? [];
   const body = sortIds(snapshot, nested);
@@ -343,6 +369,7 @@ function renderModule(r: Render, id: string, depth: number): string {
 /** Edges by source, built once per snapshot: each module and declaration reads its own, not the whole list. */
 const edgesBySource = new WeakMap<AnalysisSnapshot, Map<string, SnapshotEdge[]>>();
 
+/** The edges whose source is `id`, through a per-snapshot index built on first use. */
 function edgesFrom(snapshot: AnalysisSnapshot, id: string): readonly SnapshotEdge[] {
   let index = edgesBySource.get(snapshot);
 
@@ -368,11 +395,13 @@ function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
     .filter((e) => e.source === id && (e.kind === "import" || e.kind === "reexport") && e.resolution === "resolved" && e.alias && e.target)
     .sort((a, b) => a.line - b.line);
 
+  // Keep the first edge (by line) of each alias.
   const seen = new Set<string | undefined>();
 
   return edges.filter((e) => !seen.has(e.alias) && seen.add(e.alias));
 }
 
+/** A fn, type or event line with its signature and notes, its description, and one `calls` line. */
 function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): string {
   const { snapshot, mapDir } = r;
   const pad = "  ".repeat(depth);
@@ -398,9 +427,11 @@ function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): s
 
   // A call the framework makes by its config (ADR 0022) is a call like any other, marked with its `via` and config line.
   const configured = calls.filter((c) => c.via === "preference" || c.via === "argument" || c.via === "observer" || c.via?.startsWith("plugin:"));
+  // One mark per target (the last edge to it wins), in the calls' line order.
   const marks = [...new Map(configured.map((c) => [c.target!, `${nameOf(c.target!)} ${c.via} ${c.site ?? "?"}${c.via === "observer" && c.scope && c.scope !== "global" ? ` ${c.scope}` : ""}`])).values()];
   const note = marks.length > 0 ? ` <!-- via: ${marks.join("; ").replace(/-->/g, "-- >")} -->` : "";
 
+  // Targets deduplicated, in the order of their first call.
   if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}${note}\n`;
 
   return s;

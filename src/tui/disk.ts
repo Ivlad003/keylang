@@ -1,14 +1,18 @@
 // The files a session reads and writes: text with the line endings it came
 // with, and writes that never land outside a boundary directory — not through
 // a symbolic link either, including one whose target does not exist yet.
+// Layer: TUI. The session, merge view and forms do all their file I/O
+// through here; the atomic write and link resolution come from `../safe-write.ts`.
 
 import { readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { within } from "../analyze.ts";
 import { landing, writeAtomic } from "../safe-write.ts";
 
+/** The line ending a buffer was read with and is saved with. */
 export type Eol = "\n" | "\r\n";
 
+/** The file's UTF-8 text, or null when it cannot be read (missing, a directory, no access). */
 export function readText(abs: string): string | null {
   try {
     return readFileSync(abs, "utf8");
@@ -17,6 +21,7 @@ export function readText(abs: string): string | null {
   }
 }
 
+/** The text with every CRLF turned into LF. */
 export function lf(text: string): string {
   return text.replace(/\r\n/g, "\n");
 }
@@ -27,12 +32,14 @@ export function lf(text: string): string {
  * are, so a save does not touch lines nobody edited.
  */
 export function splitEol(raw: string): { text: string; eol: Eol } {
+  // Count both endings: a file is CRLF only when every LF belongs to a CRLF.
   const crlf = raw.split("\r\n").length - 1;
   const lfs = raw.split("\n").length - 1;
 
   return crlf > 0 && crlf === lfs ? { text: lf(raw), eol: "\r\n" } : { text: raw, eol: "\n" };
 }
 
+/** The text with its `\n` line ends turned back into `eol` for a save. */
 export function withEol(text: string, eol: Eol): string {
   return eol === "\n" ? text : text.replace(/\n/g, eol);
 }
@@ -61,6 +68,7 @@ export interface WriteOptions {
 
 /** The file a write to `abs` changes. */
 function destination(abs: string, options: WriteOptions): string {
+  // `replace` resolves links only up to the parent directory, so the final name itself is never followed.
   return options.link === "replace" ? join(landingPath(dirname(abs)), basename(abs)) : landingPath(abs);
 }
 

@@ -2,6 +2,8 @@
 // record is named in the list and the messages, its outcome, its report rows
 // and the items Tab selects. Each kind is one entry of one table, so a new
 // kind of operation is one more entry, not one more branch in every switch.
+// Layer: TUI reports. `results-panel.ts` and the session's messages call the
+// exported functions here; the reports themselves live in sibling modules.
 
 import type { OperationRequest, OperationResult } from "../../operations.ts";
 import { ACTIONS } from "../actions.ts";
@@ -16,6 +18,7 @@ import { EXPLAIN_REPORTS } from "./explain.ts";
 import { messageRow, MUTED, WARNING, type Done, type Kind, type Report, type ReportItem, type ReportRow, type RequestOf } from "./rows.ts";
 import { SETUP_REPORTS } from "./setup.ts";
 
+/** Every kind's report in one table; `satisfies` makes a missing kind a type error. */
 const REPORTS = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...DISCOVER_REPORTS, ...COVERAGE_REPORTS, ...INTEGRATIONS_REPORTS, ...SYSTEM_REPORTS, ...TOUR_REPORTS, ...MIGRATION_REPORTS, ...CHAT_REPORTS } satisfies { [K in Kind]: Report<K> };
 
 /** The report of one kind; the table is checked against this shape, but indexing it with a generic kind loses the pairing. */
@@ -37,6 +40,7 @@ export function operationLabel<K extends Kind>(request: RequestOf<K>): string {
   return reportOf(request.kind).label(request);
 }
 
+/** The F6 params text of a request, or null when its kind shows none. */
 function paramsOf<K extends Kind>(request: RequestOf<K>): string | null {
   return reportOf(request.kind).params?.(request) ?? null;
 }
@@ -57,6 +61,7 @@ export function recordStatus(record: OperationRecord): string {
   return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}${record.outdated !== null ? " · outdated" : ""}`;
 }
 
+/** The kind's own summary, falling back to the generic status. */
 function summaryOf<K extends Kind>(record: OperationRecord, result: Done<K>): string {
   return reportOf(result.kind).summary?.(record, result) ?? recordStatus(record);
 }
@@ -68,12 +73,14 @@ export function recordSummary(record: OperationRecord): string {
   return result !== null && isDone(result) ? summaryOf(record, result) : recordStatus(record);
 }
 
+/** The kind's rows for a finished result, with the selected item highlighted only while Tab is in the report. */
 function rowsOf<K extends Kind>(state: State, record: OperationRecord, result: Done<K>): ReportRow[] {
   const view = { selected: state.results.scrollReport ? state.results.gap : -1, summary: summaryOf(record, result) };
 
   return reportOf(result.kind).rows(state, record, result, view);
 }
 
+/** `HH:MM:SS` in local time. */
 function timeStr(ms: number): string {
   return new Date(ms).toTimeString().slice(0, 8);
 }
@@ -87,6 +94,7 @@ export function resultsReportRows(state: State): ReportRow[] {
   const record = state.records[state.results.index];
 
   if (!record) return [];
+  // The header rows every record shares: root and start, finish, and whether it is outdated.
   const rows: ReportRow[] = [{ text: `root ${record.params.root} · started ${timeStr(record.started)}`, style: MUTED }];
 
   if (record.finished !== null) rows.push({ text: `finished ${timeStr(record.finished)} · ${recordStatus(record)}`, style: MUTED });
@@ -94,6 +102,7 @@ export function resultsReportRows(state: State): ReportRow[] {
   if (record.outdated !== null) rows.push({ text: `outdated: ${record.outdated} · Enter reruns`, style: WARNING });
   const result = record.result;
 
+  // Then the body: progress while running, the kind's rows when there is a payload, else only the messages (a failure).
   if (result === null) rows.push({ text: `  ${record.progress === null ? "running…" : `running: ${record.progress}…`} · x cancels`, style: THEME.hint });
   else if (isDone(result)) rows.push(...rowsOf(state, record, result));
   else rows.push(...result.messages.map(messageRow));
@@ -101,6 +110,7 @@ export function resultsReportRows(state: State): ReportRow[] {
   return rows;
 }
 
+/** The kind's selectable items, or none. */
 function itemsOf<K extends Kind>(state: State, result: Done<K>): ReportItem[] {
   return reportOf(result.kind).items?.of(state, result) ?? [];
 }

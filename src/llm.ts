@@ -14,6 +14,11 @@
 // `LlmCancelled` (`isCancelled`), never a timeout, and the text streamed so
 // far is dropped.
 // Nothing here decides a verdict.
+//
+// Not part of the language pipelines: an adapter used by the features that
+// ask a model (explain, assistant, flow naming, ghost text in the TUI). Entry points:
+// `llmClient`, `answeringAgent`, `isCancelled`; key terms: agent
+// (`provider:model`), deadline, cancel vs timeout.
 
 import Anthropic, { type ClientOptions } from "@anthropic-ai/sdk";
 import { createParser } from "eventsource-parser";
@@ -25,6 +30,7 @@ import { isCliAgent } from "./config.ts";
 import { isJsonObject, isJsonString, parseJson, type JsonObject, type JsonValue } from "./json.ts";
 import { readKey } from "./keys.ts";
 
+/** One completion request: system prompt, user prompt and the answer's token budget. */
 export interface LlmRequest {
   system: string;
   prompt: string;
@@ -49,6 +55,7 @@ export interface LlmClientOptions {
   home?: string;
 }
 
+/** A configured model that answers one completion at a time. */
 export interface LlmClient {
   /** `anthropic:claude-opus-5`, as configured. */
   agent: string;
@@ -71,6 +78,7 @@ export function isCancelled(error: unknown): error is LlmCancelled {
   return error instanceof LlmCancelled;
 }
 
+/** The client, or why none can be made (no agent, key or binary); the reason is shown to the user. */
 export type LlmSetup = { client: LlmClient } | { missing: string };
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -95,6 +103,7 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
 
   if (isTimeoutProblem(timeout)) return { missing: timeout };
 
+  // `cli:*` agents: wrap the CLI client so its cancel becomes `LlmCancelled` and the deadline applies.
   if (isCliAgent(agent)) {
     // An agent keylang started runs keylang with KEYLANG_NESTED: it never starts another agent.
     if (env.KEYLANG_NESTED !== undefined && env.KEYLANG_NESTED !== "") return { missing: `${agent}: cli agents are off inside an agent keylang started (KEYLANG_NESTED)` };
@@ -121,6 +130,7 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
     return { client: { agent, model: cli.model, bin: cli.bin, complete } };
   }
 
+  // API agents: `provider:model`, split at the first colon (a model name may contain more).
   const colon = agent.indexOf(":");
   const provider = agent.slice(0, colon);
   const model = agent.slice(colon + 1);
@@ -166,12 +176,12 @@ export function answeringAgent(client: LlmClient, reported: string | null): stri
 /** The longest delay a Node timer holds; above it `setTimeout` fires after 1 ms. */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
-/** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds a timer can hold; the reason when it is not one. */
 /** `timeoutMs` gave why the variable is wrong instead of a bound. */
 function isTimeoutProblem(timeout: number | string): timeout is string {
   return typeof timeout === "string";
 }
 
+/** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds a timer can hold; the reason when it is not one. */
 function timeoutMs(env: Env): number | string {
   const raw = env.KEYLANG_LLM_TIMEOUT_MS;
 
@@ -189,10 +199,12 @@ interface Deadline {
   fromVariable: boolean;
 }
 
+/** The bound of one call: its own `timeoutMs` when tighter than the variable, else the variable's. */
 function deadline(variable: number, own: number | undefined): Deadline {
   return own !== undefined && own < variable ? { ms: own, fromVariable: false } : { ms: variable, fromVariable: true };
 }
 
+/** The error text of a timed-out call; it cites the variable only when the variable was the bound. */
 function timeoutMessage(provider: string, bound: Deadline): string {
   return `${provider}: no answer within ${bound.ms} ms${bound.fromVariable ? " (KEYLANG_LLM_TIMEOUT_MS)" : ""}`;
 }
@@ -242,6 +254,7 @@ function callSignal(timeout: number, outer: AbortSignal | undefined): CallSignal
   };
 }
 
+/** One non-streaming Messages API call; a refusal, a cut answer or no text is an error. */
 async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal): Promise<string> {
   const fallbacks = FALLBACK_MODELS.test(model);
   // The client's `timeout` bounds one attempt and the SDK retries; the signal bounds the whole call.
@@ -278,6 +291,7 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
   // A cut answer is not an answer: saved as fresh it would never be asked again, and cut code is not code.
   if (response.stop_reason === "max_tokens") throw new Error(truncatedMessage(model, "max_tokens"));
 
+  // The answer is the concatenated text blocks; other block kinds are ignored.
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("")
@@ -288,6 +302,7 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
   return text;
 }
 
+/** One streamed chat completion from OpenRouter (or a JSON answer when the server does not stream). */
 async function openrouterComplete(base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal): Promise<string> {
   // One deadline for the request and the whole stream: a stalled stream never hangs the CLI or the TUI.
   const call = callSignal(bound.ms, outer);
@@ -329,6 +344,7 @@ async function openrouterComplete(base: string, key: string, model: string, requ
       return text;
     }
 
+    // Accumulate the deltas of the SSE stream; the first error or a `length` finish is remembered and thrown after the stream.
     let text = "";
     let failure: string | null = null;
 
@@ -367,6 +383,7 @@ async function openrouterComplete(base: string, key: string, model: string, requ
     if (text.trim() === "") throw new Error(`openrouter: ${model} answered without text`);
 
     return text.trim();
+  // Whatever failed, an abort is reported as what caused it: the caller's cancel or the deadline.
   } catch (error) {
     if (call.cancelled()) throw new LlmCancelled("openrouter");
 

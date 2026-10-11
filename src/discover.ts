@@ -5,6 +5,9 @@
 // hand-written flow already names is left out and reported. `adoptedFlow`
 // turns one discovered flow into the draft a proposal is made of. Pure over
 // the snapshot and the flows of the specs; the operation writes.
+// Pipeline: AnalysisSnapshot entry points + spec flows (IR) → flow drafts
+// (draft.ts) → generated Markdown view. Entry points: `discoverFlows`,
+// `specifiedTriggers`, `adoptedFlow`, `offlineDescription`, `proseLine`.
 
 import { firstSentence } from "./brief.ts";
 import { distinctNames, draftFlow, type DraftFlowOptions, type FlowDraft } from "./draft.ts";
@@ -20,6 +23,7 @@ export const DISCOVERED_DIR = DISCOVERED_FLOWS_DIR;
 /** The first line of every file of the view. */
 export const DISCOVER_MARK = "<!-- keylang:generated — не редагувати, `keylang flows discover` -->";
 
+/** Filters and limits of `flows discover`. */
 export interface DiscoverOptions {
   /** Only entry points of this kind. */
   kind?: EntryKind;
@@ -50,6 +54,7 @@ export interface DiscoveredFlow {
   text: string;
 }
 
+/** The result of one discovery: the drafted flows, what was skipped and why, and the view's files. */
 export interface Discovery {
   flows: DiscoveredFlow[];
   /** Triggers a hand-written flow already names: not drafted. */
@@ -67,6 +72,7 @@ export interface Discovery {
  */
 export function specifiedTriggers(flows: readonly Flow[]): Map<string, { file: string; flow: string }> {
   const out = new Map<string, { file: string; flow: string }>();
+  // Sorted by file, then name, so "the first flow that names it" is well defined.
   const sorted = [...flows].sort((a, b) => compareText(a.file, b.file) || compareText(a.name, b.name));
 
   const add = (id: string, flow: Flow): void => {
@@ -77,6 +83,7 @@ export function specifiedTriggers(flows: readonly Flow[]): Map<string, { file: s
     for (const trigger of flow.triggers) {
       add(trigger.target.target, flow);
 
+      // Only the first trigger of an event flow lends its subscribers: the steps under it and the top-level steps.
       if (trigger.event === null || trigger !== flow.triggers[0]) continue;
 
       for (const item of [...trigger.children, ...flow.items]) if (item.kind === "step") add(item.target.target, flow);
@@ -97,6 +104,7 @@ function observedEvent(snapshot: AnalysisSnapshot, entry: EntryPoint): string | 
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call" || edge.via !== "observer" || edge.target !== entry.id || snapshot.nodes[edge.source]?.kind !== "event") continue;
 
+    // The edge's site is `file:line`; compare its file with the entry's config source.
     if (edge.site !== undefined && edge.site.replace(/:\d+$/, "") === entry.source) return edge.source;
   }
 
@@ -115,6 +123,9 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
   const skipped: Discovery["specified"] = [];
   const chosen: EntryPoint[] = [];
 
+  // Pick the entry points to draft, in snapshot order: one per fn (the first
+  // entry labels it), after the kind and layer filters; non-fn entries and
+  // triggers a spec already names are reported, not drafted.
   for (const entry of snapshot.entries) {
     if (options.kind !== undefined && entry.kind !== options.kind) continue;
 
@@ -135,6 +146,7 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
       continue;
     }
 
+    // Keep scanning past the limit so `notFns` and `specified` stay complete.
     if (options.limit !== undefined && chosen.length >= options.limit) continue;
     chosen.push(entry);
   }
@@ -159,6 +171,7 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
 
   const holes = holesBySource(snapshot);
 
+  // Decorate each draft: its layer, hole count and offline description, and the `keylang:discover` comment.
   const flows = drafts.map((draft, i): DiscoveredFlow => {
     const entry = chosen[i]!;
     const layer = snapshot.nodes[entry.id]!.layer;
@@ -175,6 +188,7 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
   const files = new Map<string, string>();
   const byFile = new Map<string, DiscoveredFlow[]>();
 
+  // Group by the trigger's layer into one file each; files and flows sorted by name for byte-stable output.
   for (const flow of flows) byFile.set(flow.file, [...(byFile.get(flow.file) ?? []), flow]);
 
   for (const file of [...byFile.keys()].sort(compareText)) {
@@ -191,6 +205,7 @@ export function discoverFlows(snapshot: AnalysisSnapshot, specified: ReadonlyMap
  */
 export function adoptedFlow(flow: DiscoveredFlow, specDir: string): FlowDraft {
   const from = `${specDir === "" ? "" : `${specDir}/`}${DISCOVERED_DIR}/${flow.file}`;
+  // Mark the comment `adopted` and add where it came from, before the comment's closing `-->`.
   const text = flow.text.replace("<!-- keylang:discover entry=", "<!-- keylang:discover adopted entry=").replace(/ -->\n/, ` from=${from} -->\n`);
 
   return { name: flow.name, text, steps: flow.steps };
@@ -207,6 +222,7 @@ export function discoverySummary(discovery: Pick<Discovery, "flows" | "specified
 function holesBySource(snapshot: AnalysisSnapshot): Map<string, number> {
   const out = new Map<string, number>();
 
+  // Count the call holes per calling fn; other coverage kinds are not on the route.
   for (const c of snapshot.coverage) {
     if ((c.kind !== "dynamic-call" && c.kind !== "unresolved-call" && c.kind !== "ambiguous-binding") || c.source === null) continue;
     out.set(c.source, (out.get(c.source) ?? 0) + 1);
@@ -230,6 +246,7 @@ function withComment(text: string, comment: string, described: { text: string; i
  */
 export function firstLevelSteps(draftText: string): string[] {
   const out: string[] = [];
+  // Under `trigger event` the steps sit one level deeper, beneath the subscriber.
   const pattern = /^- trigger event /m.test(draftText) ? /^ {4}- step (\S+)/gm : /^ {2}- step (\S+)/gm;
 
   for (const m of draftText.matchAll(pattern)) out.push(m[1]!);
@@ -250,6 +267,7 @@ export function offlineDescription(snapshot: AnalysisSnapshot, trigger: string, 
   const parts: string[] = [];
   const own = snapshot.nodes[trigger]?.doc;
 
+  // The trigger's whole doc first, collapsed to one line.
   if (own) {
     ids.push(trigger);
     parts.push(own.replace(/\s+/g, " ").trim());
@@ -275,6 +293,7 @@ export function offlineDescription(snapshot: AnalysisSnapshot, trigger: string, 
  * quote or fence is escaped with a backslash.
  */
 export function proseLine(text: string): string {
+  // Collapse to one line; split on inline code spans so only the text outside them is escaped.
   let out = text
     .replace(/\s+/g, " ")
     .trim()
@@ -282,6 +301,7 @@ export function proseLine(text: string): string {
     .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
     .join("");
 
+  // Escape a start that Markdown would read as an ordered list, a list item, heading, quote, table or fence.
   if (/^\d+[.)]/.test(out)) out = out.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(out)) out = `\\${out}`;
 
@@ -290,6 +310,7 @@ export function proseLine(text: string): string {
 
 /** The text of `proseLine` back: the escape and the entities undone. */
 export function unproseLine(line: string): string {
+  // Undo the leading escape, then the entities outside code spans.
   return line
     .replace(/^(\d+)\\([.)])/, "$1$2")
     .replace(/^\\(?=[-*+_=#>|~`])/, "")

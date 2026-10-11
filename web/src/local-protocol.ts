@@ -1,5 +1,8 @@
 // The messages between `app.html` (local.ts) and the analysis Worker
-// (web/worker/analysis.ts). Types only: both sides import them.
+// (web/worker/analysis.ts), for the in-browser mode that analyses a local
+// folder without `keylang web`. Types only: both sides import them, so the
+// protocol has one definition. `ToWorker` loads a folder or asks an API
+// request; `FromWorker` reports progress, readiness and replies by `id`.
 
 /**
  * `files` are read; `unread` are in the folder but not read (binary, too large): git still needs to
@@ -10,6 +13,7 @@ export type ToWorker =
   | { type: "load"; name: string; files: { path: string; data: ArrayBuffer; mtime: number }[]; unread: UnreadFile[] }
   | { type: "request"; id: number; path: string; query: string };
 
+/** A file of the folder the page did not read, described only by its stat data. */
 export interface UnreadFile {
   path: string;
   size: number;
@@ -18,6 +22,7 @@ export interface UnreadFile {
   binary: boolean;
 }
 
+/** What the Worker sends back: load progress, the loaded snapshot's summary, a failure, or the reply to request `id`. */
 export type FromWorker =
   | { type: "progress"; text: string }
   | { type: "ready"; root: string; files: number; nodes: number; languages: string[] }

@@ -1,4 +1,7 @@
 // keylang core: IR, Markdown parser, cross-file resolver, formatter.
+// Public entry point of the npm package (`import ... from "keylang"`): it
+// re-exports the language core only (Markdown → IR → resolve/check, plus
+// `fmt`), never the code-analysis side (source → FileFacts → graph → map).
 //
 //   import { parse, check } from "keylang";
 //   const doc = parse("map.md", "- domain\n  - orderAggregate\n");

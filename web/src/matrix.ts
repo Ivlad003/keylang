@@ -1,3 +1,4 @@
+// Web page (web/src), the layers view as a design structure matrix (DSM).
 // The layers view as a dependency matrix: a row depends on a column, a cell
 // holds how many dependencies go that way, its colour what the rules say —
 // a broken rule red, an unverified one amber, an allowed pair green. Between
@@ -12,15 +13,18 @@ import { make } from "./dom.ts";
 /** More edges than this and the layers view opens as the matrix. */
 export const MATRIX_FROM = 60;
 
+/** One row→column pair: how many dependencies go that way and the rules that speak about it. */
 interface Cell {
   count: number;
   rules: { kind: string; verdict: string; label: string }[];
 }
 
+/** Draws the layer nodes of `diagram` into `container` as a matrix with a legend; `pick` runs on a row header click, `selected` marks that layer's row. */
 export function renderMatrix(container: HTMLElement, diagram: Diagram, pick: (node: DiagramNode) => void, selected: string | null): void {
   const layers = diagram.nodes.filter((node) => node.kind === "layer");
   const cells = new Map<string, Cell>();
 
+  // Cells are created on first use, keyed by the pair joined with NUL, which no ID contains.
   const cell = (from: string, to: string): Cell => {
     const key = `${from}\u0000${to}`;
     let found = cells.get(key);
@@ -30,11 +34,13 @@ export function renderMatrix(container: HTMLElement, diagram: Diagram, pick: (no
     return found;
   };
 
+  // Fold the edges into cells: a dependency edge carries its count in its label, an allow/deny edge is a rule on the pair.
   for (const edge of diagram.edges) {
     if (edge.kind === "dependency") cell(edge.from, edge.to).count += Number(edge.label ?? 0) || 0;
     else if (edge.kind === "allow" || edge.kind === "deny") cell(edge.from, edge.to).rules.push({ kind: edge.kind, verdict: edge.verdict ?? "ok", label: edge.label ?? edge.kind });
   }
 
+  // The header row names every layer as a column, in the diagram's node order.
   const table = make("table", { className: "dsm" });
   const head = make("tr", {}, make("th", { className: "corner", text: "залежить ↓ від →" }));
 
@@ -42,6 +48,7 @@ export function renderMatrix(container: HTMLElement, diagram: Diagram, pick: (no
   table.append(make("thead", {}, head));
   const body = make("tbody");
 
+  // One row per layer: its header picks the layer, then a cell for each column.
   for (const row of layers) {
     const name = make("th", { className: `row${row.id === selected ? " selected" : ""}`, title: `${row.label}: показати шар` }, `${row.verdict ? `${VERDICT_GLYPH[row.verdict] ?? ""} ` : ""}${row.label}`);
     name.addEventListener("click", () => pick(row));
@@ -50,6 +57,7 @@ export function renderMatrix(container: HTMLElement, diagram: Diagram, pick: (no
     for (const column of layers) {
       const td = make("td");
 
+      // The diagonal (a layer against itself) is greyed out and holds nothing.
       if (row.id === column.id) {
         td.className = "self";
         tr.append(td);

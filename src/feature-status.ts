@@ -10,6 +10,11 @@
 // fail blocks. Tests and trace are reported and do not block. The stage says
 // how far the file got from an idea to a spec an agent can implement
 // (.scratch/c4-zoom, B1).
+//
+// Sits after resolve/rules (Markdown → IR → SpecIR → diagnostics and
+// verdicts) and serves `keylang feature`, MCP and the TUI readiness screen.
+// Entry point: `featureStatus`, returning a `FeatureReport` of gaps (block
+// done) and hints (do not).
 
 import { sameFinding } from "./assess.ts";
 import { filterChanged } from "./changed.ts";
@@ -62,6 +67,7 @@ export interface Hint {
   stage: Exclude<Stage, "done">;
 }
 
+/** A reported, non-blocking finding: a tests or trace verdict, or an inherited rule fail. */
 export interface FeatureInfo {
   id: string;
   file: string;
@@ -120,6 +126,7 @@ export type FeatureBase = BaseOrigin &
 /** `FeatureBase` as the report shows it: the commit, its state, and how it was chosen. */
 export type FeatureBaseInfo = Omit<BaseOrigin, "label"> & ({ state: "compared" | "absent" } | { state: "unavailable"; reason: string });
 
+/** The whole answer for one feature file: done or not, its stage, gaps, hints and info. */
 export interface FeatureReport {
   done: boolean;
   stage: Stage;
@@ -138,6 +145,7 @@ export interface FeatureReport {
   };
 }
 
+/** Everything `featureStatus` reads: the parsed specs, the check's results, the snapshot's nodes and edges, and the base. */
 export interface FeatureInput {
   dir: string;
   docs: readonly Document[];
@@ -166,21 +174,26 @@ export interface FeatureInput {
   weakened?: readonly Weakening[];
 }
 
+/** Diagnostics of dependency rules: the codes a rule fail can carry. */
 const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
 
 /** Errors of the spec itself: a line keylang could not read is no claim it checks. */
 const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
 
+/** Verdict criteria of flows, not of rules: a failed verdict of these is no rule fail. */
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
 
+/** The order gaps are listed in: what to fix first comes first. */
 const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, deny: 3, planned: 4, static: 5, rule: 6, spec: 7, weakened: 8 };
 
+/** Tiebreak order of hints at one position. */
 const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1, layer: 2, signature: 3, rule: 4 };
 
 /** Ids declared or named in one spec, in first-seen order. */
 export function idsIn(doc: Document): string[] {
   const ids: string[] = [];
 
+  // Every node of every section: its own ID and every ref it holds.
   for (const section of doc.sections) {
     for (const top of sectionNodes(section)) {
       walk(top, (node) => {
@@ -208,6 +221,9 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   const flows = input.spec.flows.filter((flow) => flow.file === path);
   const planned = input.spec.planned.filter((item) => item.file === path);
 
+  // A feature that claims nothing (no `planned`, no flow with a trigger or a
+  // claim) cannot be checked, so it is not done; where it stands depends on
+  // whether a `# flow` section exists at all.
   if (planned.length === 0 && !flows.some((flow) => flow.triggers.length > 0 || claimsOf(flow).length > 0)) {
     gaps.push({
       kind: "empty",
@@ -220,6 +236,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     });
   }
 
+  // Errors in reading the feature file itself: the spec has holes.
   const specErrors = input.diagnostics.filter((diag) => diag.file === path && isError(diag) && SPEC_CODES.has(diag.code));
 
   for (const diag of specErrors) {
@@ -236,6 +253,8 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
 
   gaps.push(...denyGaps(input, path, flows));
 
+  // Each `planned` must be implemented: K202 on its line says it is, K201 says
+  // it exists with another kind or signature; neither means no code yet.
   for (const item of planned) {
     const line = item.span.start.line;
     const col = item.span.start.col;
@@ -246,6 +265,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     else if (!implemented) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: `planned \`${item.id}\` is not implemented`, stage: "ready" });
   }
 
+  // Each step and `calls` target needs a static ok verdict at its line.
   for (const flow of flows) {
     for (const { id, span } of claimsOf(flow)) {
       // A dangling id is the spec's gap (K001 above); its missing static ok would only repeat it.
@@ -269,6 +289,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   const inherited: RuleFail[] = [];
   const ofThisChange = thisChange(input, path, idsIn(doc));
 
+  // Rule fails: this change's block (gap); inherited ones are only hints.
   for (const fail of ruleFails(input)) {
     const at = { id: fail.id, file: fail.file, line: fail.line, col: fail.col };
 
@@ -280,6 +301,9 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     }
   }
 
+  // A plan weakened since the base (removed planned/trigger/step/question)
+  // is a gap; so is any K108 weakening, except a removed step of this file,
+  // which `weakenedPlan` already reports more precisely.
   if (input.base !== undefined && input.base.state !== "unavailable") gaps.push(...weakenedPlan(input, path, input.base));
 
   for (const item of input.weakened ?? []) {
@@ -287,6 +311,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     gaps.push({ kind: "weakened", id: "K108", file: item.file, line: item.line, col: item.col, reason: `K108 ${item.message}`, stage: "structure" });
   }
 
+  // Hints for the `behavior` stage: a flow without a trigger, a flow without steps.
   for (const flow of flows) {
     const at = { file: path, line: flow.span.start.line, col: flow.span.start.col };
 
@@ -299,6 +324,8 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     if (!steps) hints.push({ kind: "steps", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no steps yet: add \`- step\`, \`- calls\`, \`- when\` or \`- invariant\``, stage: "behavior" });
   }
 
+  // Hints for the `structure` stage: a planned ID outside every layer, a
+  // planned fn without a signature.
   for (const item of planned) {
     const at = { file: path, line: item.span.start.line, col: item.span.start.col };
     const layer = item.id.split(".")[0]!;
@@ -312,6 +339,7 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     }
   }
 
+  // Deterministic order: gaps by kind, then position; hints by place.
   gaps.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.id, b.id) || compareText(a.reason, b.reason));
   // The feature file's own hints first, as they always came; an inherited rule fail elsewhere after them.
   const elsewhere = (hint: Hint): number => (hint.file === path ? 0 : 1);
@@ -349,6 +377,7 @@ interface RuleFail {
 
 /** Every rule fail of the analysis, in the order of its diagnostics, then its verdicts. */
 function ruleFails(input: FeatureInput): RuleFail[] {
+  // Rule diagnostics first, each named after the verdict that reports the same finding.
   const ruleDiags = input.diagnostics.filter((diag) => isError(diag) && RULE_CODES.has(diag.code));
 
   const fails: RuleFail[] = ruleDiags.map((diag) => {
@@ -357,6 +386,7 @@ function ruleFails(input: FeatureInput): RuleFail[] {
     return { id: owner?.area ?? diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, reason: diag.message, diag };
   });
 
+  // Then failed rule verdicts that no diagnostic already stands for.
   for (const verdict of input.verdicts) {
     if (verdict.verdict !== "fail" || FLOW.has(verdict.criterion) || sameFinding(verdict, ruleDiags)) continue;
     fails.push({ id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, reason: verdict.message, verdict });
@@ -378,8 +408,10 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
   if (input.changed === undefined) return () => true;
   const nodes = input.nodes ?? {};
   const slice = filterChanged({ docs: input.docs, spec: input.spec, diagnostics: input.diagnostics, verdicts: input.verdicts, nodes, edges: input.edges ?? [] }, input.changed.files, input.changed.deleted);
+  // What `check --changed` would keep, by identity of the finding.
   const kept = new Set<Diagnostic | Verdict>([...slice.diagnostics, ...slice.verdicts]);
 
+  // The nearest enclosing module of an ID, walking up one segment at a time.
   const moduleOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
       if (nodes[cur]?.kind === "module") return cur;
@@ -411,6 +443,8 @@ function thisChange(input: FeatureInput, path: string, named: readonly string[])
 
 /** The first stage that holds, from `done` down: see `Stage`. */
 function stageOf(hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]): Stage {
+  // Lowest open stage wins: any gap or hint of an earlier stage holds the
+  // feature there. With no `# flow` it is still an idea.
   if (gaps.length === 0) return "done";
 
   if (!hasFlow) return "idea";
@@ -437,6 +471,8 @@ const EXTERNAL_LAYER = "external";
 function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Gap[] {
   if (input.index === undefined || input.format === undefined) return [];
   const kindOf = dependencyKindOf(input.spec, input.index, input.nodes);
+  // Only planned IDs the code does not have yet are predicted; generated
+  // rule files get the "add an allow" advice, a person's rules do not.
   const pending = new Set(input.spec.planned.filter((item) => input.nodes?.[item.id] === undefined).map((item) => item.id));
   const generated = new Set(input.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
   const gaps: Gap[] = [];
@@ -447,8 +483,10 @@ function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Ga
     const rule = denyingRule(input.spec, from, to, kindOf, input.format);
     const key = `${from}\0${to}\0${span.start.line}`;
 
+    // One gap per pair and line, even when several flows repeat it.
     if (rule === null || seen.has(key)) return;
     seen.add(key);
+    // The proposed `allow` names layers (or a package), not whole IDs.
     const scope = (id: string): string => (id.startsWith(`${EXTERNAL_LAYER}.`) ? id.split(".").slice(0, 2).join(".") : id.split(".")[0]!);
 
     const what = generated.has(rule.file)
@@ -466,6 +504,8 @@ function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Ga
     });
   };
 
+  // Walk each flow tree, carrying the nearest enclosing trigger or step as
+  // the caller of every step and `calls` target below it.
   for (const flow of flows) {
     const visit = (item: Trigger | FlowItem, parent: string | null): void => {
       if (item.kind === "step") check(parent, item.target.target, item.span);
@@ -525,6 +565,8 @@ function weakenedPlan(input: FeatureInput, path: string, base: Extract<FeatureBa
 function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Document): { key: string; gap: Gap }[] {
   const base = compileSpec([baseDoc]).spec;
   const gaps: { key: string; gap: Gap }[] = [];
+  // A `planned` of the base gone from the file now is a gap unless the code
+  // implements it exactly (no mismatch).
   const kept = new Set(input.spec.planned.filter((item) => item.file === path).map((item) => item.id));
 
   for (const item of base.planned) {
@@ -538,6 +580,8 @@ function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Docume
     gaps.push({ key: `planned\0${item.id}`, gap: { kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason, stage: "ready" } });
   }
 
+  // Multiset of plan items now: each base item consumes one match, so a
+  // duplicate removed from two is still caught.
   const now = new Map<string, number>();
 
   for (const flow of input.spec.flows) if (flow.file === path) for (const { key } of planItems(flow)) now.set(key, (now.get(key) ?? 0) + 1);
@@ -568,6 +612,7 @@ function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Docume
   return gaps;
 }
 
+/** A flow item whose removal weakens a plan. */
 export type PlanItem = Trigger | FlowStep | QuestionItem;
 
 /** Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself. */
@@ -578,6 +623,8 @@ export function planItems(flow: Flow): { key: string; item: PlanItem }[] {
     const self =
       item.kind === "trigger" || item.kind === "step" ? `${item.kind} ${item.target.target}` : item.kind === "when" ? `when ${item.condition}` : item.kind === "question" ? `? ${item.question}` : item.kind;
 
+    // The key is the path from the flow name down: the same item under
+    // other parents is another item.
     const key = `${parents}\0${self}`;
 
     if (item.kind === "trigger" || item.kind === "step" || item.kind === "question") out.push({ key, item });
@@ -592,6 +639,7 @@ export function planItems(flow: Flow): { key: string; item: PlanItem }[] {
   return out;
 }
 
+/** The diagnostic with `code` on `line` of `file`, if any. */
 function finding(diagnostics: readonly Diagnostic[], file: string, line: number, code: string): Diagnostic | undefined {
   return diagnostics.find((diag) => diag.file === file && diag.span.start.line === line && diag.code === code);
 }

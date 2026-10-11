@@ -4,11 +4,17 @@
 // `#[AsCronTask]`, `#[AsPeriodicTask]`, `#[AsAlias]`), a literal
 // `getSubscribedEvents()` and the calls that dispatch an event or a message.
 // The prefixes of `config/routes.yaml` apply to the attribute routes.
+//
+// Pipeline: source → FileFacts (PHP extractor) → (this reader) → config facts
+// → graph bindings, observers, entry points and holes. Entry point:
+// `symfonyFacts`; key terms: attribute, listener/subscriber, message handler,
+// route prefix, dispatch.
 
 import type { FileFacts, LiteralFact } from "../extract/facts.ts";
 import type { ConfigAt, ConfigFacts, ConfigHole, EntryConfigFact, FrameworkConfig, RoutePrefixFact } from "../frameworks/adapter.ts";
 import { arg, cls, codeFacts, dispatchesIn, eventName, hasFacts, key, PhpCode, str, strings, type, type PhpClass } from "./php.ts";
 
+/** The `#[Route]` attribute under its current and its older (annotation) namespace. */
 const ROUTE = ["Symfony\\Component\\Routing\\Attribute\\Route", "Symfony\\Component\\Routing\\Annotation\\Route"];
 
 const AS_EVENT_LISTENER = "Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener";
@@ -30,6 +36,7 @@ const AS_ALIAS = "Symfony\\Component\\DependencyInjection\\Attribute\\AsAlias";
 /** A class name as Symfony writes it in a string: no leading `\`, single separators. */
 const CLASS_NAME = /^\\?[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*(\\+[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*)+$/;
 
+/** A class name from a string: trimmed, single `\` separators, no leading `\`. */
 function className(written: string): string {
   return written.trim().replace(/\\+/g, "\\").replace(/^\\/, "");
 }
@@ -39,6 +46,7 @@ export function symfonyFacts(files: readonly FileFacts[], configs: readonly Conf
   const code = new PhpCode(files);
   const out = new Map<string, ConfigFacts>();
 
+  // The facts of a file, created on first use, so only files that say something are kept.
   const at = (path: string): ConfigFacts => {
     let facts = out.get(path);
 
@@ -48,6 +56,7 @@ export function symfonyFacts(files: readonly FileFacts[], configs: readonly Conf
   };
 
   const prefixes: RoutePrefixFact[] = configs.flatMap((c) => c.routePrefixes ?? []);
+  // Classes in file and line order, so the facts of each file come out in a stable order.
   const classes = [...code.classes.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.decl.line - b.decl.line));
 
   for (const c of classes) {
@@ -60,19 +69,23 @@ export function symfonyFacts(files: readonly FileFacts[], configs: readonly Conf
     aliases(c, facts);
   }
 
+  // Dispatches are per call site, not per class: scan every PHP file.
   for (const file of code.files) {
     for (const d of dispatchesIn(code, file)) at(file.path).dispatches!.push({ symbol: d.symbol, event: d.event, text: d.call.callee, line: d.call.line, col: d.call.col, endLine: d.call.endLine, endCol: d.call.endCol });
   }
 
+  // Files that wire nothing are dropped; the rest sorted by path for stable output.
   return [...out.values()].filter(hasFacts).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).map((facts) => ({ facts, owner: null }));
 }
 
+/** The attributes of a declaration with one of `names`, compared as PHP class names. */
 function attributes(decl: { attributes?: { name: string; args: { name?: string; value: LiteralFact }[]; line: number; col: number }[] }, names: readonly string[]) {
   return (decl.attributes ?? []).filter((a) => names.some((n) => key(n) === key(a.name)));
 }
 
 /** `#[Route]` on the class (a prefix) and on its public methods; `__invoke` for one on an invokable class. */
 function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixFact[]): void {
+  // Of the `config/routes.yaml` imports whose directory holds the file, the last one written gives the prefix.
   const prefix = prefixes.flatMap((p) => (c.file === p.dir || c.file.startsWith(`${p.dir}/`) ? [p.prefix] : [])).at(-1) ?? "";
   const own = attributes(c.decl, ROUTE);
   const base = str(arg(own[0]?.args, "path", 0)) ?? "";
@@ -80,6 +93,7 @@ function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixF
   const add = (attribute: (typeof own)[number], method: string): void => {
     const path = str(arg(attribute.args, "path", 0));
 
+    // No literal path: a per-locale path map is reported as a hole, anything else is skipped.
     if (path === null) {
       const localized = arg(attribute.args, "path", 0);
 
@@ -91,6 +105,7 @@ function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixF
     const full = joinPath([prefix, base, path]);
     const methods = strings(arg(attribute.args, "methods", null)).map((m) => m.toUpperCase());
 
+    // One entry per HTTP method, or one for any method when none is written.
     for (const m of methods.length > 0 ? methods : [null]) {
       const entry: Omit<EntryConfigFact, keyof ConfigAt> = { kind: "route", label: m === null ? full : `${m} ${full}`, files: [], fn: method, type: type(c.qualified) };
 
@@ -107,6 +122,7 @@ function routes(c: PhpClass, facts: ConfigFacts, prefixes: readonly RoutePrefixF
   }
 }
 
+/** Join URL parts into one absolute path without empty or doubled slashes. */
 function joinPath(parts: readonly string[]): string {
   const segments = parts.flatMap((p) => p.split("/")).filter((s) => s !== "");
 
@@ -119,6 +135,7 @@ function listeners(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
     facts.observers!.push({ event, name: c.name, instance: type(c.qualified), method, disabled: false, line: at.line, col: at.col });
   };
 
+  // A listener without an explicit event listens to the type of its method's first parameter.
   const firstParam = (method: string): string | null => c.decl.members.find((m) => m.name === method)?.params?.[0]?.type ?? null;
 
   for (const attribute of attributes(c.decl, [AS_EVENT_LISTENER])) {
@@ -138,6 +155,7 @@ function listeners(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
     }
   }
 
+  // Subscribers: only a literal array returned by `getSubscribedEvents()` is read.
   if (!code.implements(c, EVENT_SUBSCRIBER)) return;
   const subscribed = c.decl.members.find((m) => m.name.toLowerCase() === "getsubscribedevents");
 
@@ -180,6 +198,7 @@ function handlers(c: PhpClass, facts: ConfigFacts): void {
 /** `#[AsCommand('app:x')]` (or `$defaultName`) on a command: `execute`, or `__invoke` of an invokable command. */
 function commands(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
   const attribute = attributes(c.decl, [AS_COMMAND])[0];
+  // The command name comes from `#[AsCommand]`, else a static `$defaultName` on a `Command` subclass.
   const name = str(arg(attribute?.args, "name", 0)) ?? (code.extends(c, COMMAND) ? str((c.decl.properties ?? []).find((p) => p.name === "defaultName")?.value) : null);
 
   if (name === null) return;
@@ -192,12 +211,14 @@ function commands(code: PhpCode, c: PhpClass, facts: ConfigFacts): void {
     return;
   }
 
+  // `a|b` lists aliases after the name: the first is the command.
   facts.entries!.push({ kind: "cli", label: name.split("|")[0]!, files: [], fn: method.decl.name, type: type(method.cls.qualified), line: at.line, col: at.col });
 }
 
 /** `#[AsCronTask('0 3 * * *')]`, `#[AsPeriodicTask('1 hour')]` on the class (`__invoke`, or `method:`) or a method: cron. */
 function tasks(c: PhpClass, facts: ConfigFacts): void {
   const add = (attribute: { args: { name?: string; value: LiteralFact }[]; line: number; col: number; name: string }, method: string): void => {
+    // The schedule argument is `expression` for a cron task, `frequency` for a periodic one.
     const when = str(arg(attribute.args, key(attribute.name) === key(AS_CRON_TASK) ? "expression" : "frequency", 0));
     facts.entries!.push({ kind: "cron", label: `${c.qualified}::${method}${when ? ` (${when})` : ""}`, files: [], fn: method, type: type(c.qualified), line: attribute.line, col: attribute.col });
   };
@@ -210,6 +231,7 @@ function tasks(c: PhpClass, facts: ConfigFacts): void {
 /** `#[AsAlias(I::class)]` on a class: a binding `I → class`; without an id, the one interface the class implements. */
 function aliases(c: PhpClass, facts: ConfigFacts): void {
   for (const attribute of attributes(c.decl, [AS_ALIAS])) {
+    // The alias id: an `I::class` literal, or a string that is a class name.
     const id = cls(arg(attribute.args, "id", 0)) ?? (str(arg(attribute.args, "id", 0)) !== null && CLASS_NAME.test(str(arg(attribute.args, "id", 0))!) ? className(str(arg(attribute.args, "id", 0))!) : null);
     const from = id ?? (c.implements.length === 1 ? c.implements[0]! : null);
 

@@ -3,6 +3,9 @@
 // the marker belongs to someone else and is never rewritten. Git runs a hook
 // from the top of the work tree, so the hook first enters the keylang root
 // (`keylang.json` may live in a package below the top level).
+//
+// CLI side, outside the language pipelines: the CLI's `hook` command calls it.
+// Entry points: `preCommitText`, `preCommitState`, `gitHooksDir`.
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -33,6 +36,7 @@ export function preCommitText(version: string, subdir = ""): string {
 /** `missing`: no file; `foreign`: a hook without keylang's marker; `stale`: keylang's, but other text or not executable. */
 export type PreCommitState = "missing" | "foreign" | "stale" | "current";
 
+/** Classify the existing hook file (`null` when absent) against the text this version would write. */
 export function preCommitState(current: string | null, executable: boolean, version: string, subdir = ""): PreCommitState {
   if (current === null) return "missing";
 
@@ -58,6 +62,7 @@ export function gitTopLevel(cwd: string): string {
   return git(cwd, ["rev-parse", "--show-toplevel"]);
 }
 
+/** Run git in `cwd` and return its trimmed stdout; any failure becomes an error naming the command. */
 function git(cwd: string, args: string[]): string {
   const run = spawnSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
 

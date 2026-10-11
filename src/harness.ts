@@ -7,6 +7,12 @@
 // the shared `agents` operation runs: a plan read from the disk (nothing
 // written), then a commit that checks the plan's inputs again and writes
 // step by step.
+//
+// Outside the language pipelines: the CLI's `init`/`agents` (and the TUI and web
+// that run them) install keylang into agent harnesses (Claude, Codex,
+// opencode, Cursor). Entry points: `planHarness` (pure merge), `planAgents`,
+// `agentsPlanProblems`, `commitAgents`; key terms: harness, managed block,
+// MCP entry, deny rules, Stop hook.
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -38,8 +44,10 @@ export function skillFile(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "../resources/keylang-feature/SKILL.md");
 }
 
+/** The harnesses keylang knows, in the order detection and selection list them. */
 export const HARNESS_NAMES = ["claude", "codex", "opencode", "cursor"] as const;
 
+/** One harness name. */
 export type HarnessName = (typeof HARNESS_NAMES)[number];
 
 /** A harness file after a merge: its text, null when the file goes away. */
@@ -50,6 +58,7 @@ interface MergedText {
 /** A merge, or why the file cannot be merged. */
 type MergeResult = MergedText | { error: string };
 
+/** The markers around keylang's managed block in AGENTS.md / CLAUDE.md. */
 export const MARK_BEGIN = "<!-- keylang:begin -->";
 
 export const MARK_END = "<!-- keylang:end -->";
@@ -97,22 +106,26 @@ function specDir(root: string): string {
   return parseConfig(file, readFileSync(file, "utf8")).dir ?? DEFAULT_SPEC_DIR;
 }
 
+/** Where the shipped skill is copied for agents in general and for Claude. */
 const SKILL_AGENTS = ".agents/skills/keylang-feature/SKILL.md";
 
 const SKILL_CLAUDE = ".claude/skills/keylang-feature/SKILL.md";
 
+/** Which harnesses to configure, and whether keylang's instructions are installed at all. */
 export interface HarnessSelection {
   harnesses: readonly HarnessName[];
   /** False only for `--agents=none`: no instruction block and no adapter files. */
   instructions: boolean;
 }
 
+/** One harness file's desired text. */
 export interface HarnessFile {
   path: string;
   /** Null when the file should be absent. */
   text: string | null;
 }
 
+/** The desired files, or the first file that cannot be merged (then nothing may be written). */
 export interface HarnessPlan {
   files: HarnessFile[];
   error: { file: string; message: string } | null;
@@ -120,6 +133,7 @@ export interface HarnessPlan {
 
 /** `--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names. */
 export function parseAgents(value: string): HarnessSelection {
+  // Comma-separated, blanks ignored; `none` must stand alone.
   const names = value.split(",").map((part) => part.trim()).filter((part) => part !== "");
   const allowed = `${HARNESS_NAMES.join(", ")}, or none`;
 
@@ -135,6 +149,7 @@ export function parseAgents(value: string): HarnessSelection {
 
   if (unknown !== undefined) throw new Error(`unknown agent \`${unknown}\`; expected ${allowed}`);
 
+  // Canonical order, duplicates gone.
   return { harnesses: HARNESS_NAMES.filter((name) => names.includes(name)), instructions: true };
 }
 
@@ -163,8 +178,10 @@ export function detectHarnesses(probe: HarnessProbe): HarnessName[] {
   return found;
 }
 
+/** The skill directory `agents` writes under `.claude`, which does not by itself mean Claude is in use. */
 const CLAUDE_SKILL = ".claude/skills/keylang-feature";
 
+/** Claude is in use when `.claude` exists and is empty, or holds anything besides keylang's skill copy. */
 function claudePresent(probe: HarnessProbe): boolean {
   const top = probe.list(".claude");
 
@@ -181,6 +198,7 @@ function claudeHasUserFile(probe: HarnessProbe, dir: string): boolean {
 
   if (names === null) return false;
 
+  // Depth-first: any file outside the skill copy is the person's.
   for (const name of names) {
     const path = `${dir}/${name}`;
 
@@ -280,6 +298,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
     return null;
   };
 
+  // Instructions first (AGENTS.md always, CLAUDE.md for Claude or when stripping), then per-harness files.
   const selected = new Set(input.selection.harnesses);
   const owned = input.selection.instructions && selected.size > 0;
   const agents = mergeMarked(input.files.get("AGENTS.md") ?? null, input.selection.instructions ? body : null);
@@ -299,6 +318,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
     if (stoppedClaude) return stoppedClaude;
   }
 
+  // An MCP JSON file: written for a selected harness; for an unselected one only when stripping an existing file.
   const mcp = (path: string, present: boolean): HarnessPlan | null => {
     if (!present && input.selection.instructions) return null;
 
@@ -336,6 +356,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
     if (stoppedOpen) return stoppedOpen;
   }
 
+  // The skill copies: pinned and written when anything is installed, removed on `--agents=none`.
   if (owned) {
     const pinned = pinSkill(input.skill, input.version, input.dir);
     const skill = pinned.endsWith("\n") ? pinned : `${pinned}\n`;
@@ -371,6 +392,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
 export function mergeMarked(existing: string | null, body: string | null): MergeResult {
   const nl: "\n" | "\r\n" = existing !== null && allCrlf(existing) ? "\r\n" : "\n";
 
+  // Validate the markers before touching anything: a half or doubled block is the person's to fix.
   if (existing !== null) {
     const begin = existing.indexOf(MARK_BEGIN);
     const end = existing.indexOf(MARK_END);
@@ -399,12 +421,14 @@ export function mergeMarked(existing: string | null, body: string | null): Merge
   if (body === null) return { text: existing };
   const block = marked(body, nl);
 
+  // Append the block after the existing text, adding a newline only when the file lacks a final one.
   if (existing === null || existing === "") return { text: `${block}${nl}` };
   const sep = existing.endsWith("\n") ? "" : nl;
 
   return { text: `${existing}${sep}${block}${nl}` };
 }
 
+/** The block with its markers, in the file's newline style. */
 function marked(body: string, nl: "\n" | "\r\n"): string {
   const inner = body.replace(/\r?\n/g, nl);
 
@@ -425,10 +449,12 @@ function mergeClaude(existing: string | null): MergeResult {
   return mergeMarked(existing, "@AGENTS.md");
 }
 
+/** Narrows `outsideMarkers`' result to its error. */
 function isMarkersError(outside: string | { error: string }): outside is { error: string } {
   return typeof outside !== "string";
 }
 
+/** The text of a file without keylang's block (empty for no file), or the marker error. */
 function outsideMarkers(existing: string | null): string | { error: string } {
   if (existing === null) return "";
   const begin = existing.indexOf(MARK_BEGIN);
@@ -443,6 +469,7 @@ function outsideMarkers(existing: string | null): string | { error: string } {
   return `${existing.slice(0, begin)}${existing.slice(end + MARK_END.length)}`;
 }
 
+/** `.mcp.json` / `.cursor/mcp.json`: the `mcpServers.keylang` entry (null version: remove it). */
 function mergeMcpJson(existing: string | null, version: string | null): MergeResult {
   return mergeJsonKey(existing, ["mcpServers"], version === null ? null : mcpCommand(version));
 }
@@ -496,6 +523,7 @@ function mergeCodexToml(existing: string | null, version: string | null): MergeR
   const lines = text.split("\n");
   const region = codexTableRegion(lines);
 
+  // Removal: cut the table's lines when it is written as a table, else re-serialize; the result must parse without the entry.
   if (version === null) {
     if (own === undefined) return { text: existing };
 
@@ -514,6 +542,7 @@ function mergeCodexToml(existing: string | null, version: string | null): MergeR
   const table = stringifyToml({ mcp_servers: { keylang: entry } }).replace(/\n$/, "");
   let next: string;
 
+  // Install: replace the table's lines in place, re-serialize when it is spelled another way, or append it.
   if (region !== null) next = [...lines.slice(0, region.start), ...table.split("\n"), ...lines.slice(region.end)].join("\n");
   else if (own !== undefined) return rewriteCodexToml(data, entry);
   else {
@@ -533,6 +562,7 @@ function codexTableRegion(lines: readonly string[]): { start: number; end: numbe
   if (start === -1) return null;
   let end = start + 1;
 
+  // The region runs to the next table header that is not one of keylang's sub-tables.
   while (end < lines.length && (!TOML_HEADER.test(lines[end]!) || CODEX_SUBTABLE.test(lines[end]!))) end += 1;
 
   return { start, end };
@@ -543,6 +573,7 @@ function withoutLines(lines: readonly string[], region: { start: number; end: nu
   const out = [...lines.slice(0, region.start), ...lines.slice(region.end)];
   let at = region.start;
 
+  // Collapse the blank lines that now meet at the cut (or trail at the end).
   while (at > 0 && out[at - 1]!.trim() === "" && (at >= out.length || out[at]!.trim() === "")) {
     out.splice(at - 1, 1);
     at -= 1;
@@ -581,6 +612,7 @@ function rewriteCodexToml(data: TomlTable, entry: TomlTable | null): MergedText 
   return { text: text.endsWith("\n") ? text : `${text}\n` };
 }
 
+/** `.claude/settings.json`: keylang's deny rules and its Stop hook, added or removed; a file without them is left as is on removal. */
 function mergeSettings(existing: string | null, version: string | null, dir: string): MergeResult {
   const parsed = parseObject(existing);
 
@@ -604,6 +636,7 @@ function mergeSettings(existing: string | null, version: string | null, dir: str
   return finishJson(data);
 }
 
+/** `.codex/hooks.json`: keylang's Stop hook, added or removed. */
 function mergeHooksFile(existing: string | null, version: string | null): MergeResult {
   const parsed = parseObject(existing);
 
@@ -637,6 +670,7 @@ function mergeDeny(permissions: JsonValue | undefined, install: boolean, dir: st
 
   if (deny !== undefined && !deny.every(isJsonString)) return { error: "permissions.deny must be strings" };
   const own = denyRules(dir);
+  // Entries to drop: on removal all of keylang's (this dir and the default); on install only the default dir's that are not this dir's.
   const old = new Set([...own, ...denyRules(DEFAULT_SPEC_DIR)].filter((rule) => !install || !own.includes(rule)));
   const list = (deny ?? []).filter((item): item is string => isJsonString(item) && !old.has(item));
 
@@ -648,6 +682,7 @@ function mergeDeny(permissions: JsonValue | undefined, install: boolean, dir: st
   return { value: Object.keys(perms).length === 0 ? undefined : perms };
 }
 
+/** The `hooks` object with keylang's Stop hook re-pinned, added or removed; other hooks and groups stay. */
 function mergeHooksValue(hooks: JsonValue | undefined, version: string | null): { value: JsonObject | undefined } | { error: string } {
   if (hooks === undefined && version === null) return { value: undefined };
 
@@ -665,10 +700,12 @@ function mergeHooksValue(hooks: JsonValue | undefined, version: string | null): 
     next.push(rewritten.value);
   }
 
+  // Add our hook in a group of its own when no group already runs it.
   if (version !== null && !next.some((group) => JSON.stringify(group).includes(hookCommand(version)))) {
     next = [...next, { hooks: [{ type: "command", command: hookCommand(version) }] }];
   }
 
+  // A group emptied by the removal goes when nothing but `hooks`/`matcher` was in it.
   next = next.filter((group) => !emptyGroup(group));
 
   if (next.length === 0) delete value.Stop;
@@ -677,6 +714,7 @@ function mergeHooksValue(hooks: JsonValue | undefined, version: string | null): 
   return { value: Object.keys(value).length === 0 ? undefined : value };
 }
 
+/** One `hooks.Stop` group with keylang's hook command re-pinned to `version`, or dropped when `version` is null. */
 function rewriteGroup(group: JsonValue, version: string | null): { value: JsonObject } | { error: string } {
   if (!isJsonObject(group)) return { error: "hooks.Stop entry is not an object" };
   const list = group.hooks;
@@ -698,10 +736,12 @@ function rewriteGroup(group: JsonValue, version: string | null): { value: JsonOb
   return { value: { ...group, hooks } };
 }
 
+/** A Stop group with no hooks and nothing else of the person's in it. */
 function emptyGroup(group: JsonObject): boolean {
   return Array.isArray(group.hooks) && group.hooks.length === 0 && Object.keys(group).every((key) => key === "hooks" || key === "matcher");
 }
 
+/** A hook command that runs keylang's `hook stop`, any version. */
 function isOurHook(command: string): boolean {
   return /keylang(?:@\S+)? hook stop/.test(command);
 }
@@ -716,12 +756,14 @@ function holdsKeylangSettings(data: JsonObject, dir: string): boolean {
   return holdsOurHook(data.hooks);
 }
 
+/** Whether a `hooks` object has keylang's Stop hook in any group. */
 function holdsOurHook(hooks: JsonValue | undefined): boolean {
   const stop = isJsonObject(hooks) ? hooks.Stop : undefined;
 
   return Array.isArray(stop) && stop.some((group) => isJsonObject(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isJsonObject(hook) && isJsonString(hook.command) && isOurHook(hook.command)));
 }
 
+/** Set or remove `keylang` under the top-level key `path[0]` of a JSON file; the rest is re-serialized as is. */
 function mergeJsonKey(existing: string | null, path: readonly string[], server: JsonValue, jsonc = false): MergeResult {
   const parsed = parseObject(existing, jsonc);
 
@@ -759,12 +801,14 @@ function parseObject(existing: string | null, jsonc = false): { value: JsonObjec
   }
 }
 
+/** Pretty JSON with a final newline; an empty object means the file goes. */
 function finishJson(data: JsonObject): MergedText {
   if (Object.keys(data).length === 0) return { text: null };
 
   return { text: `${JSON.stringify(data, null, 2)}\n` };
 }
 
+/** The opencode config to edit: an existing `opencode.json`, else an existing `.jsonc`, else a new `opencode.json`. */
 function opencodeFile(files: ReadonlyMap<string, string | null>): string {
   if (files.get("opencode.json") != null) return "opencode.json";
 
@@ -773,6 +817,7 @@ function opencodeFile(files: ReadonlyMap<string, string | null>): string {
   return "opencode.json";
 }
 
+/** Narrows a string to a known harness name. */
 function isHarnessName(name: string): name is HarnessName {
   return HARNESS_NAMES.some((harness) => harness === name);
 }
@@ -804,6 +849,7 @@ export function keylangVersion(): string {
 /** What a harness file is for, as a step before the write names it. */
 export type HarnessCategory = "instructions" | "mcp" | "skill" | "settings" | "hooks";
 
+/** The category of a harness path, for step names and reports. */
 export function harnessCategory(path: string): HarnessCategory {
   if (path === "AGENTS.md" || path === "CLAUDE.md") return "instructions";
 
@@ -890,6 +936,7 @@ export function planAgents(root: string, choice: HarnessChoice): AgentsPlan {
   const plan = planHarness({ selection, version, dir, skill, files: inputs });
   const targets: HarnessTarget[] = [];
 
+  // Compare with what is on disk, ignoring CRLF vs LF, to tell `keep` from `write`/`remove`.
   for (const file of plan.files) {
     const current = inputs.get(file.path) ?? null;
     const same = current === null ? file.text === null : file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n");
@@ -899,6 +946,7 @@ export function planAgents(root: string, choice: HarnessChoice): AgentsPlan {
   return { root, choice, selection, version, dir, targets, error: plan.error, inputs };
 }
 
+/** The current text of every harness path under `root` (null: absent). */
 function readInputs(root: string): Map<string, string | null> {
   return new Map<string, string | null>(HARNESS_PATHS.map((path) => [path, existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : null]));
 }
@@ -915,6 +963,7 @@ export function agentsPlanProblems(plan: AgentsPlan): string[] {
   const problems: string[] = [];
   const now = readInputs(plan.root);
 
+  // First: the disk must still hold exactly what the plan read; any drift stops the commit.
   for (const path of HARNESS_PATHS) {
     const before = plan.inputs.get(path) ?? null;
     const after = now.get(path) ?? null;
@@ -929,6 +978,7 @@ export function agentsPlanProblems(plan: AgentsPlan): string[] {
 
   if (problems.length > 0) return problems;
 
+  // Then each changed target must pass the safe-write rules.
   for (const target of plan.targets) {
     if (target.action === "keep") continue;
     const problem = target.action === "write" ? writeProblem(plan.root, target.path, { expect: plan.inputs.get(target.path) ?? null }) : targetProblem(plan.root, target.path);

@@ -1,6 +1,11 @@
 // `keylang.json`: what to index, how files map to layers, where specs live.
 // Without a config file the layout is guessed from the directory tree
 // (`keylang init` writes that guess down so it can be edited).
+// Shared by every pipeline: it decides which source files are analysed and
+// their layer (source → FileFacts → graph), where the specs live
+// (Markdown → IR), and the options of check, explain, the TUI and agents.
+// Entry points: `loadConfig`, `parseConfig`, `classifySources`, `guessLayout`,
+// `layerName`, `evidenceFiles`, `withLayers`.
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
@@ -23,6 +28,7 @@ export type RuleFormat = 1 | 2;
  */
 export type StaticMode = "behavior" | "shape";
 
+/** Every static mode, for validation and help. */
 export const STATIC_MODES: readonly StaticMode[] = ["behavior", "shape"];
 
 /** Who chose the static mode. Absent when nobody set it and the mode is `behavior`. */
@@ -43,6 +49,7 @@ export function resolveStatic(flag: StaticMode | undefined, configured: StaticMo
   return { mode: "behavior" };
 }
 
+/** A validated, defaulted configuration: everything a run needs, with the root it applies to. */
 export interface Config {
   /** Repository root (directory of `keylang.json`). Absolute. */
   root: string;
@@ -132,6 +139,7 @@ export const AGENT_FORMS = '"anthropic:<model>", "openrouter:<model>" or "cli:<n
 // `--`/`<`/`>` would break `<!-- keylang:explain agent=… -->`.
 const MODEL = String.raw`(?!-)(?!.*--)[^\s<>]+`;
 
+// A provider-prefixed model, or a `cli:<name>` agent with an optional model.
 const AGENT_PATTERN = new RegExp(String.raw`^(?:anthropic|openrouter):${MODEL}$|^cli:[a-z][a-z0-9-]*(?::${MODEL})?$`);
 
 /** `agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it. */
@@ -144,6 +152,7 @@ export function isCliAgent(agent: string | null): boolean {
   return agent !== null && agent.startsWith("cli:");
 }
 
+/** The config file's name at the repository root. */
 export const CONFIG_FILE = "keylang.json";
 
 /**
@@ -207,6 +216,7 @@ function skipDir(abs: string, name: string): boolean {
   return name.startsWith(".") || SKIP_DIRS.has(name) || existsSync(join(abs, ".git"));
 }
 
+/** `keylang.json` as written and validated: every field optional, before defaults. */
 export interface RawConfig {
   format?: RuleFormat;
   dir?: string;
@@ -238,6 +248,7 @@ export function loadConfig(root: string): Config {
   const exclude = raw.exclude ?? [];
   const outside = raw.outside ?? [];
   const assume = raw.assume ?? [];
+  // Explicit layers win; otherwise guess them from the directory tree, skipping what exclude/outside/assume name.
   let layers: Map<string, string[]>;
   let guessed = false;
 
@@ -250,6 +261,7 @@ export function loadConfig(root: string): Config {
 
   return {
     root,
+    // A file without `format` is the old edition 1; no file at all gets the current one.
     format: fileExists ? (raw.format ?? 1) : CURRENT_FORMAT,
     dir: raw.dir ?? "keylang",
     languages,
@@ -300,6 +312,8 @@ export function parseConfig(file: string, text: string): RawConfig {
     throw new Error(`${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Validation helpers: `fail` throws a message naming the file, the field, what
+  // was expected and what was found; `validGlob` checks a glob compiles.
   const fail = (field: string, expected: string, got: JsonValue | undefined): never => {
     throw new Error(`${file}: \`${field}\` must be ${expected}, got ${JSON.stringify(got)}`);
   };
@@ -315,6 +329,7 @@ export function parseConfig(file: string, text: string): RawConfig {
   };
 
   if (!isJsonObject(value)) return fail("(root)", "an object", value);
+  // Unknown top-level fields are errors: a typo must not be silently ignored.
   const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "frameworks", "check", "agent", "explain", "ghost", "assistant", "voice", "integrations", "sfcc", "migration"]);
 
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
@@ -332,6 +347,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     raw.dir = normal.replace(/\/+$/, "") || ".";
   }
 
+  // Each field below: check its shape and values, then copy it to `raw`.
   if (value.languages !== undefined) {
     const list = value.languages;
 
@@ -401,6 +417,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     if (!isJsonObject(value.check)) return fail("check", "an object", value.check);
     const check: NonNullable<RawConfig["check"]> = {};
 
+    // `check` holds two evidence paths and the static mode; nothing else.
     for (const [key, path] of Object.entries(value.check)) {
       if (key === "static") {
         if (path === "behavior" || path === "shape") check.static = path;
@@ -427,6 +444,7 @@ export function parseConfig(file: string, text: string): RawConfig {
 
     for (const [key, v] of Object.entries(value.ghost)) {
       if (key !== "delay") throw new Error(`${file}: unknown field \`ghost.${key}\``);
+      // An integer between 0 and 10 s, or null for the default.
       ghost.delay = v === null || (isJsonNumber(v) && Number.isInteger(v) && v >= 0 && v <= 10000) ? v : fail("ghost.delay", "milliseconds from 0 to 10000, or null for the default", v);
     }
 
@@ -463,6 +481,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     const explain: NonNullable<RawConfig["explain"]> = {};
 
     for (const [key, v] of Object.entries(value.explain)) {
+      // A BCP-47-like code: two or three lowercase letters, optional region/script.
       if (key === "lang") explain.lang = isJsonString(v) && /^[a-z]{2,3}(-[A-Za-z0-9]+)?$/.test(v) ? v : fail("explain.lang", "a language code such as \"uk\"", v);
       else if (key === "detail") explain.detail = v === "short" || v === "full" ? v : fail("explain.detail", '"short" or "full"', v);
       else if (key === "map") explain.map = isJsonBoolean(v) ? v : fail("explain.map", "true or false", v);
@@ -557,6 +576,7 @@ export function assertFormatOnly(file: string, text: string): void {
 
 /** The config as it would be written by `keylang init`. */
 export function configToJson(c: Config): string {
+  // Always the core fields; optional ones only when they differ from the default, so a fresh config stays short.
   const out: RawConfig & { $schema?: string } = {
     format: c.format,
     languages: c.languages,
@@ -612,6 +632,7 @@ export interface SourceTree {
   unreadable: SourceClasses["unreadable"];
 }
 
+/** The analysed files and the directories that could not be listed. */
 export function sourceTree(c: Config): SourceTree {
   const sources = classifySources(c);
 
@@ -636,6 +657,7 @@ export interface SourceClasses {
 export function classifySources(c: Config): SourceClasses {
   const sources: SourceClasses = { analysed: [], excluded: [], outside: [], assumed: [], unreadable: [] };
 
+  // One walk; each file goes into the class `sourceClass` gives it, or nowhere.
   for (const rel of walkSources(c, sources.unreadable)) {
     const kind = sourceClass(rel, c);
 
@@ -670,10 +692,12 @@ export function isAssumed(rel: string, c: Pick<Config, "assume">): boolean {
   return matchesAny(rel, c.assume);
 }
 
+/** A path `outside` names. */
 export function isOutside(rel: string, outside: readonly string[]): boolean {
   return matchesAny(rel, outside);
 }
 
+/** Whether any glob matches `rel`. */
 function matchesAny(rel: string, globs: readonly string[]): boolean {
   return firstMatchingGlob(rel, globs) !== null;
 }
@@ -689,6 +713,8 @@ function matchesAny(rel: string, globs: readonly string[]): boolean {
 export function layerGlobWarnings(c: Pick<Config, "layers">, files: readonly string[]): string[] {
   const layers = [...c.layers];
   const matched = new Set<string>();
+  // For every file: which globs match (to find unmatched globs later) and, when
+  // two layers match, count the overlap under (winning layer, glob, other layer).
   const overlaps = new Map<string, { winner: number; glob: number; other: number; count: number; example: string }>();
 
   for (const file of files) {
@@ -721,6 +747,7 @@ export function layerGlobWarnings(c: Pick<Config, "layers">, files: readonly str
 
   const name = (layer: number): string => layers[layer]![0];
 
+  // Overlaps in config order, then globs that matched nothing.
   const warnings = [...overlaps.values()]
     .sort((a, b) => a.winner - b.winner || a.glob - b.glob || a.other - b.other)
     .map(
@@ -747,6 +774,8 @@ function walkSources(c: Config, unreadable: { dir: string; reason: string }[]): 
   const out: string[] = [];
   const specDir = c.dir.replace(/\/$/, "");
 
+  // Depth-first walk. An unreadable subdirectory (permission) is a hole recorded
+  // in `unreadable`; any other error, or an unreadable root, is fatal.
   const walk = (abs: string, rel: string): void => {
     let listed: Dirent[];
 
@@ -761,6 +790,7 @@ function walkSources(c: Config, unreadable: { dir: string; reason: string }[]): 
       return;
     }
 
+    // Names in code-unit order, so the file list (and the snapshot) is the same on every OS.
     const entries = listed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
     for (const e of entries) {
@@ -793,6 +823,7 @@ export function evidenceFiles(c: Config, field: "tests" | "trace"): string[] | n
 
   if (pattern === undefined) return null;
 
+  // A plain path must exist; a glob is expanded under its literal prefix.
   if (!/[*?{[]/.test(pattern)) {
     if (!existsSync(join(c.root, pattern))) throw new Error(`${join(c.root, CONFIG_FILE)}: check.${field}: no such file \`${pattern}\``);
 
@@ -818,10 +849,12 @@ export function evidenceFiles(c: Config, field: "tests" | "trace"): string[] | n
   return out.sort();
 }
 
+/** Whether the built-in list or the given globs leave `rel` out. */
 export function isExcluded(rel: string, extra: readonly string[]): boolean {
   return matchesAny(rel, DEFAULT_EXCLUDE) || matchesAny(rel, extra);
 }
 
+/** A path with backslashes turned into `/`, as artifacts store paths. */
 export function toPosix(p: string): string {
   return p.split("\\").join("/");
 }
@@ -837,6 +870,7 @@ export function specPath(dir: string, rest: string): string {
   return dir === "." || dir === "" ? rest : `${dir}/${rest}`;
 }
 
+/** The languages of source files found up to four levels deep (declaration files aside), sorted. */
 function detectLanguages(root: string): Language[] {
   const found = new Set<Language>();
 
@@ -883,12 +917,14 @@ export interface GuessedLayout {
   notes: string[];
 }
 
+/** The guessed layers of `root` and notes on renamed layers (see `guessLayers`). */
 export function guessLayout(root: string, exclude: readonly string[]): GuessedLayout {
   const srcRoot = sourceRoot(root, exclude);
   const layers = new Map<string, string[]>();
   const owners = new Map<string, string>();
   const notes: string[] = [];
 
+  // Add a layer under a free name, noting why when the wanted name was reserved or taken.
   const add = (wanted: string, what: string, globs: string[]): void => {
     const name = freeLayerName(wanted, layers);
 
@@ -909,6 +945,7 @@ export function guessLayout(root: string, exclude: readonly string[]): GuessedLa
 
   const base = srcRoot ? `${srcRoot}/` : "";
 
+  // One layer per directory with code under the source root, then `main` for its loose files.
   for (const { name, rel } of layerDirs(root, srcRoot, exclude)) add(layerName(name), `\`${rel}/\``, [`${rel}/**`]);
 
   if (hasRootFiles(root, srcRoot, exclude)) add("main", srcRoot ? `the files in \`${srcRoot}/\`` : "the files in the repository root", [`${base}*`]);
@@ -954,6 +991,7 @@ function composerSourceRoot(root: string): string | null {
   if (!isJsonObject(psr4)) return null;
   const dirs = new Set<string>();
 
+  // Collect every PSR-4 directory; any non-string value means we cannot tell.
   for (const value of Object.values(psr4)) {
     for (const dir of Array.isArray(value) ? value : [value]) {
       if (!isJsonString(dir)) return null;
@@ -963,6 +1001,7 @@ function composerSourceRoot(root: string): string | null {
 
   const [only] = dirs;
 
+  // Only one plain directory inside the repository counts as the source root.
   if (dirs.size !== 1 || only === undefined || only === "" || only === "." || only.startsWith("..") || only.includes("*")) return null;
 
   return existsSync(join(root, only)) && statSync(join(root, only)).isDirectory() ? only : null;
@@ -979,6 +1018,7 @@ function layerDirs(root: string, dir: string, exclude: readonly string[]): { nam
 
     if (!e.isDirectory() || skipDir(join(root, rel), e.name) || e.name === "keylang") continue;
 
+    // Top-level bench and example code is not architecture; test directories never are.
     if (!dir && (e.name === "bench" || e.name === "examples")) continue;
 
     if (matchesGlob(rel, "**/{test,tests,e2e,__tests__,__mocks__}")) continue;
@@ -1002,6 +1042,7 @@ function freeLayerName(wanted: string, taken: ReadonlyMap<string, unknown>): str
   }
 }
 
+/** Why a name cannot be a layer, for error messages and notes. */
 function reservedReason(name: string): string {
   if (name === "external") return "`external` is reserved for packages outside the repository";
 
@@ -1016,10 +1057,12 @@ function reservedReason(name: string): string {
   return `\`${name}\` is a keyword at the top of a map`;
 }
 
+/** Whether `dir` itself (not its subdirectories) holds an indexable source file. */
 function hasRootFiles(root: string, dir: string, exclude: readonly string[]): boolean {
   return readdirSync(join(root, dir), { withFileTypes: true }).some((e) => e.isFile() && languageOf(e.name) !== undefined && !isExcluded(dir ? `${dir}/${e.name}` : e.name, exclude));
 }
 
+/** Whether `absDir` or any directory under it (skipped ones aside) holds an indexable source file. */
 function hasSource(absDir: string, rel: string, exclude: readonly string[]): boolean {
   for (const e of readdirSync(absDir, { withFileTypes: true })) {
     const r = `${rel}/${e.name}`;
@@ -1039,10 +1082,12 @@ function isIdSegment(s: string): boolean {
   return /^[\p{Alphabetic}_$][\p{Alphabetic}\p{M}\p{N}_$-]*$/u.test(s);
 }
 
+// One character of an ID segment, and one that may start a segment.
 const ID_BODY = /^[\p{Alphabetic}\p{M}\p{N}_-]$/u;
 
 const ID_START = /^[\p{Alphabetic}_]$/u;
 
+// Byte-level encoding and decoding for the `$HH` escapes.
 const utf8 = new TextEncoder();
 
 const utf8Text = new TextDecoder();
@@ -1076,6 +1121,7 @@ function encodeBracketSegment(name: string): string {
   let out = "";
   let started = false;
 
+  // Keep ID characters (a letter or `_` first); write everything else as `$HH` per UTF-8 byte.
   for (const ch of name) {
     const keep = ID_BODY.test(ch) && (started || ID_START.test(ch));
 
@@ -1098,6 +1144,7 @@ export function decodeLayerName(segment: string): string {
     if (segment.startsWith(form.prefix)) return form.wrap(segment.slice(form.prefix.length));
   }
 
+  // Rebuild the UTF-8 bytes: `$HH` is one byte, any other code point its own bytes.
   const bytes: number[] = [];
 
   for (let i = 0; i < segment.length; ) {
@@ -1132,6 +1179,7 @@ export function layerName(written: string): string {
   // `cats.controller` still collapses the dot; `_shop_` is already a segment.
   if (/[()[\]]/.test(name) && !isIdSegment(name)) return encodeBracketSegment(name);
   // The same characters as an ID segment (`isSegment`), combining marks included.
+  // Every character an ID segment cannot hold becomes `_`, and a bad start gets a `_` prefix.
   let s = name.replace(/[^\p{Alphabetic}\p{M}\p{N}_$-]/gu, "_");
 
   if (!/^[\p{Alphabetic}_$]/u.test(s)) s = `_${s}`;

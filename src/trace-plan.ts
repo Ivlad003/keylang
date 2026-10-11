@@ -5,6 +5,11 @@
 // The plan of an entry point (`--entry <id>`) is the same JSON for the
 // functions reachable from it, so a scenario can be traced before its flow is
 // written (`draft flow --from-trace`).
+//
+// Joins both pipelines: flow specs (Markdown → IR → SpecIR) name the IDs, and
+// a fresh snapshot (source → FileFacts → graph) places them. Entry points:
+// `tracePlan`, `entryTracePlan`, `reachableFrom`, `flowSymbols` and
+// `tracePlanText` (behind `keylang trace-plan`).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +21,7 @@ import { compileSpec, walkFlow } from "./spec-ir.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { isStoredExplanation } from "./explanations.ts";
 
+/** The JSON contract a trace adapter reads: which functions to wrap, and where. */
 export interface TracePlan {
   schemaVersion: 1;
   snapshotId: string;
@@ -78,6 +84,8 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
     imports.set(node.file, set);
   }
 
+  // The call texts keylang could not resolve, per calling fn: the holes that
+  // trigger widening.
   const holes = new Map<string, string[]>();
 
   for (const item of index.coverage) {
@@ -85,6 +93,7 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
     holes.set(item.source, [...(holes.get(item.source) ?? []), item.text]);
   }
 
+  // Candidate targets of an unresolved call, indexed by their short name.
   const fns = Object.entries(index.nodes).filter(([, node]) => node.kind === "fn" && node.layer !== "external");
   const byName = new Map<string, string[]>();
 
@@ -97,6 +106,7 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
   const files = new Set<string>();
   const queue: string[] = [];
 
+  // Enqueue a project fn once, and remember its file for the widening step.
   const add = (id: string): void => {
     const node = index.nodes[id];
 
@@ -110,6 +120,9 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
   add(entry);
   let widened = false;
 
+  // Fixpoint: follow resolved calls and name-matched holes until the queue is
+  // empty, then, if any hole was met, add fns that escape as values near the
+  // reached files, and repeat while that adds something.
   for (;;) {
     while (queue.length > 0) {
       const id = queue.pop()!;
@@ -141,11 +154,14 @@ export function reachableFrom(index: AnalysisSnapshot, entry: string): Set<strin
 
 type TraceScope = { plan: TracePlan; index: AnalysisSnapshot; omitted: string[] };
 
+/** The plan for `wanted` IDs on `index`: fns with a known position and file hash become symbols, the rest is `omitted`. */
 function planOf(index: AnalysisSnapshot, flow: string, wanted: ReadonlySet<string>): TraceScope {
   const hashes = new Map(index.manifest.files.map((f) => [f.path, f.sha256]));
   const symbols: TracePlan["symbols"] = [];
   const omitted: string[] = [];
 
+  // Sorted by ID so the plan text is stable; anything that is not a placed fn
+  // of an indexed file cannot be instrumented.
   for (const id of [...wanted].sort()) {
     const node = index.nodes[id];
     const sha256 = node?.file ? hashes.get(node.file) : undefined;
@@ -171,6 +187,8 @@ export function flowSymbols(root: string, dir: string, flow: string): Set<string
   let found = false;
   const out = new Set<string>();
 
+  // Read every spec under the keylang directory: the same flow name may be
+  // declared in several files, and all their IDs count.
   for (const file of collectMdFiles([join(root, dir)])) {
     const text = readFileSync(file, "utf8");
 

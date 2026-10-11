@@ -1,5 +1,12 @@
 // The operations on the saved specs and the code they describe: `fmt`,
 // `parse`, `check`, `check --explain-edge` and `trace-plan`.
+//
+// Place in the pipeline: operations (see `operations.ts`) over Markdown →
+// Text IR (`parse`, `fmt`) and over the full analysis, IR → resolve/rules
+// against the snapshot (`check`, `explain-edge`, `trace-plan`). Entry
+// points: `runFmt`, `runParse`, `runCheck`, `runExplainEdge`,
+// `runTracePlan`, and the CLI's text helpers (`fmtMessages`,
+// `checkSummary`, `checkSkipNote`).
 
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -39,6 +46,7 @@ import { empty } from "./shared.ts";
  * written by then are named).
  */
 export async function runFmt(request: FmtRequest, context: OperationContext): Promise<OperationEnvelope<"fmt">> {
+  // Validate the request: absolute root and base, at least one path.
   if (!isAbsolute(request.root)) return empty("fmt", "failed", 2, "fmt: root must be an absolute path");
   const base = request.base ?? request.root;
 
@@ -57,6 +65,9 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
     if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
     context.onProgress?.({ text: "reading the files" });
 
+    // Compute phase: classify every Markdown file under the paths. Each file
+    // ends in one state (current, stale, invalid, unreadable, explanation,
+    // generated); only the stale ones are planned for writing.
     for (const shown of collectMdFiles(request.paths, base)) {
       const abs = resolve(base, shown);
       const file: FmtFile = { shown, path: toPosix(relative(request.root, abs)), state: "current" };
@@ -86,6 +97,8 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
         continue;
       }
 
+      // A file is stale when the formatter's text differs, except a CRLF
+      // file whose LF form is already canonical.
       const formatted = formatSource(shown, source);
 
       if (!formatted.ok) {
@@ -102,6 +115,8 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
 
   const payload: FmtPayload = { check: request.check, files };
 
+  // The exit code: 2 if any file could not be read or written, else 1 for
+  // an invalid or unformatted file, else 0; a cancel has no code.
   const finish = (status: OperationStatus, written: string[]): OperationEnvelope<"fmt"> => {
     const failed = files.some((file) => file.state === "unreadable" || file.state === "failed");
     const findings = files.some((file) => file.state === "invalid" || file.state === "stale");
@@ -112,6 +127,7 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
 
   if (context.signal?.aborted) return finish("cancelled", []);
 
+  // Check mode, or nothing to write: stop before the commit gate.
   if (request.check || planned.length === 0) return finish("completed", []);
   context.onProgress?.({ text: "waiting to write" });
 
@@ -127,6 +143,8 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
   const written: string[] = [];
   let cancelled = false;
 
+  // Write phase: each planned file on its own; a failure marks only that
+  // file, and after a cancel the rest are marked not attempted.
   for (const step of planned) {
     if (cancelled || context.signal?.aborted) {
       cancelled = true;
@@ -158,6 +176,8 @@ export async function runFmt(request: FmtRequest, context: OperationContext): Pr
  * place (read-only) is not replaced by the rename either.
  */
 function commitFormatted(root: string, abs: string, source: string, text: string): void {
+  // Resolve links to the real target and require it inside the real root;
+  // the message tells a link leading out from a path outside.
   const target = landing(abs);
 
   if (target === null) throw new Error("leads through a loop of links");
@@ -165,12 +185,16 @@ function commitFormatted(root: string, abs: string, source: string, text: string
   if (!within(target, realpathSync(root))) throw new Error(within(abs, root) ? "leads out of the repository through a link" : "outside the repository");
 
   if (readFileSync(target, "utf8") !== source) throw new Error("changed on disk while it was formatted; nothing written");
+  // Opening for writing first makes a read-only file fail here, before the
+  // atomic rename could replace it.
   closeSync(openSync(target, "r+"));
   writeAtomic(target, text);
 }
 
 /** The command a generation marker names (`keylang map`), or null. */
 function generatorCommand(source: string): string | null {
+  // The marker is the first non-blank line (BOM stripped); the command is
+  // the backticked `keylang …` in it.
   const marker = source.replace(/^\uFEFF/, "").split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
 
   return /`(keylang [^`]+)`/.exec(marker)?.[1] ?? null;
@@ -217,6 +241,8 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
  * what changed.
  */
 export async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
+  // Validate the request and the config; the spec dir must exist unless
+  // paths are named, and every named path must exist.
   if (!isAbsolute(request.root)) return empty("check", "failed", 2, "check: root must be an absolute path");
   const base = request.base ?? request.root;
 
@@ -238,6 +264,7 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
 
   for (const spec of specs) if (!existsSync(spec)) return empty("check", "failed", 2, `${relative(base, spec) || spec}: not found`);
 
+  // `--since` and `--accept-weakening` only make sense with `--changed`.
   if (request.since !== undefined && request.changed !== true) return empty("check", "failed", 2, "check: --since requires --changed");
 
   if (request.acceptWeakening === true && request.changed !== true) return empty("check", "failed", 2, "check: --accept-weakening requires --changed");
@@ -263,6 +290,8 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
   const mapDir = join(specDir, "map");
   const assessed = (file: string): boolean => [...specs, mapDir].some((spec) => within(resolve(base, file), spec));
   context.onProgress?.({ text: "checking the saved specs against the code" });
+  // Build the analysis request: scoped specs, how paths are displayed, the
+  // fact cache, the static mode, and whether there is code to check against.
   // A named hook default: the static evidence of `keylang check` follows it to `analyze`.
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
@@ -285,6 +314,7 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
 
   if (context.signal?.aborted) return empty("check", "cancelled", null);
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
+  // The full report first; with `--changed` it is replaced by the slice.
   const full = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
   let report = full;
   let changed: ChangedSlice | null = null;
@@ -316,6 +346,8 @@ export async function runCheck(request: CheckRequest, context: OperationContext)
     };
   }
 
+  // The static mode in effect and who set it: the request, keylang.json or
+  // the default.
   const mode = resolveStatic(request.static, analyzed.config.check.static);
 
   const payload: CheckPayload = {
@@ -357,6 +389,7 @@ export function checkSkipNote(path: string): string {
  */
 export function checkSummary(counts: CheckCounts): string {
   const holes = counts.holes;
+  // `(N from M holes)` only when some unverified verdicts name no hole.
   const from = holes === undefined ? "" : ` (${holes.unverified === counts.unverified ? "" : `${holes.unverified} `}from ${holes.holes} hole${holes.holes === 1 ? "" : "s"})`;
 
   return `${counts.fail} fail, ${counts.unverified} unverified${from}, ${counts.ok} ok`;
@@ -389,6 +422,8 @@ export async function runExplainEdge(request: ExplainEdgeRequest, context: Opera
 
   if (!snapshot) return empty("explain-edge", "failed", 2, "no snapshot; run inside a repository with sources");
 
+  // Both IDs must exist in the snapshot; an unknown one fails with a
+  // suggestion when the index has a near ID.
   for (const id of [request.from, request.to]) {
     if (edgeIdKnown(snapshot, id)) continue;
     const near = analyzed.index.suggest(id);
@@ -435,6 +470,8 @@ export async function runParse(request: ParseRequest, context: OperationContext)
     if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
     context.onProgress?.({ text: "parsing the files" });
 
+    // Parse each Markdown file; an unreadable one is parsed as empty text so
+    // the payload still lists it, and saved explanations are skipped.
     for (const file of collectMdFiles(request.paths, base)) {
       let text: string;
 
@@ -456,6 +493,8 @@ export async function runParse(request: ParseRequest, context: OperationContext)
   }
 
   if (context.signal?.aborted) return empty("parse", "cancelled", null);
+  // Messages: skipped notes first, then read errors, then each diagnostic
+  // by severity.
   const diagnostics = documents.flatMap((doc) => doc.diagnostics);
   messages.push(...readErrors);
 
@@ -479,6 +518,7 @@ export async function runParse(request: ParseRequest, context: OperationContext)
 export async function runTracePlan(request: TracePlanRequest, context: OperationContext): Promise<OperationEnvelope<"trace-plan">> {
   if (!isAbsolute(request.root)) return empty("trace-plan", "failed", 2, "trace-plan: root must be an absolute path");
 
+  // Either a flow name or `--entry` is required; `--entry` must name a fn.
   if (request.flow === "" && request.entry === undefined) return empty("trace-plan", "failed", 2, "trace-plan: a flow name is required");
 
   if (request.entry === "") return empty("trace-plan", "failed", 2, "trace-plan: --entry needs a fn id");
@@ -488,6 +528,8 @@ export async function runTracePlan(request: TracePlanRequest, context: Operation
   let found: Awaited<ReturnType<typeof tracePlan>>;
 
   try {
+    // A flow plan reads the flow's trigger and steps; an entry plan walks
+    // what the entry reaches in the snapshot.
     found = request.entry === undefined ? await tracePlan(loadConfig(request.root), request.flow) : await entryTracePlan(loadConfig(request.root), request.entry, request.flow);
   } catch (error) {
     return empty("trace-plan", "failed", 2, errorText(error));

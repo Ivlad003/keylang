@@ -2,6 +2,9 @@
 // separate evidence channels and one mark over them. The mark is `ok` only
 // when every reported criterion on the line is `ok`; `ID ✓` with a missing
 // trace is `unverified`, never a plain ✓. `planned` is its own state.
+//
+// Layer: TUI. Reads the analysis (verdicts, diagnostics, Markdown IR) after
+// resolve and rules have run; `view.ts`, `nav.ts` and the status line read the marks.
 
 import type { Analysis } from "../analyze.ts";
 import type { Diagnostic } from "../diag.ts";
@@ -13,6 +16,7 @@ export type Mark = "ok" | "fail" | "unverified" | "planned" | "warning" | "quest
 /** Evidence channels in display order; a flow step reports each one separately. */
 export const CHANNELS = ["ID", "static", "tests", "trace"] as const;
 
+/** Everything reported on one spec line, and the one mark the gutter shows for it. */
 export interface LineEvidence {
   mark: Mark;
   /** One entry per criterion reported on the line, in channel order, then the rest. */
@@ -26,8 +30,10 @@ export interface LineEvidence {
   group?: true;
 }
 
+// Severity order for combining marks; `question` and `planned` are equal, so the first one seen wins.
 const RANK: Record<Mark, number> = { fail: 4, unverified: 3, warning: 2, question: 1, planned: 1, ok: 0 };
 
+/** The more severe of two marks; null means "nothing yet". */
 export function worse(a: Mark | null, b: Mark | null): Mark | null {
   if (a === null) return b;
 
@@ -36,6 +42,7 @@ export function worse(a: Mark | null, b: Mark | null): Mark | null {
   return RANK[a] >= RANK[b] ? a : b;
 }
 
+/** The lines (1-based) of the nodes of one kind, at any depth. */
 function linesOf(doc: Document, kind: "planned" | "question"): Set<number> {
   const lines = new Set<number>();
 
@@ -77,6 +84,7 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
   if (cached) return cached;
   const byPath = new Map<string, Map<number, LineEvidence>>();
 
+  /** The evidence of one line, created empty on first use. */
   const entry = (path: string, line: number): LineEvidence => {
     let lines = byPath.get(path);
 
@@ -91,8 +99,10 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
     return found;
   };
 
+  // Gather the raw inputs per line: diagnostics, verdicts, and the planned and question lines.
   for (const diag of analysis.diagnostics) entry(diag.file, diag.span.start.line).diagnostics.push(diag);
   const planned = pendingPlanned(analysis);
+  // Remember each criterion's area (the ID it is about), to tell a planned target from a real gap below.
   const areas = new Map<LineEvidence["criteria"][number], string>();
 
   for (const verdict of analysis.verdicts) {
@@ -107,12 +117,15 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
     for (const line of linesOf(doc, "question")) entry(doc.path, line).question = true;
   }
 
+  // Channel position of a criterion; criteria outside the known channels sort after them.
   const order = (criterion: string): number => {
     const at = CHANNELS.findIndex((channel) => channel === criterion);
 
     return at === -1 ? CHANNELS.length : at;
   };
 
+  // Fold each line into one mark: diagnostics (error = fail), then criteria,
+  // then the planned and question states. Nothing reported at all stays `ok`.
   for (const lines of byPath.values()) {
     for (const item of lines.values()) {
       item.criteria.sort((a, b) => order(a.criterion) - order(b.criterion));
@@ -133,6 +146,7 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
     }
   }
 
+  // Group marks need the line marks computed above.
   groupMarks(analysis, byPath);
   cache.set(analysis, byPath);
 
@@ -151,6 +165,7 @@ function groupMarks(analysis: Analysis, byPath: Map<string, Map<number, LineEvid
         walk(top, (node) => {
           const line = node.span.start.line;
 
+          // A group line that has its own evidence keeps it.
           if (node.kind !== "parallel" || lines.has(line)) return;
           let mark: Mark | null = null;
 
@@ -167,6 +182,7 @@ function groupMarks(analysis: Analysis, byPath: Map<string, Map<number, LineEvid
   }
 }
 
+/** The shared empty result, so a document with no evidence costs no allocation. */
 const EMPTY = new Map<number, LineEvidence>();
 
 /** Evidence by 1-based line of one document. Lines with nothing reported are absent. */
@@ -174,6 +190,7 @@ export function evidenceOf(analysis: Analysis, path: string): Map<number, LineEv
   return allEvidence(analysis).get(path) ?? EMPTY;
 }
 
+/** The glyph the gutter draws for each mark. */
 export const MARK_GLYPH: Record<Mark, string> = { ok: "✓", fail: "✗", unverified: "◌", planned: "◇", warning: "!", question: "?" };
 
 type EvidenceTotals = { fail: number; unverified: number; ok: number };
@@ -184,6 +201,7 @@ export function totals(analysis: Analysis): EvidenceTotals {
 
   for (const lines of allEvidence(analysis).values()) {
     for (const item of lines.values()) {
+      // Group lines repeat their steps' marks; counting them would count those steps twice.
       if (item.group) continue;
 
       if (item.mark === "fail") counts.fail++;

@@ -20,15 +20,21 @@
 // placed in `src/framework-entries.ts`. Detected from `@nestjs/core` or
 // `@nestjs/common` in the root `package.json`, or a `nest-cli.json`. Its
 // config files are the analysed sources that import `@nestjs/…`.
+//
+// Pipeline: framework adapters — detect → files → `code` (decorator facts from
+// FileFacts) → bindings and observers on the graph. Entry points: `nestjs`,
+// `nestFacts`; key terms: provider, token, injection, observer.
 
 import { posix } from "node:path";
 import { isJsonObject, parseJson, type JsonValue } from "../json.ts";
 import type { CodeDecl, CodeFacts, ConfigFacts, DecoratorArg, FrameworkAdapter, ProviderFact, TokenRef } from "./adapter.ts";
 
+/** Root `package.json` dependencies that mark a NestJS project. */
 const NEST_PACKAGES = ["@nestjs/core", "@nestjs/common"];
 
 const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"];
 
+/** JavaScript and TypeScript source extensions. */
 const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 
 export const nestjs: FrameworkAdapter = {
@@ -59,12 +65,14 @@ export const nestjs: FrameworkAdapter = {
   dispatchers: ["@nestjs/event-emitter\\EventEmitter2"],
 };
 
+/** The directory that owns a config file; null for a file at the root. */
 function ownerOf(path: string): string | null {
   const dir = posix.dirname(path);
 
   return dir === "." ? null : dir;
 }
 
+/** Config facts with every list empty, including the NestJS-only providers, injections and observers. */
 function emptyFacts(path: string): ConfigFacts {
   return { path, scope: "global", bindings: [], arguments: [], aliases: [], intercepts: [], providers: [], injections: [], observers: [], error: null };
 }
@@ -72,8 +80,10 @@ function emptyFacts(path: string): ConfigFacts {
 /** The providers, injections and event observers the decorators of one source file declare. */
 export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
   const facts = emptyFacts(path);
+  // A provider token is a string literal or a class name; anything else cannot be matched.
   const token = (arg: DecoratorArg): TokenRef | null => (arg.kind === "string" ? { kind: "string", value: arg.value } : arg.kind === "name" ? { kind: "name", name: arg.name, file: path } : null);
 
+  // Class decorators: only `@Module` declares providers.
   for (const cls of classes(file.decls)) {
     const type = { name: cls.name, file: path };
 
@@ -82,6 +92,7 @@ export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
       const options = decorator.args[0];
       const list = options?.kind === "object" ? options.props.find((p) => p.key === "providers")?.value : undefined;
 
+      // Each entry of `providers: [...]`: a bare class, or a `{ provide, use… }` object.
       for (const item of list?.kind === "array" ? list.items : []) {
         const at = { line: item.line, col: item.col };
 
@@ -101,6 +112,7 @@ export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
         const useExisting = field("useExisting");
         let use: ProviderFact["use"] | null = null;
 
+        // The first `use…` key that is present decides; `useFactory` and `useValue` give no class keylang can name.
         if (useClass?.kind === "name") use = { kind: "class", type: { name: useClass.name, file: path } };
         else if (useExisting !== undefined) {
           const other = token(useExisting);
@@ -117,6 +129,7 @@ export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
       }
     }
 
+    // Member decorators: `@Inject(T)` on a constructor parameter, `@OnEvent(...)` on a method.
     for (const member of cls.members) {
       for (const decorator of member.decorators ?? []) {
         if (decorator.name === "Inject" && decorator.param !== undefined && decorator.param.name !== null) {
@@ -127,6 +140,7 @@ export function nestFacts(path: string, file: CodeFacts): ConfigFacts {
 
         if (decorator.name === "OnEvent" && decorator.param === undefined) {
           const first = decorator.args[0];
+          // `@OnEvent` takes one event name or an array of names; non-literal names are skipped.
           const events = first?.kind === "string" ? [first.value] : first?.kind === "array" ? first.items.flatMap((i) => (i.kind === "string" ? [i.value] : [])) : [];
 
           for (const event of events) facts.observers!.push({ event, name: `${cls.name}.${member.name}`, instance: type, method: member.name, disabled: false, line: decorator.line, col: decorator.col });
@@ -143,6 +157,7 @@ function classes(decls: readonly CodeDecl[]): CodeDecl[] {
   return decls.flatMap((d) => (d.kind === "class" ? [d] : []));
 }
 
+/** Parse a JSON file, tolerating a BOM; missing or malformed JSON is `null`. */
 function readJson(text: string | null): JsonValue {
   if (text === null) return null;
 

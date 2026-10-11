@@ -2,6 +2,12 @@
 // A step is checked from its parent (the trigger for a top-level step), never
 // from its siblings. Reports and traces are loaded by the caller; this module
 // only compares them with the specs and the snapshot.
+//
+// Pipeline: Markdown → IR → spec IR (`spec-ir.ts`) → (this) → verdicts and
+// diagnostics, joined with the code side (snapshot from source → FileFacts →
+// graph). Entry points: `evaluateFlows`, `plannedMismatch`, `describeConfig`;
+// key terms: channel (ID/static/tests/trace), verdict (ok/unverified/fail),
+// planned, static mode (shape/behavior), hole, escape.
 
 import { createHash } from "node:crypto";
 import { OUTSIDE_LAYER, type StaticMode, type StaticSource } from "./config.ts";
@@ -18,6 +24,7 @@ import type { Verdict } from "./verdict.ts";
 /** How a call edge came about when it is not a plain call of the code (`Via` of the graph): a hook, an argument, a framework's config. */
 type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory" | "object-manager";
 
+/** A snapshot edge as flows read it: kind, endpoints, resolution and the provenance fields verdicts name. */
 interface SnapshotEdge {
   kind: string;
   source: string;
@@ -46,6 +53,7 @@ interface SnapshotEdge {
   name?: string;
 }
 
+/** A snapshot node as flows read it. */
 interface SnapshotNodeView {
   kind: string;
   /** A module node that is a class. */
@@ -59,6 +67,7 @@ interface SnapshotNodeView {
   escapes?: { file: string; line: number; col: number; reason: string };
 }
 
+/** The code side of a flow check: the snapshot's nodes, edges and coverage, plus test and trace evidence. */
 export interface FlowInput {
   snapshotId: string | null;
   nodes: Record<string, SnapshotNodeView>;
@@ -96,6 +105,7 @@ export interface EntryView {
   framework?: string | null;
 }
 
+/** A `planned` declaration of the specs and whether the code already has it. */
 interface Planned {
   kind: string;
   signature: string | null;
@@ -105,8 +115,10 @@ interface Planned {
   implemented: boolean;
 }
 
+/** The independent evidence channels a flow line gets verdicts in. */
 type Channel = "ID" | "static" | "tests" | "trace";
 
+/** Any line of a flow tree that `visit` walks. */
 type FlowNode = Trigger | FlowItem;
 
 /** The flows' diagnostics and a verdict per checked channel. */
@@ -150,6 +162,11 @@ interface PossibleRoute {
   seen: Set<string>;
 }
 
+/**
+ * Check every flow of the specs against the snapshot: ID, static reachability,
+ * tests and traces, each as its own verdict, plus the flow diagnostics
+ * (K201–K205).
+ */
 export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput): FlowEvaluation {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
@@ -176,6 +193,8 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
     verdicts.push(outcome);
   };
 
+  // Per flow: number the matchable nodes for the trace matcher, then walk the tree
+  // from the first trigger, checking each line against its parent.
   for (const flow of compiled.flows) {
     const file = flow.file;
     // A flow is matched from its first trigger. Later triggers stay in the spec and are reported, not matched.
@@ -186,6 +205,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
     let key = 0;
     const keys = new Map<FlowNode, number>();
 
+    // The trace shape: steps, `when` and `parallel` groups with a numeric key each, so trace evidence maps back to spec nodes.
     const shape = (nodes: readonly FlowItem[]): ShapeNode[] =>
       nodes.flatMap((node): ShapeNode[] => {
         if (node.kind === "when" || node.kind === "parallel") {
@@ -219,6 +239,8 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       const nodeKey = keys.get(node);
       const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
 
+      // A step or trigger: ID verdict, then event/entry checks for a trigger, the static
+      // reach from its parent, and the trace; its children are checked from it.
       if (node.kind === "step" || node.kind === "trigger") {
         const id = node.target.target;
         const laterTrigger = node.kind === "trigger" && node !== triggerNode;
@@ -318,6 +340,7 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         return;
       }
 
+      // Timers: `every` is compared with the parent's cron entry; both need a nested test for the tests channel.
       if (node.kind === "after" || node.kind === "every") {
         const area = claimArea(node);
 
@@ -368,6 +391,8 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
       const tests = input.tests;
 
+      // Claims: without a nested `test` they are unverified in the tests channel (`when` is a branch, not a claim);
+      // nested lines are checked from the same parent.
       if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
         const area = claimArea(node);
         const proofs = node.children.filter((child): child is TestItem => child.kind === "test");
@@ -399,12 +424,14 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
       }
     };
 
+    // Top-level lines have the trigger as their parent.
     for (const node of flow.top) visit(node, trigger, null, null);
   }
 
   return { diagnostics, verdicts };
 }
 
+/** How a verdict names a claim or timer line (`when x`, `then y`, `every 1h`, `invariant …`). */
 function claimArea(node: ClaimItem | ThenItem | WhenItem | TimerItem): string {
   if (node.kind === "when") return `when ${node.condition}`;
 
@@ -454,6 +481,7 @@ function scheduleForm(text: string): ScheduleForm {
 
   if (macro !== undefined) return { form: "cron", value: macro };
 
+  // Several words are cron fields; a single word is a duration (`1h`, `15m`).
   return text.includes(" ") ? { form: "cron", value: text } : { form: "duration", value: text };
 }
 
@@ -486,6 +514,7 @@ function scheduleVerdict(parent: string | null, written: string, entries: readon
   if (crons.length === 0) return { verdict: "unverified", message: `\`${parent}\` is not a cron entry point the snapshot records; ${only}` };
   const want = scheduleForm(written);
 
+  // Only cron entries whose label carries a schedule can be compared.
   const known = crons.flatMap((entry) => {
     const text = labelSchedule(entry.label);
 
@@ -496,6 +525,7 @@ function scheduleVerdict(parent: string | null, written: string, entries: readon
   const same = known.find((item) => item.form.form === want.form && item.form.value === want.value);
 
   if (same) return { verdict: "ok", message: `the cron entry point \`${same.entry.label}\` runs on \`${same.text}\`` };
+  // A mismatch is a `fail` only when every known schedule is of the written form; mixing cron and durations stays open.
   const comparable = known.filter((item) => item.form.form === want.form);
 
   if (comparable.length === known.length) return { verdict: "fail", message: `the cron entry point \`${known[0]!.entry.label}\` runs on \`${known[0]!.text}\`, not \`${written}\`` };
@@ -503,6 +533,7 @@ function scheduleVerdict(parent: string | null, written: string, entries: readon
   return { verdict: "unverified", message: `\`${written}\` does not compare with the cron schedule \`${known[0]!.text}\`; ${only}` };
 }
 
+/** The evidence block of a trace verdict: provenance plus run and test IDs when known. */
 function traceProvenance(evidence: TraceEvidence): Verdict["evidence"] {
   const provenance: NonNullable<Verdict["evidence"]> = { provenance: "trace" };
 
@@ -518,6 +549,11 @@ function quantitative(text: string): boolean {
   return /(\bno more than\b|\bat most\b|\bat least\b|\bnever\b|\bexactly\b|\bonly once\b|\bnot more\b|≤|≥|<=|>=|не більше|не менше|жодного|ніколи|рівно|лише раз)/i.test(text);
 }
 
+/**
+ * The ID channel of one reference: planned (unverified), known to the snapshot or
+ * the specs (ok), inside an opaque module (unverified), else `missing` (fail).
+ * Reports the verdict and returns it.
+ */
 function idVerdict(
   id: string,
   plan: Planned | undefined,
@@ -607,12 +643,14 @@ function emitsVerdict(graph: CallGraph, input: FlowInput, parent: string | null,
   return reachability(graph, input, parent, event);
 }
 
+/** One resolved call edge with its endpoints (the callee mapped to a constructor for `new X()`). */
 interface Step {
   from: string;
   to: string;
   edge: SnapshotEdge;
 }
 
+/** The snapshot's calls indexed for the searches below, plus what makes an absence unprovable. */
 interface CallGraph {
   /** Resolved call edges by source; `to` is a class's constructor for `new X()`. */
   resolved: Map<string, Step[]>;
@@ -641,6 +679,7 @@ interface CallGraph {
   callable: (id: string) => string;
 }
 
+/** Index the snapshot's call edges and fns once per evaluation. */
 function callGraph(input: FlowInput): CallGraph {
   const resolved = new Map<string, Step[]>();
   const open = new Map<string, SnapshotEdge[]>();
@@ -656,6 +695,7 @@ function callGraph(input: FlowInput): CallGraph {
   const constructorOf = (id: string): string => `${id}.${constructorName(input.nodes[id]?.file) ?? "constructor"}`;
   const callable = (id: string): string => (input.nodes[id]?.kind !== "fn" && input.nodes[constructorOf(id)]?.kind === "fn" ? constructorOf(id) : id);
 
+  // Resolved calls go to `resolved` and `callers`; unresolved/ambiguous to `open`, with every candidate as a possible caller.
   for (const edge of input.edges) {
     if (edge.kind !== "call") continue;
 
@@ -673,6 +713,7 @@ function callGraph(input: FlowInput): CallGraph {
   const byName = new Map<string, string[]>();
   const byCaselessName = new Map<string, string[]>();
 
+  // Fns by the name a call would use, for calls whose receiver keylang could not type.
   for (const [id, node] of Object.entries(input.nodes)) {
     if (node.kind !== "fn") continue;
     add(byName, callName(id), id);
@@ -683,6 +724,7 @@ function callGraph(input: FlowInput): CallGraph {
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
 
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
+  // The first module keylang could not read (not an external package, not code outside the architecture).
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
   // A framework's config keylang did not read (`frameworks` leaves it out, it does not parse): the framework may call any fn by it.
   const unreadConfig = (input.coverage ?? []).find((item) => item.kind === "skipped-file" && item.text?.startsWith("framework:")) ?? null;
@@ -697,6 +739,7 @@ function callGraph(input: FlowInput): CallGraph {
  * A file with a syntax error makes every fn in it unreadable.
  */
 function doubtfulBodies(input: FlowInput): DoubtfulBodies {
+  // Fns sorted by file and line, so "the first fn at or after a decorator" is well-defined.
   const fns = Object.entries(input.nodes)
     .flatMap(([id, node]) => (node.kind === "fn" && node.file !== null && node.line !== null ? [{ id, file: node.file, line: node.line }] : []))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.id, b.id));
@@ -722,6 +765,7 @@ function doubtfulBodies(input: FlowInput): DoubtfulBodies {
   return { replaced, unreadable };
 }
 
+/** The last dotted segment of an ID or a call text. */
 function lastSegment(text: string): string {
   return text.slice(text.lastIndexOf(".") + 1);
 }
@@ -805,6 +849,7 @@ function closureOnly(edge: SnapshotEdge, behavior: boolean): boolean {
   return edge.closure === true && edge.resolution === "resolved" && (behavior ? edge.via !== "closure-arg" : edge.via === undefined);
 }
 
+/** Why a call cannot be a proof: ambiguous, a via edge this mode does not follow, a possible override, or unresolved. */
 function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): string {
   if (edge.resolution === "ambiguous") return `ambiguous call \`${edge.text ?? edge.source}\` [${(edge.candidates ?? []).join(", ")}]`;
 
@@ -821,6 +866,7 @@ function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): str
   return edge.reason ?? `unresolved call \`${edge.text ?? ""}\``;
 }
 
+/** `file:line:col` of an edge. */
 function at(edge: SnapshotEdge): string {
   return `${edge.file}:${edge.line}:${edge.col}`;
 }
@@ -1005,6 +1051,7 @@ function search(graph: CallGraph, parent: string, target: string, follow: (step:
   const depth = new Map<string, number>([[parent, 0]]);
   const queue = [parent];
 
+  // Plain BFS over resolved edges; `previous` records the step each fn was first reached by.
   while (queue.length > 0) {
     const id = queue.shift()!;
 
@@ -1110,11 +1157,13 @@ function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, targe
   const first = new Map<string, SnapshotEdge | null>([[parent, null]]);
   const queue = [parent];
 
+  // BFS that remembers, per fn, the first uncertain edge on the way to it (null while the route is still a proof).
   while (queue.length > 0) {
     const id = queue.shift()!;
     const lead = first.get(id) ?? null;
     const next: { to: string; edge: SnapshotEdge | null }[] = [];
 
+    // Resolved calls (uncertain when this mode does not prove them), plus every same-named override of a method call.
     for (const step of graph.resolved.get(id) ?? []) {
       next.push({ to: step.to, edge: proves(step) ? null : step.edge });
 
@@ -1122,6 +1171,7 @@ function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, targe
       if (step.edge.text?.includes(".") && !step.edge.via) for (const other of namedLike(graph, callName(step.to))) if (other !== step.to) next.push({ to: other, edge: step.edge });
     }
 
+    // Unresolved calls may run any fn of their name; ambiguous ones any candidate.
     for (const edge of graph.open.get(id) ?? []) {
       const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, edge.name ?? lastSegment(edge.text ?? ""));
 
@@ -1146,6 +1196,7 @@ function callersOf(graph: CallGraph, target: string): Set<string> {
   const seen = new Set([target]);
   const stack = [target];
 
+  // Walk callers backwards (resolved and candidate) from the target.
   while (stack.length > 0) {
     for (const step of graph.callers.get(stack.pop()!) ?? []) {
       if (seen.has(step.from)) continue;
@@ -1163,6 +1214,8 @@ function callersOf(graph: CallGraph, target: string): Set<string> {
  * unsupported construct); null when every route is by name.
  */
 function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>): { reason: string; from: string | null } | null {
+  // In order of strength: a fn on a route that escapes as a value, a call from a closure,
+  // an unsupported construct in reachable code or naming a route fn, then an unread framework config.
   for (const id of [...routes].sort()) {
     const escapes = input.nodes[id]?.escapes;
 
@@ -1188,6 +1241,7 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
 
   const names = [...patterns.values()];
 
+  // Files in code-unit order so the first reason reported is stable.
   for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => compareText(a, b))) {
     for (const item of items) {
       // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
@@ -1245,6 +1299,7 @@ function holeNear(graph: CallGraph, holes: { edge: SnapshotEdge }[], from: strin
   const distance = new Map<string, number>([[from, 0]]);
   const queue = [from];
 
+  // Distances of every fn `from` reaches over resolved calls.
   while (queue.length > 0) {
     const id = queue.shift()!;
 
@@ -1255,12 +1310,14 @@ function holeNear(graph: CallGraph, holes: { edge: SnapshotEdge }[], from: strin
     }
   }
 
+  // The nearest hole by distance, then by position, for a stable choice.
   const near = holes.filter((hole) => distance.has(hole.edge.source));
   near.sort((a, b) => distance.get(a.edge.source)! - distance.get(b.edge.source)! || compareText(a.edge.file ?? "", b.edge.file ?? "") || a.edge.line - b.edge.line || a.edge.col - b.edge.col);
 
   return near[0]?.edge ?? null;
 }
 
+/** Whether the nearest enclosing module with a members verdict lists them completely or is opaque; null when none says. */
 function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {
   let cur = id;
 
@@ -1320,6 +1377,7 @@ function codeLocation(id: string, code: SnapshotNodeView, edges: readonly Snapsh
   for (const edge of edges) {
     if (edge.target !== id || edge.file === null || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
 
+    // The earliest importer by file then line.
     if (first === null || compareText(edge.file, first.file!) < 0 || (edge.file === first.file && edge.line < first.line)) first = edge;
   }
 
@@ -1345,6 +1403,7 @@ export function plannedMismatch(item: { decl: string; signature: string | null }
 function sameSignature(planned: string, code: string, file: string | null): boolean {
   const plan = normalizeSignature(planned);
   const written = normalizeSignature(code);
+  // A Python method's first `self`/`cls` parameter, which callers do not pass.
   const receiverless = (text: string): string => (file !== null && file.endsWith(".py") ? text.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") : text);
 
   if (plan === written || plan === receiverless(written)) return true;
@@ -1368,10 +1427,12 @@ function parameterList(signature: string): string | null {
   return null;
 }
 
+/** A signature without whitespace or a trailing `;`, with `->` written as `→`. */
 function normalizeSignature(text: string): string {
   return text.replace(/->/g, "→").replace(/\s+/g, "").replace(/;$/, "");
 }
 
+/** SHA-256 of a spec line: ties a verdict to the exact text it was about. */
 function specHash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }

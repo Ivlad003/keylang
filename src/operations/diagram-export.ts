@@ -3,6 +3,12 @@
 // tools, and a draw.io drawing read back as one proposal for one flow. The
 // renderers are pure (`src/bpmn-export.ts`, `src/drawio.ts`); here are the
 // analysis, the view names, the write policy of `--out` and the proposal.
+//
+// Place in the pipeline: an operation over the snapshot and the compiled
+// specs (SpecIR), feeding the CLI and the web server's `/api/export`.
+// Entry points: `runDiagramExport`, `runImportDrawio`, `parseExportView`,
+// `exportViewOfQuery`. Key terms: view (what a diagram draws: a flow, a
+// discovered flow, a process, an entry point or the layers).
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
@@ -24,6 +30,7 @@ import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { commitProposal, generatedIn, proposalRefusal, rootRelative } from "./shared.ts";
 import type { OperationContext } from "./types.ts";
 
+/** The diagram formats `export` writes besides C4. */
 export const DIAGRAM_FORMATS = ["bpmn", "drawio"] as const;
 
 export type DiagramFormat = (typeof DIAGRAM_FORMATS)[number];
@@ -45,6 +52,8 @@ function isViewProblem(view: ExportView | string): view is string {
  * `process:<domain>`, `entry:<id>`, `layers`; or why it names none.
  */
 export function parseExportView(text: string): ExportView | string {
+  // Split `kind:value` at the first colon; no colon means a flow name (or
+  // the bare word `layers`).
   const at = text.indexOf(":");
   const kind = at === -1 ? (text === "layers" ? "layers" : "flow") : text.slice(0, at);
   const value = at === -1 ? text : text.slice(at + 1);
@@ -79,6 +88,8 @@ export function exportViewOfQuery(query: URLSearchParams): ExportView | string {
   const view = query.get("view");
 
   if (view === "layers") return parseExportView("layers");
+  // Each view takes its value from its own query parameter (`process`
+  // accepts `name` as well as `domain`).
   const value = view === "process" ? (need("domain") ?? need("name")) : view === "entry" ? need("id") : need("name");
 
   if (view !== "flow" && view !== "discovered" && view !== "process" && view !== "entry") return "unknown view: expected one of flow, discovered, process, entry, layers";
@@ -90,6 +101,8 @@ export function exportViewOfQuery(query: URLSearchParams): ExportView | string {
 
 /** The discovered view (`<dir>/flows-discovered/*.md`, the README of the processes aside) parsed as specs, or null without it. */
 export function discoveredSpecOf(root: string, specDir: string): SpecIR | null {
+  // Parse each discovered layer file (the processes README is no spec),
+  // sorted so the compiled spec does not depend on directory order.
   const dir = join(root, specDir, DISCOVERED_FLOWS_DIR);
 
   if (!existsSync(dir)) return null;
@@ -128,6 +141,7 @@ export function diagramExportText(format: DiagramFormat, view: ExportView, sourc
     : { snapshot: sources.snapshot, spec: sources.spec, results: sources.results, view: view.view, processes: sources.processes };
 
   if (format === "drawio") return renderDrawio(input, view.name);
+  // BPMN names the process after the view's subject.
   const v = view.view;
 
   return renderBpmn(input, v.kind === "flow" ? v.name : v.kind === "process" ? v.domain : v.kind === "entry" ? v.id : view.name);
@@ -135,11 +149,15 @@ export function diagramExportText(format: DiagramFormat, view: ExportView, sourc
 
 /** A file one of these exports wrote: `exporter="keylang"` (BPMN) or `<mxfile host="keylang"` (draw.io) near its start. */
 export function isDiagramExport(text: string): boolean {
+  // Look only at the head: the marker sits in the root element, and the
+  // regexes match `<bpmn:definitions ... exporter="keylang"` or
+  // `<mxfile host="keylang"`.
   const head = text.slice(0, 2000);
 
   return /<bpmn:definitions\b[^>]*\bexporter="keylang"/.test(head) || /<mxfile\s+host="keylang"/.test(head);
 }
 
+/** A request for `export bpmn|drawio`: the format and view as typed, and an optional output file. */
 export interface DiagramExportRequest {
   root: string;
   format: string;
@@ -148,6 +166,7 @@ export interface DiagramExportRequest {
   out?: string;
 }
 
+/** The export's text (null on failure) and where it was written. */
 export interface DiagramExportResult {
   exitCode: 0 | 2;
   text: string | null;
@@ -155,6 +174,7 @@ export interface DiagramExportResult {
   error: string | null;
 }
 
+/** A failed export: exit code 2 with the reason. */
 function failed(error: string): DiagramExportResult {
   return { exitCode: 2, text: null, out: null, error };
 }
@@ -168,6 +188,7 @@ export async function runDiagramExport(request: DiagramExportRequest, context: O
   const { root } = request;
 
   if (!isAbsolute(root)) return failed("export: root must be an absolute path");
+  // Validate the format, the view and `--out` before the analysis.
   const format = DIAGRAM_FORMATS.find((item) => item === request.format);
 
   if (format === undefined) return failed(`export: unknown format \`${request.format}\`; expected c4, ${DIAGRAM_FORMATS.join(", ")}`);
@@ -177,6 +198,8 @@ export async function runDiagramExport(request: DiagramExportRequest, context: O
 
   if (request.out !== undefined && request.out.trim() === "") return failed(`export ${format}: --out needs a file path`);
 
+  // `--out` is checked against the write policy twice: before the analysis
+  // (fail fast) and again before the write (it may have changed meanwhile).
   const outProblem = (): string | null => {
     if (request.out === undefined) return null;
 
@@ -210,6 +233,8 @@ export async function runDiagramExport(request: DiagramExportRequest, context: O
   }
 
   if (request.out === undefined) return { exitCode: 0, text, out: null, error: null };
+  // Overwrite only a file one of these exports wrote; `expect: current`
+  // makes the write fail if the file changes between the read and the write.
   const out = rootRelative(root, request.out);
   const again = outProblem();
 
@@ -233,6 +258,7 @@ export async function runDiagramExport(request: DiagramExportRequest, context: O
   return { exitCode: 0, text, out, error: null };
 }
 
+/** A request for `import drawio`: the drawing, and where and whether to propose its flow. */
 export interface ImportDrawioRequest {
   root: string;
   /** The `.drawio` file, absolute. */
@@ -243,6 +269,7 @@ export interface ImportDrawioRequest {
   print?: boolean;
 }
 
+/** The import's outcome: the flow and target, the change as a diff, and the proposal written (if any). */
 export interface ImportDrawioResult {
   exitCode: 0 | 1 | 2;
   flow: string | null;
@@ -271,6 +298,7 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
   if (!isAbsolute(root) || !isAbsolute(request.file)) return fail("import drawio: root and file must be absolute paths");
   let model;
 
+  // Read the drawing; it must draw one flow (its `keylang_view`).
   try {
     model = parseDrawio(readFileSync(request.file, "utf8"));
   } catch (error) {
@@ -289,6 +317,9 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
     return fail(errorText(error));
   }
 
+  // Build the target file's new text: for an existing flow, edit its
+  // section in place (or add it to `--into`); for a new flow, add it to
+  // `--into` or a new `<dir>/flows/<name>.md`.
   const specDir = rootRelative(root, analyzed.config.dir);
   const flow = analyzed.spec.flows.find((f) => f.name === name) ?? null;
   const into = request.into === undefined ? undefined : rootRelative(root, request.into);
@@ -313,6 +344,8 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
 
       target = into ?? flow.file;
 
+      // Splice the edited section into the file's lines, keeping the
+      // file's own line endings.
       if (target === flow.file) {
         const lines = own.replace(/\r\n/g, "\n").split("\n");
         const sectionLines = section.text.split("\n").length;
@@ -338,6 +371,9 @@ export async function runImportDrawio(request: ImportDrawioRequest, context: Ope
   result.diff = lineDiff(before ?? "", text);
 
   if (request.print === true) return { ...result, exitCode: 0 };
+  // Gate the proposal like every other: the target must be one a proposal
+  // may change, the store must pass the write policy, and a waiting
+  // proposal refuses (`pending` is always `refuse` here).
   const generated = generatedIn(analyzed.docs);
   const store = `${PROPOSALS_DIR}/${target}`;
   let candidate;

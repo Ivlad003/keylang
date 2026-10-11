@@ -1,5 +1,9 @@
 // `keylang doctor`: the environment report — languages, the agent and its
 // credentials, the agent CLIs, saved explanations, voice — never a key value.
+//
+// Place in the pipeline: an operation (see `operations.ts`) outside the
+// language pipeline: it reads keylang.json and probes the machine, never the
+// code or the specs. Entry point: `runDoctor`.
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -42,6 +46,8 @@ export async function runDoctor(request: DoctorRequest, context: OperationContex
   const { localModel, modelsDir, voiceEngine } = await import("../voice.ts");
 
   if (context.signal?.aborted) return empty("doctor", "cancelled", null);
+  // Probe the environment: the native voice module, the microphone, then the
+  // agent and the agent CLIs in parallel; cancellation is checked between.
   const native = await localStatus();
 
   if (context.signal?.aborted) return empty("doctor", "cancelled", null);
@@ -49,6 +55,8 @@ export async function runDoctor(request: DoctorRequest, context: OperationContex
   const [agent, agentClis] = await Promise.all([agentState(config, llmClient), probeAgentClis()]);
 
   if (context.signal?.aborted) return empty("doctor", "cancelled", null);
+  // Assemble the payload: counts of saved explanations and briefs, the old
+  // explanation layout (with a hint to move it), and the voice setup.
   const engine = engineState(config, native.status === "ok", voiceEngine);
   const old = oldExplanations(request.root);
 
@@ -83,6 +91,8 @@ export async function runDoctor(request: DoctorRequest, context: OperationContex
 
 /** The effective agent, its source and its credential or binary state, without the key value. */
 async function agentState(config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup): Promise<DoctorPayload["agent"]> {
+  // Which agent: KEYLANG_AGENT, else agents.json "use", else keylang.json
+  // `agent`; an invalid source is reported as an error state, not thrown.
   let resolved: ReturnType<typeof resolveAgent>;
 
   try {
@@ -95,6 +105,8 @@ async function agentState(config: Config, llmClient: (agent: string | null, opti
 
   if (configured === null) return { configured: null, source: null, state: "missing", detail: "not configured (keylang.json `agent`, KEYLANG_AGENT or ~/.config/keylang/agents.json)" };
 
+  // Can a client be built: API agents need credentials, CLI agents a binary
+  // (its version shown when it answers).
   try {
     const setup = llmClient(config.agent, { root: config.root });
 
@@ -111,6 +123,7 @@ async function agentState(config: Config, llmClient: (agent: string | null, opti
   }
 }
 
+/** The voice engine in effect, or why there is none. */
 type EngineState = { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null };
 
 /** The engine the voice configuration resolves to now, without the key. */
@@ -136,6 +149,8 @@ function engineState(
 function doctorLines(payload: DoctorPayload): string[] {
   const { agent, explanations, voice } = payload;
 
+  // One phrase per state for the voice engine, the native module and the
+  // microphone.
   const engine =
     voice.error ??
     (voice.resolved?.kind === "openrouter"

@@ -1,11 +1,18 @@
 // Language-independent facts extracted from one source file. Everything the
 // map and the index need; nothing about layers or IDs yet.
+//
+// The contract between the language frontends (`ts.ts`, `python.ts`,
+// `rust.ts`, `php.ts`) and the graph: source → FileFacts → graph → map/index.
+// Types only; `FileFacts` is the root, with imports, declarations, calls,
+// holes (`UnsupportedFact`) and the framework-facing facts adapters read.
+// Facts are cached on disk between runs (`fact-cache.ts`).
 
 import type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
 
 // Decorators are what a framework adapter reads of the code: their shape is the adapters' (`base`).
 export type { CodeDecorator, DecoratorArg } from "../frameworks/adapter.ts";
 
+/** Everything keylang reads of one source file, before layers and IDs. */
 export interface FileFacts {
   /** POSIX path relative to the repository root. */
   path: string;
@@ -155,6 +162,7 @@ export type LiteralValue =
   | { kind: "dict"; entries: { key: LiteralValue; value: LiteralValue }[] }
   | { kind: "other"; text: string };
 
+/** A keyword argument of a call: `prefix="/x"`. */
 export interface Kwarg {
   name: string;
   value: LiteralValue;
@@ -226,6 +234,7 @@ export interface QualifiedSymbol {
   table: "class" | "function" | "const";
 }
 
+/** One import, require or re-export statement, with the names it binds. */
 export interface ImportFact {
   /** Module specifier as written: `./order`, `node:fs`, `@scope/pkg`. */
   source: string;
@@ -267,6 +276,7 @@ export interface ImportFact {
   docblock?: true;
 }
 
+/** How an import binds one local name. */
 export type ImportBinding =
   /**
    * `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module:
@@ -281,8 +291,10 @@ export type ImportBinding =
   /** `import { a as b } from` — `b` is the export `a`. */
   | { kind: "named"; local: string; imported: string };
 
+/** The kinds of declaration the map shows. */
 export type DeclKind = "fn" | "class" | "type";
 
+/** A declaration of the file (or a member of one), with what its body calls and mentions. */
 export interface DeclFact {
   kind: DeclKind;
   name: string;
@@ -485,6 +497,7 @@ export interface ChainLinkFact {
   args: ArgFact[];
 }
 
+/** One call written in the code, with its callee as written and its range. */
 export interface CallFact {
   /**
    * `f()` → `f`; `a.b()` → `a.b`; `this.m()` → `this.m`; `new X()` → `X`;
@@ -608,6 +621,7 @@ export interface PassFact {
   endCol: number;
 }
 
+/** A name read as a value rather than called (see `FileFacts.valueRefs`). */
 export interface ValueRefFact {
   /** `save`, or `mod.save` for a module import; the member name for a property read. */
   name: string;
@@ -662,6 +676,7 @@ export interface ExportRow {
   from?: string;
 }
 
+/** A construct the extractor does not turn into an edge: a hole, with its source fragment and why. */
 export interface UnsupportedFact {
   line: number;
   col: number;

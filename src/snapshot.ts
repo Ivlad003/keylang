@@ -1,6 +1,12 @@
 // Analysis snapshot: the versioned fact store written to `.keylang/index.json`.
 // Markdown maps are a projection of the graph; `check` in later tickets reads this file.
 // `generated` is wall-clock metadata and is not part of `snapshotId`.
+//
+// The last stage of source → FileFacts → graph → snapshot: `buildSnapshot`
+// flattens the graph into nodes, edges, exports, coverage and entries, in a
+// fixed order so the same inputs give the same JSON, and hashes its inputs into
+// `snapshotId`. Rules, flows, test reports and traces all bind to that ID.
+// Entry points: `buildSnapshot`, `grammarVersions`, `sha256`, and the types.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -17,11 +23,13 @@ import type { Gap, Graph, Module, Via } from "./graph.ts";
 import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
+/** Version of the `.keylang/index.json` format; a reader refuses any other. */
 export const SNAPSHOT_SCHEMA = 9;
 
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
 export const EXTRACTOR_VERSION = "m1.24";
 
+/** How far an edge's target is known: one symbol, several candidates, or none. */
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 
 /**
@@ -32,8 +40,10 @@ export type Resolution = "resolved" | "ambiguous" | "unresolved";
  */
 export type Provenance = "syntactic" | "docblock";
 
+/** What kind of reference an edge is. */
 export type EdgeKind = "import" | "call" | "type" | "reexport";
 
+/** One observed reference in the code, with its position, resolution and provenance. */
 export interface SnapshotEdge {
   kind: EdgeKind;
   source: string;
@@ -121,6 +131,7 @@ export interface SnapshotEdge {
   typeOnly?: true;
 }
 
+/** One public name of a module and what it stands for. */
 export interface SnapshotExport {
   module: string;
   /**
@@ -150,6 +161,7 @@ export interface SnapshotExport {
   reason?: string;
 }
 
+/** Something the analysis skipped or could not resolve, with where and why. */
 export interface CoverageItem {
   /**
    * `outside-file`: a file `outside` puts outside the architecture; listed, but no hole.
@@ -175,6 +187,7 @@ export function leavesUnresolved(item: Pick<CoverageItem, "kind">): boolean {
   return item.kind !== "assumed-import";
 }
 
+/** One node of the snapshot: a layer, module (file, directory or class), fn, type or event. */
 export interface SnapshotNode {
   /**
    * `event` (ADR 0022 п. 6): an event a framework's code dispatches or its
@@ -274,8 +287,10 @@ export interface RepositoryDocs {
 /** Where execution starts, by what starts it (ADR 0022 п. 5). Without a framework adapter only `route`, `cli` and `main` occur. */
 export const ENTRY_KINDS = ["route", "rest", "graphql", "cron", "consumer", "cli", "observer", "webhook", "controller", "main"] as const;
 
+/** One of `ENTRY_KINDS`. */
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
+/** `value` is an entry kind (input validation for the index and the CLI). */
 export function isEntryKind(value: string): value is EntryKind {
   return ENTRY_KINDS.some((kind) => kind === value);
 }
@@ -310,6 +325,7 @@ export interface EntryPoint {
   note?: string;
 }
 
+/** The whole fact store as `.keylang/index.json` holds it. */
 export interface AnalysisSnapshot {
   schema: typeof SNAPSHOT_SCHEMA;
   snapshotId: string;
@@ -348,10 +364,15 @@ export interface AnalysisSnapshot {
   entries: EntryPoint[];
 }
 
+/** Lowercase hex SHA-256 of the text's UTF-8 bytes. */
 export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/**
+ * The snapshot of a built graph: its ID over every input that decides the
+ * facts, and the facts themselves in a stable order.
+ */
 export function buildSnapshot(
   graph: Graph,
   config: Config,
@@ -364,6 +385,8 @@ export function buildSnapshot(
   /** Framework adapters in use and their config files, which `snapshotId` covers like the sources. */
   frameworks: readonly FrameworkManifest[] = [],
 ): AnalysisSnapshot {
+  // The manifest: sorted file hashes, grammar versions and the config as
+  // analysed. Every list here is sorted because the ID hashes its JSON text.
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
 
@@ -383,6 +406,8 @@ export function buildSnapshot(
 
   const frameworkFiles = frameworks.map((f) => ({ name: f.name, version: f.version, files: [...f.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) }));
 
+  // Everything that decides the facts goes into the ID; wall-clock time and
+  // the repository's prose (README) stay out.
   const identity = {
     schema: SNAPSHOT_SCHEMA,
     extractor: EXTRACTOR_VERSION,
@@ -404,6 +429,9 @@ export function buildSnapshot(
   // fns and types that read a value imported from another file: their closure cannot cover it.
   const readsImported = new Set<string>();
 
+  // Walk the module tree: one node per module, then its fns and types, then
+  // its children. Optional fields are set only when present, so absent ones do
+  // not appear in the JSON.
   const visit = (m: Module): void => {
     const moduleHead: Pick<SnapshotNode, "kind" | "class"> = { kind: "module" };
 
@@ -486,6 +514,7 @@ export function buildSnapshot(
     for (const c of m.children) visit(c);
   };
 
+  // A layer's doc: the README of its directory, else its index module's doc comment.
   for (const l of graph.layers) {
     nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: docs.layers.get(l.name) ?? indexDoc(l.modules, globDirectory(config.layers.get(l.name) ?? [])) };
 
@@ -514,6 +543,7 @@ export function buildSnapshot(
     };
   }
 
+  // Reverse links: fill `dependents` and `callers` from `deps` and `calls`, then sort them.
   for (const [id, n] of Object.entries(nodes)) {
     for (const d of n.deps ?? []) nodes[d]?.dependents?.push(id);
 
@@ -525,6 +555,7 @@ export function buildSnapshot(
     n.callers?.sort();
   }
 
+  // Rebuild the record with keys in ID order: JSON keeps insertion order.
   const ordered: Record<string, SnapshotNode> = {};
 
   for (const id of Object.keys(nodes).sort()) {
@@ -533,6 +564,9 @@ export function buildSnapshot(
     if (node) ordered[id] = node;
   }
 
+  // Edges in a fixed traversal order: module imports and fn calls per module
+  // (depth first), then event observers, open (ambiguous) edges, and the
+  // unresolved ones the coverage holes stand for.
   const edges: SnapshotEdge[] = [];
 
   const visitEdges = (m: Module): void => {
@@ -654,6 +688,8 @@ export function buildSnapshot(
 
   const coverage: CoverageItem[] = [];
 
+  // Every hole is a coverage item; one that leaves a reference unresolved is
+  // also an edge with no target, so rules see that something is there.
   for (const gap of graph.gaps) {
     coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: gap.reason, source: gap.source });
 
@@ -711,6 +747,7 @@ export function buildSnapshot(
  * terminates and every member of it changes together.
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[], readsImported: ReadonlySet<string>): void {
+  // Nodes whose own body has a call keylang could not follow: their closure is incomplete.
   const holes = new Set(coverage.flatMap((c) => (c.kind === "dynamic-call" || c.kind === "unresolved-call" || c.kind === "ambiguous-binding" ? [c.source] : [])));
 
   for (const id of readsImported) holes.add(id);
@@ -734,6 +771,7 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
     return nodes[target]?.class && nodes[constructor]?.kind === "fn" ? constructor : null;
   };
 
+  // The call graph over fns, types and events, with class targets replaced by their constructors.
   const adj = new Map<string, Set<string>>();
 
   for (const [id, node] of Object.entries(nodes)) {
@@ -747,6 +785,8 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
   for (const component of components(adj)) {
     const members = [...component].sort();
     const inside = new Set(members);
+    // Callees outside the component are already done (Tarjan's order); their
+    // closures enter this one's hash, and an incomplete one makes it incomplete.
     const outside = [...new Set(members.flatMap((id) => [...(adj.get(id) ?? [])]).filter((id) => !inside.has(id)))].sort();
     const own = (id: string): string | undefined => (nodes[id]?.kind === "event" ? `event ${nodes[id]?.name ?? id}` : nodes[id]?.fingerprint);
     let complete = members.every((id) => own(id) !== undefined && !holes.has(id));
@@ -780,6 +820,7 @@ function readsImportedValue(print: string): boolean {
   return print.includes("+");
 }
 
+/** The brief of a doc comment, or null without one. */
 function docBrief(doc: string | null | undefined): string | null {
   return doc ? briefOf(doc) : null;
 }
@@ -792,6 +833,7 @@ function docBrief(doc: string | null | undefined): string | null {
 function indexDoc(modules: readonly Module[], dir: string | null): string | null {
   if (dir === null) return null;
 
+  // Only files directly in `dir` (not below it) with a doc comment qualify.
   for (const m of modules) {
     if (m.path === null || !m.doc || !m.path.startsWith(`${dir}/`) || m.path.slice(dir.length + 1).includes("/")) continue;
     const language = languageOf(m.path);
@@ -818,10 +860,12 @@ function exportRow(entry: ExportEntry): SnapshotExport {
   return row;
 }
 
+/** Coverage order: file, line, kind, reason; ties keep their insertion order (a stable sort). */
 function compareCoverage(a: CoverageItem, b: CoverageItem): number {
   return cmp(a.file, b.file) || a.line - b.line || cmp(a.kind, b.kind) || cmp(a.reason, b.reason);
 }
 
+/** Code-unit order of two strings. */
 function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -871,6 +915,7 @@ function installedVersion(name: string, resolve: () => string): string | null {
     return null;
   }
 
+  // Climb from the resolved file to the first `package.json` naming the package.
   for (;;) {
     const manifest = readJson(join(dir, "package.json"));
 
@@ -882,6 +927,7 @@ function installedVersion(name: string, resolve: () => string): string | null {
   }
 }
 
+/** A JSON object file, or null when it is missing, unreadable or not an object. */
 function readJson(file: string): JsonObject | null {
   try {
     const value = parseJson(readFileSync(file, "utf8"));

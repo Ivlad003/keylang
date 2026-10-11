@@ -1,8 +1,10 @@
 // `keylang clone <source>`: a repository someone names by URL (or a local
-// path) becomes a shallow clone in keylang's cache, which `init`, `map` and
-// `explain` then work on like any checkout. Git runs as an argument array,
-// never through a shell, with its credential prompt off so a private URL fails
-// instead of waiting for a password nobody can type.
+// path) becomes a blob-less partial clone in keylang's cache, which `init`,
+// `map` and `explain` then work on like any checkout. Git runs as an argument
+// array, never through a shell, with its credential prompt off so a private URL
+// fails instead of waiting for a password nobody can type.
+// Layer: CLI and `web --hub`, before the analysis pipeline. Entry points:
+// `parseRepoSource`, `cloneCacheRoot`, `syncClone`, `listClones`, `enableExplainedMap`.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -26,8 +28,10 @@ export interface RepoSource {
 /** How far `clone --explain` goes past the map. */
 export type CloneExplain = "map-only" | "map-and-ai" | "all";
 
+/** Every `--explain` mode, in help order. */
 export const CLONE_EXPLAIN_MODES: readonly CloneExplain[] = ["map-only", "map-and-ai", "all"];
 
+/** Whether `text` is a valid `--explain` mode. */
 export function isCloneExplain(text: string): text is CloneExplain {
   return CLONE_EXPLAIN_MODES.some((mode) => mode === text);
 }
@@ -44,8 +48,10 @@ export function redactUrl(text: string): string {
   return text.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, "$1");
 }
 
+// Characters a cache path segment may hold on every filesystem: no separators, spaces or shell specials.
 const SAFE_SEGMENT = /^[A-Za-z0-9._~-]+$/;
 
+// The scp-like git form `[user@]host:path`: group 1 is the host, group 2 the path.
 const SCP_LIKE = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/;
 
 /**
@@ -58,13 +64,16 @@ export function parseRepoSource(text: string, cwd: string): RepoSource | { error
 
   if (source === "") return { error: "clone: a repository URL or path is required" };
 
+  // A leading `-` would reach git as an option: refuse it outright.
   if (source.startsWith("-")) return { error: `clone: \`${redactUrl(source)}\` is not a repository URL` };
 
+  // Order matters: a URL first, then an existing local directory, then the scp form.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source)) return fromUrl(source);
   const local = resolve(cwd, source);
 
   if (existsSync(local)) {
     if (!statSync(local).isDirectory()) return { error: `clone: ${source} is not a directory` };
+    // Local paths are keyed by name plus a short hash of the full path, so two `repo` folders do not collide.
     const hash = createHash("sha256").update(local).digest("hex").slice(0, 8);
 
     return { url: local, displayUrl: local, key: ["local", `${placeable(basename(local)) ?? "repo"}-${hash}`] };
@@ -77,6 +86,7 @@ export function parseRepoSource(text: string, cwd: string): RepoSource | { error
   return { error: `clone: \`${source}\` is neither a URL nor an existing directory` };
 }
 
+/** A source from a URL: `file://` becomes a local path; other schemes are keyed by host (and port) and path. */
 function fromUrl(source: string): RepoSource | { error: string } {
   let url: URL;
 
@@ -96,6 +106,7 @@ function fromUrl(source: string): RepoSource | { error: string } {
   return keyed(source, host, decodeURIComponent(url.pathname));
 }
 
+/** The cache key `host/…/name` of a remote repository, with a trailing `.git` dropped; every segment must be placeable. */
 function keyed(url: string, host: string, path: string): RepoSource | { error: string } {
   const displayUrl = redactUrl(url);
   const segments = path.split("/").filter((segment) => segment !== "");
@@ -110,6 +121,7 @@ function keyed(url: string, host: string, path: string): RepoSource | { error: s
   return { url, displayUrl, key };
 }
 
+/** The segment when it is a safe directory name (not `.` or `..`), else undefined. */
 function placeable(segment: string): string | undefined {
   return SAFE_SEGMENT.test(segment) && segment !== "." && segment !== ".." ? segment : undefined;
 }
@@ -121,6 +133,7 @@ export function cloneCacheRoot(env: Readonly<Record<string, string | undefined>>
   return join(cache, "keylang", "repos");
 }
 
+/** What `syncClone` did, and where. */
 export interface CloneSync {
   action: "cloned" | "updated";
   dir: string;
@@ -137,6 +150,7 @@ export interface CloneSync {
 export function syncClone(source: RepoSource, dir: string): CloneSync {
   const existed = existsSync(dir);
 
+  // A missing or empty directory gets a fresh clone; anything else must be a clone keylang made.
   if (!existed || (statSync(dir).isDirectory() && readdirSync(dir).length === 0)) {
     mkdirSync(dirname(dir), { recursive: true });
     // The whole history without file contents: `feature --since`, `check --changed` and the web's
@@ -148,6 +162,7 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
     } catch (error) {
       rmSync(dir, { recursive: true, force: true });
 
+      // Leave an empty directory the caller made in place, as it was before.
       if (existed) mkdirSync(dir);
       throw new Error(`clone: ${error instanceof Error ? error.message : String(error)}; the clone of ${source.displayUrl} was removed`);
     }
@@ -179,6 +194,7 @@ export function syncClone(source: RepoSource, dir: string): CloneSync {
 export function listClones(cacheRoot: string, depth = 6): { dir: string; url: string; key: string[] }[] {
   const out: { dir: string; url: string; key: string[] }[] = [];
 
+  // Depth-limited walk: stop at a marker (a clone), skip hidden directories and unreadable ones.
   const walk = (dir: string, level: number): void => {
     const marker = readMarker(dir);
 
@@ -202,11 +218,13 @@ export function listClones(cacheRoot: string, depth = 6): { dir: string; url: st
 
   if (existsSync(cacheRoot)) walk(cacheRoot, 0);
 
+  // Sort by key so the list is stable whatever order the filesystem returns.
   return out.sort((a, b) => (a.key.join("/") < b.key.join("/") ? -1 : a.key.join("/") > b.key.join("/") ? 1 : 0));
 }
 
 /** The marker of `dir`, or undefined: absent, unreadable, or behind a link out of the directory — a file elsewhere is no proof keylang cloned `dir`. */
 function readMarker(dir: string): { url: string; key: string[] } | undefined {
+  // The marker must pass the same write rules as when it was written: no link out of `dir`.
   if (targetProblem(dir, CLONE_MARKER, { under: ".keylang" }) !== null) return undefined;
   const marker = join(dir, CLONE_MARKER);
 
@@ -216,6 +234,7 @@ function readMarker(dir: string): { url: string; key: string[] } | undefined {
     const parsed = parseJson(withoutBom(readFileSync(marker, "utf8")));
 
     if (!isJsonObject(parsed) || !isJsonString(parsed.url)) return undefined;
+    // Older markers may lack a valid key: fall back to the URL as a single segment.
     const segments = parsed.key;
     const key = Array.isArray(segments) && segments.every(isJsonString) ? segments : undefined;
 
@@ -227,6 +246,7 @@ function readMarker(dir: string): { url: string; key: string[] } | undefined {
   return undefined;
 }
 
+/** Run git with an argument array and no prompts; throws with git's last stderr line on failure. */
 function git(cwd: string, args: string[]): void {
   // `ext::` would run a command named in the URL; a URL from outside must never do that.
   const out = spawnSync("git", ["-c", "protocol.ext.allow=never", ...args], {
@@ -264,6 +284,7 @@ export function enableExplainedMap(root: string): string | null {
   if (!isJsonObject(config)) return "keylang.json: not a JSON object";
   const explain = config.explain;
 
+  // Merge into an existing `explain` object; leave the file untouched when the map is already on.
   if (explain !== undefined && !isJsonObject(explain)) return "keylang.json: `explain` is not an object";
 
   if (explain?.map === true) return null;

@@ -5,6 +5,10 @@
 // `invariant`) or names anything but a snapshot ID or a declared `planned`
 // is dropped before it is shown; longer changes go through MERGE
 // (`Ctrl+Space`), never through `Tab`.
+//
+// Sits between the editor UI (TUI/LSP) and the LLM adapter, reusing the
+// Markdown → IR parser to validate suggestions. Entry points: `ghostSignal`
+// (cheap trigger check) and `ghostSuggestions` (the model call plus filtering).
 
 import type { Analysis } from "./analyze.ts";
 import { contextText, type ContextPack } from "./agent-context.ts";
@@ -17,8 +21,10 @@ export function ghostSignal(path: string, text: string, line: number, col: numbe
   const lines = text.split("\n");
   const current = lines[line] ?? "";
 
+  // Only an empty bullet with the cursor at its end counts; anything typed already is the user's line.
   if (!/^\s*- ?$/.test(current) || col < current.length) return false;
   const doc = parse(path, text);
+  // The section the cursor is in: the last heading at or above the cursor line (IR lines are 1-based, `line` is 0-based).
   const section = doc.sections.filter((s) => s.heading !== null && s.heading.span.start.line <= line + 1).at(-1);
 
   if (section?.kind !== "flow") return false;
@@ -51,6 +57,7 @@ export async function ghostSuggestions(analysis: Analysis, client: LlmClient, pa
     maxTokens: 256,
   }, call);
 
+  // IDs a suggestion may name: snapshot nodes plus every `planned` declaration across the spec files.
   const planned = new Set<string>();
 
   for (const doc of analysis.docs) for (const section of doc.sections) for (const top of sectionNodes(section)) walk(top, (node) => {
@@ -59,7 +66,10 @@ export async function ghostSuggestions(analysis: Analysis, client: LlmClient, pa
   const known = (id: string): boolean => analysis.snapshot?.nodes[id] !== undefined || planned.has(id);
   const out: string[] = [];
 
+  // Keep a model line only if it is a list item, not a duplicate, parses cleanly
+  // in place and names only known IDs; stop at three.
   for (const raw of answer.split("\n")) {
+    // Strip surrounding whitespace and backticks the model may wrap a line in.
     const item = raw.replace(/^[`\s]+|[`\s]+$/g, "");
 
     if (!item.startsWith("- ") || out.includes(`${indent}${item}`)) continue;

@@ -10,6 +10,9 @@
 // The start page's API (`/hub/api/…`) needs the hub's token, as a
 // repository's API needs its own: on loopback the Host header is checked, a
 // page of another origin may not read or write.
+//
+// Layer: TUI/web transport. The CLI's `web --hub` calls `serveHub`; each
+// repository is served by `web.ts`, cloning comes from `../clone.ts`.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -25,6 +28,7 @@ import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.t
 import { runOperation } from "../operations.ts";
 import { BUILT_DIR, createWebApp, diagramsPage, ensureClient, logUnhandled, shownHost, type WebApp } from "./web.ts";
 
+/** How `serveHub` listens and where it finds repositories. */
 export interface HubOptions {
   port: number;
   host?: string;
@@ -36,12 +40,14 @@ export interface HubOptions {
   cwd?: string;
 }
 
+/** A running hub: its URL with the token in the fragment, its port, and how to stop it. */
 export interface HubServer {
   url: string;
   port: number;
   close(): Promise<void>;
 }
 
+/** A repository opened in this hub: its root and its own web app. */
 interface Mounted {
   root: string;
   app: WebApp;
@@ -57,11 +63,13 @@ function idOf(cacheRoot: string, dir: string): string {
   return rel.split(sep).join("~");
 }
 
+/** Sends a whole response with headers that forbid caching and MIME sniffing. */
 function reply(response: ServerResponse, status: number, type: string, body: string | Buffer): void {
   response.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
   response.end(body);
 }
 
+/** The request body as text, or null when it is larger than `MAX_BODY` (the rest is read and dropped). */
 function readBody(request: IncomingMessage): Promise<string | null> {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -76,6 +84,7 @@ function readBody(request: IncomingMessage): Promise<string | null> {
   });
 }
 
+/** Starts the hub on `options.port` (0 picks a free one) and resolves once it listens. */
 export async function serveHub(options: HubOptions): Promise<HubServer> {
   const host = options.host ?? "127.0.0.1";
   const cacheRoot = options.cacheRoot ?? cloneCacheRoot(process.env, homedir());
@@ -83,12 +92,16 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
   const here = findRoot(cwd);
   const token = randomBytes(16).toString("hex");
   const mounted = new Map<string, Mounted>();
+  // `port` is known only after listening; the host check reads it then.
   let port = options.port;
+  // On loopback, only the hub's own Host values are accepted (DNS rebinding);
+  // a page of another origin is refused by the Origin header.
   const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
   const allowedHost = (header: string | undefined): boolean => !!header && (!loopback || [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`].includes(header));
   const sameOrigin = (request: IncomingMessage): boolean => request.headers.origin === undefined || request.headers.origin === `http://${request.headers.host}`;
 
   const authorized = (request: IncomingMessage): boolean => {
+    // Constant-time comparison of the bearer token.
     const given = /^Bearer (\S+)$/.exec(String(request.headers.authorization ?? ""))?.[1] ?? "";
 
     return given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token));
@@ -108,11 +121,13 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     return found;
   };
 
+  /** The URL of a mounted repository's page, its token in the fragment; read-only opens the diagrams page. */
   const viewer = (id: string, found: Mounted): string => `/r/${encodeURIComponent(id)}/${options.readOnly ? "diagrams" : ""}#t=${found.app.token}`;
 
   /** The hub's own folder, when it holds a repository (keylang.json, or code `init` would find). */
   const hereListed = (): { id: string; label: string; source: string; root: string } | null => (existsSync(join(here, CONFIG_FILE)) || existsSync(join(here, ".git")) ? { id: "here", label: basename(here), source: here, root: here } : null);
 
+  // The listed repositories: the hub's own folder first, then the clones; `open` says whether one is mounted.
   const repos = () => {
     const list = listClones(cacheRoot).map((clone) => ({ id: idOf(cacheRoot, clone.dir), label: clone.key.slice(1).join("/") || clone.key.join("/"), source: clone.url, root: clone.dir }));
     const own = hereListed();
@@ -142,18 +157,22 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     return { id, viewer: viewer(id, mount(id, dir)), action: synced.action };
   };
 
+  /** The start page's API: list the repositories, open one, or clone/update one. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string): Promise<void> => {
     const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
 
+    // Every call needs the same origin and the hub's token.
     if (!sameOrigin(request) || !authorized(request)) return reply(response, 403, "text/plain", "forbidden\n");
 
     if (path === "/hub/api/repos" && request.method === "GET") return json(200, { readOnly: options.readOnly === true, cacheRoot, repos: repos() });
 
     if (request.method !== "POST" || (path !== "/hub/api/open" && path !== "/hub/api/fetch")) return json(404, { error: "not found" });
+    // A write is refused from a cross-site context the browser reports (Sec-Fetch-Site).
     const site = request.headers["sec-fetch-site"];
 
     if (site !== undefined && site !== "same-origin" && site !== "none") return reply(response, 403, "text/plain", "forbidden\n");
 
+    // Only a JSON body: a form post from another page cannot send it without a preflight.
     if (!/^application\/json\s*(;|$)/i.test(String(request.headers["content-type"] ?? ""))) return json(415, { error: "Content-Type: application/json" });
     const text = await readBody(request);
     let parsed: JsonValue;
@@ -196,6 +215,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     await ensureClient();
     const manifest = join(BUILT_DIR, "site.json");
     const written = existsSync(manifest) ? parseJson(readFileSync(manifest, "utf8")) : [];
+    // Only files the build manifest lists are served: the name never walks the file system.
     const listed = Array.isArray(written) ? written.filter(isJsonString) : [];
 
     if (!listed.includes(name)) return reply(response, 404, "text/plain", "not found\n");
@@ -205,6 +225,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
 
   /** `/r/<id>/rest` → the repository and `/rest`; null when the path is no repository's. */
   const routed = (url: string): { found: Mounted; rest: string; id: string } | null => {
+    // Group 1: the repository id; group 2: the rest of the path; group 3: the query.
     const match = /^\/r\/([^/?#]+)(\/[^?#]*)?(\?[^#]*)?/.exec(url);
 
     if (!match) return null;
@@ -214,6 +235,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     return found ? { found, rest: `${match[2] ?? "/"}${match[3] ?? ""}`, id } : null;
   };
 
+  /** Routes one HTTP request: a mounted repository, the hub API, the built assets, app.html or the start page. */
   const serve = (request: IncomingMessage, response: ServerResponse): void => {
     const url = request.url ?? "/";
     let path: string;
@@ -224,6 +246,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
       return reply(response, 400, "text/plain", "bad request\n");
     }
 
+    // Unknown Host headers are refused before any routing.
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
 
     if (path.startsWith("/r/")) {
@@ -238,6 +261,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
         return reply(response, 302, "text/plain", "\n");
       }
 
+      // The repository's app sees its own paths: the `/r/<id>` prefix is removed.
       request.url = target.rest;
 
       return target.found.app.handle(request, response);
@@ -269,6 +293,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     return reply(response, 200, "text/html; charset=utf-8", hubPage());
   };
 
+  // A synchronous failure in routing becomes a 500, never a crashed server.
   const server: Server = createServer((request, response) => {
     try {
       serve(request, response);
@@ -280,6 +305,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     }
   });
 
+  // WebSockets go to the mounted repository's app with its prefix removed; nothing else upgrades.
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on("error", () => socket.destroy());
     const target = routed(request.url ?? "/");
@@ -293,6 +319,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     request.url = target.rest;
     target.found.app.upgrade(request, socket, head);
   });
+  // Listen, then learn the real port (needed when `options.port` is 0).
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, host, () => resolve());
@@ -307,6 +334,7 @@ export async function serveHub(options: HubOptions): Promise<HubServer> {
     close: async () => {
       stopLogging();
 
+      // Close every mounted app, then the server and its open connections.
       for (const { app } of mounted.values()) await app.close();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();

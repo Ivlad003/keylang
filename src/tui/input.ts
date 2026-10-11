@@ -3,9 +3,13 @@
 // one decoder serves both. A chunk may end inside a sequence or a grapheme
 // cluster; the rest waits for the next chunk, and on `flush()` a lone ESC
 // becomes the Escape key and a waiting cluster one key.
+//
+// Layer: TUI input, the first step of every key: `terminal.ts` and the web
+// terminal feed raw chunks to `InputDecoder`, and `app.ts` handles the events.
 
 import { graphemes } from "./width.ts";
 
+/** A key press: its name, modifiers, and the text it types when printable. */
 export interface KeyEvent {
   type: "key";
   /** `a`, `A`, `ж`, `enter`, `up`, `f5`, `space`, … */
@@ -17,6 +21,7 @@ export interface KeyEvent {
   text?: string;
 }
 
+/** An SGR mouse report: button, action and the 0-based cell. */
 export interface MouseEvent {
   type: "mouse";
   action: "down" | "up" | "move" | "drag" | "wheel-up" | "wheel-down";
@@ -30,26 +35,34 @@ export interface MouseEvent {
   shift: boolean;
 }
 
+/** The text of one bracketed paste, line ends normalised to `\n`. */
 export interface PasteEvent {
   type: "paste";
   text: string;
 }
 
+/** Every event the decoder emits. */
 export type InputEvent = KeyEvent | MouseEvent | PasteEvent;
 
+/** Bracketed paste start and end markers. */
 const PASTE_START = "\x1b[200~";
 
 const PASTE_END = "\x1b[201~";
 
 // ESC-led patterns are built from strings: the control character is the point.
+// SGR mouse report: `ESC [ < code ; x ; y` then `M` (press/move) or `m` (release).
 const SGR_MOUSE = new RegExp(String.raw`^\x1b\[<(\d+);(\d+);(\d+)([Mm])`);
 
+// A complete CSI: private marker, numeric params, intermediates, final byte.
 const CSI = new RegExp(String.raw`^\x1b\[([?>=<]?)([\d;]*)([\x20-\x2f]*)([\x40-\x7e])`);
 
+// The start of a CSI that has not reached its final byte yet: wait for more input.
 const CSI_PREFIX = new RegExp(String.raw`^\x1b\[[?>=<]?[\d;]*[\x20-\x2f]*$`);
 
+/** The modifier flags of a key. */
 type Modifiers = Pick<KeyEvent, "ctrl" | "alt" | "shift">;
 
+/** A key event; `text` only for printable keys. */
 function key(name: string, mods: Partial<Modifiers> = {}, text?: string): KeyEvent {
   const event: KeyEvent = { type: "key", name, ctrl: mods.ctrl === true, alt: mods.alt === true, shift: mods.shift === true };
 
@@ -63,13 +76,16 @@ function typed(cluster: string): KeyEvent {
   return key(cluster === " " ? "space" : cluster, { shift: cluster !== cluster.toLowerCase() }, cluster);
 }
 
+/** `ESC [ n ~` keys by their number (several terminals use different numbers for Home and End). */
 const TILDE = new Map(Object.entries({
   "1": "home", "2": "insert", "3": "delete", "4": "end", "5": "pageup", "6": "pagedown", "7": "home", "8": "end",
   "11": "f1", "12": "f2", "13": "f3", "14": "f4", "15": "f5", "17": "f6", "18": "f7", "19": "f8", "20": "f9", "21": "f10", "23": "f11", "24": "f12",
 }));
 
+/** `ESC [ X` and `ESC O X` keys by their final letter. */
 const FINAL = new Map(Object.entries({ A: "up", B: "down", C: "right", D: "left", H: "home", F: "end", P: "f1", Q: "f2", R: "f3", S: "f4" }));
 
+/** xterm modifier parameter: value − 1 is a bit set of Shift (1), Alt (2) and Ctrl (4); absent means none. */
 function modifiers(param: string | undefined): Modifiers {
   const m = Math.max(1, Number(param ?? "1")) - 1;
 
@@ -83,6 +99,7 @@ function partialSuffix(text: string, marker: string): number {
   return 0;
 }
 
+/** Turns raw terminal input into events, keeping incomplete sequences between chunks. */
 export class InputDecoder {
   private pending = "";
   private paste: string | null = null;
@@ -92,7 +109,9 @@ export class InputDecoder {
     this.pending += chunk;
     const out: InputEvent[] = [];
 
+    // Consume events until the input runs out or ends inside a sequence.
     for (;;) {
+      // Inside a bracketed paste everything up to the end marker is text, not keys.
       if (this.paste !== null) {
         const end = this.pending.indexOf(PASTE_END);
 
@@ -159,12 +178,14 @@ export class InputDecoder {
     return this.paste !== null;
   }
 
+  /** One event decoded from the start of `text` and how many UTF-16 units it took; null when more input is needed. */
   private next(text: string): { length: number; event: InputEvent | null } | null {
     const first = text[0]!;
 
     if (first === "\x1b") return this.escape(text);
     const code = first.charCodeAt(0);
 
+    // Control characters: Enter, Tab, Backspace, Ctrl+Space (NUL) and Ctrl+letter (0x01–0x1a map to a–z).
     // CRLF (pasted from Windows text without bracketed paste) is one line break, as inside a bracketed paste.
     if (first === "\r") return { length: text[1] === "\n" ? 2 : 1, event: key("enter") };
 
@@ -193,7 +214,9 @@ export class InputDecoder {
     return { length: cluster.length, event: typed(cluster) };
   }
 
+  /** A sequence led by ESC: paste start, CSI (keys, mouse, reports), SS3 (`ESC O`), or Alt + a key. */
   private escape(text: string): { length: number; event: InputEvent | null } | null {
+    // A lone ESC may be the start of a sequence: wait for more input or `flush()`.
     if (text.length === 1) return null;
 
     if (text.startsWith(PASTE_START)) {
@@ -211,6 +234,7 @@ export class InputDecoder {
       // A control sequence (ECMA-48 §5.4): a private marker, parameters, intermediates, a final byte.
       const csi = CSI.exec(text);
 
+      // Not a CSI and not the start of one: ESC then `[` typed as Alt+[.
       if (!csi) return CSI_PREFIX.test(text) ? null : { length: 2, event: key("[", { alt: true }, "[") };
       const [whole, marker, params = "", intermediates, final] = csi;
 
@@ -218,14 +242,17 @@ export class InputDecoder {
       if (marker !== "" || intermediates !== "") return { length: whole.length, event: null };
       const parts = params.split(";");
 
+      // `ESC [ n ; m ~` keys (Insert, Delete, PageUp, F5…) with their modifiers.
       if (final === "~") return { length: whole.length, event: key(TILDE.get(parts[0] ?? "") ?? "unknown", modifiers(parts[1])) };
 
+      // Shift+Tab.
       if (final === "Z") return { length: whole.length, event: key("tab", { shift: true }) };
       const name = FINAL.get(final!);
 
       return { length: whole.length, event: name ? key(name, modifiers(parts[1])) : null };
     }
 
+    // SS3 (`ESC O X`): arrows and F1–F4 in application mode.
     if (second === "O") {
       if (text.length < 3) return null;
       const name = FINAL.get(text[2]!);
@@ -233,6 +260,7 @@ export class InputDecoder {
       return { length: 3, event: name ? key(name) : null };
     }
 
+    // ESC ESC: the first one is the Escape key; the second starts the next event.
     if (second === "\x1b") return { length: 1, event: key("escape") };
     // ESC + key is Alt + key.
     const inner = this.next(text.slice(1));
@@ -243,6 +271,7 @@ export class InputDecoder {
     return { length: 1 + inner.length, event };
   }
 
+  /** Decodes an SGR mouse code: bits 2–4 are Shift/Alt/Ctrl, bit 6 the wheel, bit 5 motion, bits 0–1 the button. */
   private mouse(code: number, x: number, y: number, press: boolean): MouseEvent {
     const mods = { shift: (code & 4) !== 0, alt: (code & 8) !== 0, ctrl: (code & 16) !== 0 };
     const base = { type: "mouse" as const, x: x - 1, y: y - 1, ...mods };
@@ -250,6 +279,7 @@ export class InputDecoder {
     if ((code & 64) !== 0) return { ...base, action: (code & 1) === 0 ? "wheel-up" : "wheel-down", button: 0 };
     const button = code & 3;
 
+    // Motion with no button pressed (button 3) is a plain move; with a button, a drag.
     if ((code & 32) !== 0) return { ...base, action: button === 3 ? "move" : "drag", button: button === 3 ? 0 : button };
 
     return { ...base, action: press ? "down" : "up", button };

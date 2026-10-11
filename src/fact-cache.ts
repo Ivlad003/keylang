@@ -9,6 +9,10 @@
 // map, and `check`, `feature`, `hook stop` and MCP save it best-effort when
 // their facts differ from it (`saveFactCache`), so an agent's loop parses
 // only what changed. A `--check` mode never writes it.
+//
+// Sits at the first step of the code pipeline (source → FileFacts → graph →
+// map/index), between file reading and the language frontends. Entry points:
+// `FactCache.open`, `FactCache#facts` / `#config`, `serialize`, `saveFactCache`.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,13 +23,16 @@ import { isJsonBoolean, isJsonNumber, isJsonObject, isJsonString, parseJson, typ
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
+/** The layout of the cache file; bump it when the stored shape changes. */
 const CACHE_SCHEMA = 1;
 
 /** Relative to the root, POSIX. */
 export const FACT_CACHE_FILE = ".keylang/cache/facts.json";
 
+/** `FileFacts` as JSON: the `exports` set is stored as a sorted array. */
 type StoredFacts = Omit<FileFacts, "exports"> & { exports: string[] };
 
+/** The whole cache file: schema, extractor version, and entries by path keyed by content hash. */
 interface Stored {
   schema: number;
   version: string;
@@ -42,6 +49,7 @@ function storedConfigs(value: JsonValue, version: string): NonNullable<Stored["c
   if (!isJsonObject(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isJsonObject(value.configs)) return {};
   const configs: NonNullable<Stored["configs"]> = {};
 
+  // Keep only well-formed entries whose facts name the path they are stored under.
   for (const [path, entry] of Object.entries(value.configs)) {
     if (!isJsonObject(entry) || !isJsonString(entry.sha256) || !isConfigFacts(entry.facts) || entry.facts.path !== path) continue;
     configs[path] = { sha256: entry.sha256, facts: entry.facts };
@@ -59,6 +67,7 @@ function storedFiles(value: JsonValue, version: string): Stored["files"] {
   if (!isJsonObject(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isJsonObject(value.files)) return {};
   const files: Stored["files"] = {};
 
+  // Keep only well-formed entries whose facts name the path they are stored under.
   for (const [path, entry] of Object.entries(value.files)) {
     if (!isJsonObject(entry) || !isJsonString(entry.sha256) || !isStoredFacts(entry.facts) || entry.facts.path !== path) continue;
     files[path] = { sha256: entry.sha256, facts: entry.facts };
@@ -90,6 +99,7 @@ function isStoredFacts(value: Field): value is JsonObject & StoredFacts {
   );
 }
 
+/** An `ImportFact` of the right shape, bindings included. */
 function isImport(value: Field): boolean {
   return (
     isJsonObject(value) &&
@@ -105,6 +115,7 @@ function isImport(value: Field): boolean {
   );
 }
 
+/** A `DeclFact` of the right shape, its calls, types and members checked recursively. */
 function isDecl(value: Field): boolean {
   return (
     isJsonObject(value) &&
@@ -128,6 +139,7 @@ function isDecl(value: Field): boolean {
   );
 }
 
+/** A `CallFact` of the right shape. */
 function isCall(value: Field): boolean {
   return (
     isJsonObject(value) &&
@@ -143,6 +155,7 @@ function isCall(value: Field): boolean {
   );
 }
 
+/** A `HookFact` of the right shape. */
 function isHook(value: Field): boolean {
   return (
     isJsonObject(value) &&
@@ -154,18 +167,22 @@ function isHook(value: Field): boolean {
   );
 }
 
+/** A `PassFact` of the right shape. */
 function isPass(value: Field): boolean {
   return isJsonObject(value) && Number.isInteger(value.arg) && isJsonString(value.path) && isJsonString(value.callee) && optional(value.bound, isBound) && optional(value.receiver, isString);
 }
 
+/** The kinds and forms an export row may carry. */
 const ROW_KINDS = new Set(["fn", "value", "class", "type", "alias", "default", "reexport"]);
 
 const ROW_FORMS = new Set(["alias", "default", "reexport", "namespace"]);
 
+/** An `ExportRow` of the right shape. */
 function isExportRow(value: Field): boolean {
   return isJsonObject(value) && isJsonString(value.name) && isJsonString(value.kind) && ROW_KINDS.has(value.kind) && (value.local === null || isJsonString(value.local)) && optional(value.form, (f) => isJsonString(f) && ROW_FORMS.has(f)) && optional(value.from, isString);
 }
 
+/** How a call's receiver is bound: a parameter or a local. */
 function isBound(value: Field): boolean {
   return value === "parameter" || value === "local";
 }
@@ -175,34 +192,45 @@ function isRange(value: JsonObject): boolean {
   return isPosition(value.line) && isPosition(value.col) && isPosition(value.endLine) && isPosition(value.endCol);
 }
 
+/** A 1-based line or column. */
 function isPosition(value: Field): boolean {
   return isInteger(value) && value >= 1;
 }
 
+/** A JSON number with no fraction. */
 function isInteger(value: Field): value is number {
   return isJsonNumber(value) && Number.isInteger(value);
 }
 
+/** A JSON string, as a plain predicate for `every` and `optional`. */
 function isString(value: Field): boolean {
   return isJsonString(value);
 }
 
+/** An array whose every item passes `check`. */
 function every(value: Field, check: (item: JsonValue) => boolean): boolean {
   return Array.isArray(value) && value.every(check);
 }
 
+/** Absent, or present and passing `check`. */
 function optional(value: Field, check: (item: JsonValue) => boolean): boolean {
   return value === undefined || check(value);
 }
 
+/** Absent, or `true`: the encoding of an optional flag. */
 function optionalTrue(value: Field): boolean {
   return value === undefined || value === true;
 }
 
+/**
+ * Process-wide caches by root, version and path, so a long-lived process (the
+ * language server) reuses facts across analyses without reading the file.
+ */
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
 
 const configMemory = new Map<string, { hash: string; facts: ConfigFacts }>();
 
+/** The fact cache of one analysis: lookups by content hash, and the entries this run used, for saving. */
 export class FactCache {
   private readonly root: string;
   private readonly version: string;
@@ -227,6 +255,8 @@ export class FactCache {
     let disk: Stored["files"] = {};
     let configs: NonNullable<Stored["configs"]> = {};
 
+    // Read the disk cache if there is one; only entries of this schema and
+    // version, of the right shape, are kept.
     if (existsSync(file)) {
       try {
         const value = parseJson(readFileSync(file, "utf8"));
@@ -240,7 +270,9 @@ export class FactCache {
     return new FactCache(root, version, disk, configs);
   }
 
+  /** The facts of `path` with content hash `sha256`: from memory, else disk, else `extract`. */
   async facts(path: string, sha256: string, extract: () => Promise<FileFacts>): Promise<FileFacts> {
+    // Memory first, then disk; either counts only when the content hash matches.
     const key = `${this.root}\0${this.version}\0${path}`;
     const hot = memory.get(key);
     let facts: FileFacts | undefined = hot && hot.hash === sha256 ? hot.facts : undefined;
@@ -248,6 +280,7 @@ export class FactCache {
     if (!facts) {
       const cold = this.disk[path];
 
+      // JSON has no Set: rebuild `exports` from its stored array.
       if (cold && cold.sha256 === sha256) facts = { ...cold.facts, exports: new Set(cold.facts.exports) };
     }
 
@@ -257,6 +290,7 @@ export class FactCache {
       facts = await extract();
     }
 
+    // Remember for this process and record as used, so `serialize` writes it.
     memory.set(key, { hash: sha256, facts });
     this.used.set(path, { sha256, facts });
 
@@ -269,6 +303,7 @@ export class FactCache {
    * the adapter and its version, part of the key.
    */
   config(path: string, sha256: string, adapter: string, parse: () => ConfigFacts): ConfigFacts {
+    // The adapter is part of the stored hash: a new adapter version re-parses.
     const hash = `${adapter}\0${sha256}`;
     const key = `${this.root}\0${this.version}\0${path}`;
     const hot = configMemory.get(key);
@@ -298,6 +333,7 @@ export class FactCache {
    * this run did not read. Unchanged, a write would put back the same facts.
    */
   changed(): boolean {
+    // A different count means an entry was added or one would be dropped.
     if (Object.keys(this.disk).length !== this.used.size) return true;
 
     for (const [path, entry] of this.used) if (this.disk[path]?.sha256 !== entry.sha256) return true;
@@ -313,6 +349,7 @@ export class FactCache {
   serialize(): string {
     const files: Stored["files"] = {};
 
+    // Paths sorted and `exports` sorted, so the same facts give the same bytes.
     for (const [path, entry] of [...this.used].sort(([a], [b]) => compareText(a, b))) {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
@@ -345,6 +382,7 @@ export function keepsFactCache(root: string): boolean {
  */
 export function saveFactCache(root: string, text: string): boolean {
   try {
+    // Refuse a target that is not a plain generated file under `.keylang`.
     if (writeProblem(root, FACT_CACHE_FILE, { under: ".keylang", generated: true }) !== null) return false;
     writeAtomic(landing(join(root, FACT_CACHE_FILE))!, text, { exact: true });
 

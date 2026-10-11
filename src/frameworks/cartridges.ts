@@ -8,6 +8,10 @@
 // next cartridge after the current one, `dw/…` the platform API. The import
 // resolver (`src/imports.ts`) asks here first; the SFCC adapter
 // (`src/frameworks/sfcc.ts`) asks again to say when a guessed order decided.
+//
+// Pipeline: source → FileFacts → graph, at the import-resolution step.
+// Entry points: `cartridgeLayout`, `cartridgeAnswers`, `cartridgeDirs`,
+// `cartridgeOf`; key terms: cartridge, cartridge path, `superModule`.
 
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -16,12 +20,14 @@ import { isJsonObject, isJsonString, parseJson, type JsonValue } from "../json.t
 /** The specifier the extractor records for `module.superModule` (`src/extract/ts.ts` writes the same literal). */
 export const SUPER_MODULE = "module.superModule";
 
+/** One SFCC cartridge found among the analysed files. */
 export interface Cartridge {
   name: string;
   /** Root-relative POSIX directory: `cartridges/app_custom`. */
   dir: string;
 }
 
+/** All cartridges, their search order and where that order came from. */
 export interface CartridgeLayout {
   /** Every cartridge of the analysis, by name. */
   cartridges: Cartridge[];
@@ -36,6 +42,7 @@ export interface CartridgeLayout {
 /** `…/cartridges/<name>/cartridge/…`: the cartridges directory and the cartridge's name. */
 const CARTRIDGE_FILE = /^((?:.*\/)?cartridges)\/([^/]+)\/cartridge\//;
 
+/** A file under the shared `…/cartridges/modules/` folder; group 1 is the cartridges directory. */
 const MODULES_FILE = /^((?:.*\/)?cartridges)\/modules\//;
 
 /** The cartridges the analysed files are in, by name; a name met twice is the first directory's. */
@@ -48,6 +55,7 @@ export function cartridgeDirs(sources: Iterable<string>): Cartridge[] {
     if (match !== null && !byName.has(match[2]!)) byName.set(match[2]!, { name: match[2]!, dir: `${match[1]}/${match[2]}` });
   }
 
+  // Sorted by name (code units): it is also the guessed cartridge path.
   return [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
@@ -65,6 +73,7 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
   const byName = new Map(cartridges.map((c) => [c.name, c]));
   const modules = new Set<string>();
 
+  // Collect every `modules` folder beside a cartridges directory, for bare requires.
   for (const path of files) {
     const mod = MODULES_FILE.exec(path);
 
@@ -78,6 +87,8 @@ export function cartridgeLayout(root: string, sources: Iterable<string>, configu
   let path: Cartridge[];
   let source: CartridgeLayout["source"];
 
+  // Order source, by priority: keylang.json, then the dw.json/package.json hint, then alphabetical.
+  // Configured names the repository does not have are dropped.
   if (configured !== null) {
     path = order(configured);
     source = "keylang.json";
@@ -99,6 +110,7 @@ interface CartridgePathHint {
   dw: boolean;
 }
 
+/** Read the cartridge path hint: dw.json fields in order of preference, then the root package.json. */
 function cartridgePathHint(root: string): CartridgePathHint {
   const dw = readJson(join(root, "dw.json"));
   const fromDw = dw === undefined ? null : (names(field(dw, "cartridgePath")) ?? names(field(dw, "cartridge_path")) ?? names(field(dw, "cartridgesPath")) ?? names(field(dw, "cartridge")));
@@ -120,6 +132,7 @@ function names(value: JsonValue | undefined): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+/** `value[key]` when `value` is a JSON object, else undefined. */
 function field(value: JsonValue | undefined, key: string): JsonValue | undefined {
   return isJsonObject(value) ? value[key] : undefined;
 }
@@ -161,9 +174,13 @@ export function cartridgeOf(layout: CartridgeLayout, file: string): Cartridge | 
  * names (extension and index probing), or null.
  */
 export function cartridgeAnswers(layout: CartridgeLayout, fromFile: string, spec: string, probe: (candidate: string) => string | null): string[] | "external" | null {
+  // Resolution by specifier shape, in the platform's order: platform API,
+  // `module.superModule`, `*/` (search the path), `~/` (own cartridge),
+  // `<cartridge>/…`, and finally a bare name in a `modules` folder.
   if (spec === "dw" || spec.startsWith("dw/")) return "external";
   const found = (dirs: readonly string[], rest: string): string[] => dirs.flatMap((dir) => probe(`${dir}/${rest}`) ?? []);
 
+  // The same relative path in every cartridge after the requiring file's own on the path.
   if (spec === SUPER_MODULE) {
     const own = cartridgeOf(layout, fromFile);
     const at = own === null ? -1 : layout.path.findIndex((c) => c.dir === own.dir);
@@ -182,6 +199,7 @@ export function cartridgeAnswers(layout: CartridgeLayout, fromFile: string, spec
     return own === null ? [] : found([own.dir], spec.slice(2));
   }
 
+  // `<name>/rest`: an explicit cartridge, when one by that name exists.
   const slash = spec.indexOf("/");
   const head = slash === -1 ? spec : spec.slice(0, slash);
   const named = layout.cartridges.find((c) => c.name === head);

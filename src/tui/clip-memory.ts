@@ -9,6 +9,10 @@
 // hold code and spec text, so it is written only where git ignores it or
 // outside any repository, never in Browse; the first time it cannot be, the
 // chat says why, once.
+//
+// Layer: TUI. `app.ts` reads and writes the place; `clip-chat.ts` owns the
+// `ChatLog`. Pure text transforms (`withPlace`, `withExchange`, `lastConversation`)
+// are kept apart from the file I/O so tests can check them directly.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -32,6 +36,7 @@ export interface ClipPlace {
   window: { x: number; y: number; cols: number; rows: number } | null;
 }
 
+/** The default place: the clip in its corner, the window above it. */
 const NO_PLACE: ClipPlace = { clip: null, window: null };
 
 /** The place of the clip and its window as the session has them: as the person set them, whatever a smaller terminal shows. */
@@ -58,6 +63,7 @@ export function placeClip(clip: ClipState, place: ClipPlace): void {
  */
 export function parsePlace(file: string, value: JsonValue): ClipPlace {
   if (!isJsonObject(value)) throw new Error(`${file}: must be a JSON object, got ${shown(value)}`);
+  // A missing or null `assistant` is the default; anything else must be an object.
   const assistant = value.assistant;
 
   if (assistant === undefined || assistant === null) return NO_PLACE;
@@ -66,6 +72,7 @@ export function parsePlace(file: string, value: JsonValue): ClipPlace {
   const clip = fieldsOf(file, "assistant.clip", assistant.clip, ["x", "y"]);
   const window = fieldsOf(file, "assistant.window", assistant.window, ["x", "y", "cols", "rows"]);
 
+  // Coordinates are at least 0; a window is at least the chat's minimum size.
   return {
     clip: clip === null ? null : { x: whole(file, "assistant.clip.x", clip.x, 0), y: whole(file, "assistant.clip.y", clip.y, 0) },
     window:
@@ -85,6 +92,7 @@ function fieldsOf(file: string, field: string, value: JsonValue | undefined, key
   if (value === undefined || value === null) return null;
 
   if (!isJsonObject(value)) throw new Error(`${file}: \`${field}\` must be an object of ${keys.join(", ")}, got ${shown(value)}`);
+  // An unknown key is an error rather than ignored, so a typo does not silently fall back to the default.
   const unknown = Object.keys(value).find((key) => !keys.includes(key));
 
   if (unknown !== undefined) throw new Error(`${file}: unknown field \`${field}.${unknown}\` (known: ${keys.join(", ")})`);
@@ -101,6 +109,7 @@ function whole(file: string, field: string, value: JsonValue | undefined, least:
   return value;
 }
 
+/** The place read, and why the default was used instead (null when nothing went wrong). */
 type PlaceRead = { place: ClipPlace; problem: string | null };
 
 /**
@@ -110,6 +119,7 @@ type PlaceRead = { place: ClipPlace; problem: string | null };
  */
 export function readPlace(home: string): PlaceRead {
   const file = tuiFile(home);
+  // Three distinct failures, each named: unreadable file, invalid JSON, wrong shape.
   let text: string | null;
 
   try {
@@ -142,6 +152,7 @@ export function readPlace(home: string): PlaceRead {
 export function withPlace(text: string | null, place: ClipPlace): string {
   const value = parsedObject(text);
   const assistant = isJsonObject(value.assistant) ? value.assistant : {};
+  // Keep every other `assistant` field; only `clip` and `window` are replaced.
   const next: JsonObject = Object.fromEntries(Object.entries(assistant).filter(([key]) => key !== "clip" && key !== "window"));
 
   if (place.clip !== null) next.clip = { x: place.clip.x, y: place.clip.y };
@@ -151,6 +162,7 @@ export function withPlace(text: string | null, place: ClipPlace): string {
   return `${JSON.stringify({ ...value, assistant: next }, null, 2)}\n`;
 }
 
+/** The JSON object in `text`, or `{}` when there is none or it is not an object. */
 function parsedObject(text: string | null): JsonObject {
   if (text === null) return {};
 
@@ -166,6 +178,7 @@ function parsedObject(text: string | null): JsonObject {
 /** Writes the place into tui.json atomically, at the target of a link to it; throws, naming the file, when it cannot. */
 export function writePlace(home: string, place: ClipPlace): void {
   const file = tuiFile(home);
+  // Follow links to the real file, so a symlinked tui.json stays a link.
   const at = landing(file);
 
   if (at === null) throw new Error(`${file}: leads through a loop of links`);
@@ -182,6 +195,7 @@ export function writePlace(home: string, place: ClipPlace): void {
 /** The logs of the conversations, relative to the root: keylang's own state, never a spec or a source. */
 const CHAT_DIR = ".keylang/chat";
 
+/** A number with a leading zero to two digits. */
 const two = (n: number): string => String(n).padStart(2, "0");
 
 /** A local date as the log names its file: `2026-10-06`. */
@@ -214,10 +228,13 @@ export interface ChatExchange {
 /** The labels of a message's block. */
 const YOU = "ти";
 
+/** The label of the clip's message block. */
 const CLIP = "скрепка";
 
+/** The label of a proposal's block. */
 const PROPOSAL = "пропозиція";
 
+/** A block's first line: `**label:**` then optionally the first line of the text (group 2). */
 const LABEL = /^\*\*(ти|скрепка|пропозиція):\*\*(?: (.*))?$/;
 
 /** A message's lines after its first are indented: only the log's own lines (title, headings, labels) start at the margin. */
@@ -225,6 +242,7 @@ const INDENT = "  ";
 
 /** A message as a block: the label and its first line, its other lines indented, its empty lines empty. */
 function block(label: string, text: string): string {
+  // Normalise line ends; the first line goes after the label.
   const [first = "", ...rest] = text.replace(/\r\n?/g, "\n").split("\n");
 
   return [`**${label}:** ${first}`, ...rest.map((line) => (line === "" ? "" : `${INDENT}${line}`))].join("\n");
@@ -239,6 +257,7 @@ function exchangeBlocks(exchange: ChatExchange): string[] {
   ];
 }
 
+/** A `## ` line: a section of the log. */
 const isHeading = (line: string): boolean => line.startsWith("## ");
 
 /** A section's heading: when its conversation started, and the models that answered in it. */
@@ -252,6 +271,7 @@ function withAgent(text: string, agent: string): string {
   const at = lines.findLastIndex(isHeading);
 
   if (at === -1) return text;
+  // The heading is `## <time>[ · agent, agent]`.
   const [time = "", named = ""] = lines[at]!.slice(3).trimEnd().split(" · ");
   const agents = named === "" ? [] : named.split(", ");
 
@@ -275,6 +295,8 @@ function appended(text: string, blocks: readonly string[]): string {
  * gets its title first).
  */
 export function withExchange(text: string | null, day: string, time: string, exchange: ChatExchange, going: boolean): string {
+  // A new section unless the conversation goes on and the log already has one;
+  // an empty log gets the `# chat <day>` title first.
   const current = text ?? "";
   const fresh = current.trim() === "";
   const goesOn = going && current.split("\n").some(isHeading);
@@ -297,6 +319,7 @@ export function withSection(text: string | null, day: string, time: string): str
  * `пропозиція: <path>`. Null when the log has no section.
  */
 export function lastConversation(text: string): ChatMessage[] | null {
+  // Only the last section is read: that is the conversation a new session goes on with.
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const start = lines.findLastIndex(isHeading);
 
@@ -305,6 +328,7 @@ export function lastConversation(text: string): ChatMessage[] | null {
   let label: string | null = null;
   let body: string[] = [];
 
+  // Close the open block into a message, trimming trailing blank lines.
   const close = (): void => {
     if (label === null) return;
     const said = body.join("\n").replace(/\n+$/, "");
@@ -319,6 +343,8 @@ export function lastConversation(text: string): ChatMessage[] | null {
     body = [];
   };
 
+  // A small line machine: a label line opens a block, indented or blank lines
+  // continue it, and anything else at the margin closes it.
   for (const line of lines.slice(start + 1)) {
     const opened = LABEL.exec(line);
 
@@ -350,6 +376,7 @@ function logBlocked(root: string, path: string): string | null {
   // stdin is the null device, never a pipe (see git-changes.ts).
   const run = spawnSync("git", ["check-ignore", "-q", "--", path], { cwd: root, stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
 
+  // Status 0: ignored; 1: not ignored; anything else (no git, an error) depends on whether this is a repository.
   if (run.status === 0) return null;
 
   if (run.status === 1) return NOT_IGNORED;
@@ -362,6 +389,7 @@ function logBlocked(root: string, path: string): string | null {
 
 /** A `.git` in `dir` or above it: a repository, or a worktree's link to one. */
 function inRepository(dir: string): boolean {
+  // Walk up to the file system root looking for `.git`.
   for (let at = dir; ; at = dirname(at)) {
     if (existsSync(join(at, ".git"))) return true;
 
@@ -411,11 +439,13 @@ export class ChatLog {
     return this.write(browsing, withSection);
   }
 
+  /** Writes `next` of today's log, unless Browse, git or the file system refuses; returns the one-time reason. */
   private write(browsing: boolean, next: (text: string | null, day: string, time: string) => string): string | null {
     if (browsing) return null;
     const date = this.now();
     const day = dayOf(date);
     const path = chatLogPath(day);
+    // Git must ignore the log before anything is written.
     const blocked = logBlocked(this.root, path);
 
     if (blocked !== null) return this.tell(blocked);
@@ -431,11 +461,13 @@ export class ChatLog {
       return this.tell(`розмову не записано: ${errorText(error)}`);
     }
 
+    // After a successful write, the next exchange today goes on in this section.
     this.going = day;
 
     return null;
   }
 
+  /** The reason, the first time only; later refusals stay silent. */
   private tell(why: string): string | null {
     if (this.told) return null;
     this.told = true;
@@ -444,6 +476,7 @@ export class ChatLog {
   }
 }
 
+/** A JSON value as an error message shows it. */
 function shown(value: JsonValue | undefined): string {
   return JSON.stringify(value) ?? String(value);
 }

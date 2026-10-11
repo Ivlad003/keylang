@@ -6,6 +6,10 @@
 // questions. Nothing is written: the first `keylang path=<file>` block of
 // the answer comes back as a candidate that the TUI gates and writes as a
 // proposal (spec §4.5), so the operation has no commit step.
+//
+// Place in the pipeline: an operation (see `operations.ts`) for the TUI's
+// chat; it reads keylang.json and asks the model, never the snapshot.
+// Entry points: `runAssistantReply`, `assistantPrompt`, `parseReply`.
 
 import { isAbsolute } from "node:path";
 import { loadConfig, type Config } from "../config.ts";
@@ -41,6 +45,7 @@ export function assistantSystem(specDir: string): string {
   ].join("\n");
 }
 
+/** The kept tail of a conversation and how many older messages were left out. */
 type RecentTurns = { turns: ChatTurn[]; dropped: number };
 
 /**
@@ -52,6 +57,8 @@ export function recentTurns(history: readonly ChatTurn[], budget = HISTORY_CHARS
   let used = 0;
   let from = history.length;
 
+  // Walk back from the newest message while the budget allows; the newest
+  // is always taken (the check skips it), so the person's message is never cut.
   while (from > 0) {
     const size = history[from - 1]!.text.length;
 
@@ -63,6 +70,7 @@ export function recentTurns(history: readonly ChatTurn[], budget = HISTORY_CHARS
   return { turns: history.slice(from), dropped: from };
 }
 
+/** A slice of a file's lines, with 1-based inclusive bounds and the file's line count. */
 type FileWindow = { first: number; last: number; total: number; text: string };
 
 /**
@@ -76,6 +84,8 @@ export function fileWindow(text: string, line: number, count = FILE_LINES): File
   // A final line break ends the last line; it starts none.
   if (lines.length > 1 && lines.at(-1) === "") lines.pop();
   const total = lines.length;
+  // Centre the window on the cursor, then slide it back inside the file
+  // when the cursor is near either end.
   const start = Math.max(0, Math.min(line - Math.floor(count / 2), total - count));
   const end = Math.min(total, start + count);
 
@@ -89,6 +99,9 @@ export function fileWindow(text: string, line: number, count = FILE_LINES): File
  * the person's new message last.
  */
 export function assistantPrompt(request: AssistantReplyRequest, specDir: string): LlmRequest {
+  // Context first, most specific to least: the open file and cursor, the
+  // feature, the questions, the context panel; the conversation comes last
+  // so the person's new message ends the prompt.
   const parts: string[] = [];
   const file = request.file;
 
@@ -112,6 +125,7 @@ export function assistantPrompt(request: AssistantReplyRequest, specDir: string)
   return { system: assistantSystem(specDir), prompt: parts.join("\n\n"), maxTokens: REPLY_TOKENS };
 }
 
+/** Lines as a Markdown list, or `none`. */
 function listOf(lines: readonly string[]): string {
   return lines.length === 0 ? "none" : lines.map((line) => `- ${line}`).join("\n");
 }
@@ -142,6 +156,8 @@ const CANDIDATE = /^\s*keylang\s+path=(?:"([^"]+)"|'([^']+)'|(\S+))\s*$/;
  * leaves the body's lines, as CommonMark has it.
  */
 export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped"> {
+  // Normalise line endings, then scan line by line: plain text and ordinary
+  // fenced blocks are kept for the chat, `keylang path=` blocks are taken out.
   const lines = answer.replace(/\r\n?/g, "\n").split("\n");
   const kept: string[] = [];
   const dropped: string[] = [];
@@ -156,6 +172,9 @@ export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" 
       continue;
     }
 
+    // Find the block's closing line: a candidate tolerates inner fences of
+    // the file's own (see `candidateEnd`); any other block ends at its first
+    // closing fence. `end === lines.length` means it never closed.
     const candidate = CANDIDATE.exec(open[2]!);
     let end = at + 1;
 
@@ -164,6 +183,9 @@ export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" 
 
     if (candidate === null) kept.push(...lines.slice(at, end + 1));
     else {
+      // Only the first closed candidate becomes the proposal, its body
+      // de-indented by the opening fence's indent; later or unclosed ones
+      // are reported by path in `dropped`.
       const path = (candidate[1] ?? candidate[2] ?? candidate[3]!).replace(/^\.\//, "");
 
       if (end < lines.length && proposal === null) {
@@ -176,6 +198,7 @@ export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" 
     at = end;
   }
 
+  // Collapse the blank lines a removed block leaves behind.
   return { reply: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(), proposal, dropped };
 }
 
@@ -190,6 +213,8 @@ export function parseReply(answer: string): Pick<AssistantReplyPayload, "reply" 
 function candidateEnd(lines: readonly string[], from: number, fence: string): number {
   let inner: string | null = null;
 
+  // A small state machine: outside an inner block, look for the candidate's
+  // closing fence or an inner opening fence; inside one, skip to its close.
   for (let at = from; at < lines.length; at++) {
     const line = lines[at]!;
 
@@ -209,6 +234,8 @@ function candidateEnd(lines: readonly string[], from: number, fence: string): nu
 
 /** Whether `line` closes a block opened by `fence`: the same character, at least as many, nothing after. */
 function closes(line: string, fence: string): boolean {
+  // A closing fence: up to three spaces of indent, a run of backticks or
+  // tildes, then only whitespace.
   const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
 
   return close !== null && close[1]![0] === fence[0] && close[1]!.length >= fence.length;
@@ -226,6 +253,7 @@ export async function runAssistantReply(request: AssistantReplyRequest, context:
 
   if (!isAbsolute(root)) return empty("assistant-reply", "failed", 2, "chat: root must be an absolute path");
 
+  // The last turn must be the person's: that is what the model answers.
   if (request.history.at(-1)?.role !== "you") return empty("assistant-reply", "failed", 2, "chat: the person's message is required");
 
   if (context.signal?.aborted) return empty("assistant-reply", "cancelled", null);
@@ -237,6 +265,7 @@ export async function runAssistantReply(request: AssistantReplyRequest, context:
     return empty("assistant-reply", "failed", 2, errorText(error));
   }
 
+  // The model client is loaded lazily, only when a reply is asked for.
   const { answeringAgent, llmClient, LlmCancelled } = await import("../llm.ts");
   let setup: LlmSetup;
 
@@ -252,6 +281,8 @@ export async function runAssistantReply(request: AssistantReplyRequest, context:
   let answer: string;
   let reported: string | null = null;
 
+  // `onModel` records the model the provider reports, so the reply names
+  // the model that actually answered.
   const options: LlmCallOptions = {};
 
   if (context.signal) options.signal = context.signal;

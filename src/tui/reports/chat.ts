@@ -2,6 +2,8 @@
 // block it gave, and what it read — the system prompt and the prompt, as
 // the operation built them from the request — so a reply can be checked
 // against its question after the fact, as F4 shows the pack before it.
+// Layer: TUI reports. `results-panel.ts` and the F6 list read `CHAT_REPORTS`
+// through the report table in `rows.ts`.
 
 import { relative, resolve } from "node:path";
 import { toPosix } from "../../config.ts";
@@ -11,10 +13,12 @@ import { BOLD, codeOf, messageRow, outcomeRow, textRows, type Report } from "./r
 /** How long the F6 list shows the person's message. */
 const PARAMS_CELLS = 40;
 
+/** The report of the `assistant-reply` operation: its F6 label and params, summary, and rows. */
 export const CHAT_REPORTS = {
   "assistant-reply": {
     label: () => "clip",
     params: (request) => {
+      // The F6 list shows only the first line of the last message, cut to fit.
       const line = (request.history.at(-1)?.text ?? "").split("\n")[0]!;
 
       return line.length > PARAMS_CELLS ? `${line.slice(0, PARAMS_CELLS - 1)}…` : line;
@@ -31,6 +35,7 @@ export const CHAT_REPORTS = {
         ...(payload.proposal === null ? [] : textRows(`block for ${payload.proposal.path}`, payload.proposal.text)),
       ];
 
+      // Older records may hold another request kind; then the prompt cannot be rebuilt.
       const request = record.params;
 
       if (request.kind !== "assistant-reply") return rows;

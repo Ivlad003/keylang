@@ -6,6 +6,12 @@
 // proposals mechanism, as `flows adopt` does: the feature spec and the
 // migration table. The model only proposes a layer map; a target layer it
 // names that the repository lacks is left to the algorithm.
+//
+// Place in the pipeline: operations (see `operations.ts`) over the
+// snapshot and SpecIR on export, and Markdown proposals on import; the
+// bundle format itself is `src/flow-bundle.ts`. Entry points:
+// `runFlowExport`, `runFlowImport`, `exportFlows`, `exportBundle`, `gitOf`.
+// Key terms: bundle, layer map (bundle layer → this repository's layer).
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -39,6 +45,8 @@ export async function runFlowExport(request: FlowExportRequest, context: Operati
   if (!isAbsolute(root)) return empty("flow-export", "failed", 2, "flow export: root must be an absolute path");
 
   if (request.names.length === 0) return empty("flow-export", "failed", 2, "flow export: at least one flow name is required");
+  // Validate the request: an absolute root, at least one name, and a whole
+  // `--with-callees` depth.
   const withCallees = request.withCallees ?? 0;
 
   if (!Number.isInteger(withCallees) || withCallees < 0) return empty("flow-export", "failed", 2, `flow export: --with-callees must be a whole number, got \`${withCallees}\``);
@@ -59,6 +67,8 @@ export async function runFlowExport(request: FlowExportRequest, context: Operati
   if (snapshot === null) return empty("flow-export", "failed", 2, "flow export: no code to read (`languages` in keylang.json is empty)");
   const specDir = rootRelative(root, analyzed.config.dir);
 
+  // `--out` is checked before the bundle is built: a refused path costs no
+  // work.
   if (request.out !== undefined) {
     const problem = outProblem(root, specDir, request.out);
 
@@ -99,6 +109,8 @@ export function exportFlows(root: string, analyzed: Analysis, names: readonly st
 
   if (snapshot === null) return { error: "no code to read (`languages` in keylang.json is empty)" };
   const specDir = rootRelative(root, analyzed.config.dir);
+  // Candidates: hand-written flows (the generated map is no source), then
+  // drafts for entry points no hand-written flow covers.
   const generated = new Set(analyzed.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
   const written = analyzed.spec.flows.filter((flow) => !generated.has(flow.file));
   const discovered = discoverFlows(snapshot, specifiedTriggers(analyzed.spec.flows)).flows;
@@ -106,6 +118,8 @@ export function exportFlows(root: string, analyzed: Analysis, names: readonly st
   const flows: ExportFlow[] = [];
   const missing: string[] = [];
 
+  // Each name once: a hand-written section wins over a discovered draft;
+  // names that are neither are collected for one error.
   for (const name of names) {
     if (flows.some((flow) => flow.name === name)) continue;
     const process = processes.find((p) => p.flows.includes(name));
@@ -152,6 +166,8 @@ export async function exportBundle(root: string, analyzed: Analysis, flows: read
   const messages: OperationMessage[] = [];
   const reached: BundleReach[] = flows.flatMap((flow) => flowEvents(flow.name, flow.text));
 
+  // Integrations reached: an outgoing call site, or a webhook, inside one of
+  // the flow's own nodes. A failure here only drops that list.
   try {
     const report = await findIntegrations(analyzed.config, snapshot, loadIntegrations(), specifiedTriggers(analyzed.spec.flows));
 
@@ -168,6 +184,7 @@ export async function exportBundle(root: string, analyzed: Analysis, flows: read
     messages.push({ level: "warning", text: `integrations not listed: ${errorText(error)}` });
   }
 
+  // Each layer with its globs and the first sentence of its doc comment.
   const layers = [...analyzed.config.layers].map(([name, globs]) => {
     const doc = snapshot.nodes[name]?.doc ?? null;
 
@@ -184,12 +201,16 @@ export async function exportBundle(root: string, analyzed: Analysis, flows: read
 
 /** Why the bundle may not be written to `out`: under the spec directory, an existing file that is no bundle, the write policy inside the repository. */
 function outProblem(root: string, specDir: string, out: string): string | null {
+  // `rel` outside the root (`..` or another drive) means the file lies
+  // outside the repository, where only the bundle check applies.
   const rel = toPosix(relative(root, out));
   const inside = !rel.startsWith("..") && !isAbsolute(rel);
 
   if (inside && (specDir === "" || rel === specDir || rel.startsWith(`${specDir}/`))) return `a bundle under ${specDir === "" ? "the spec directory" : `${specDir}/`} would be read as a spec`;
   const before = existingText(out);
 
+  // An existing file is only overwritten when its first line is the
+  // bundle marker.
   if (before !== null && !before.split("\n", 1)[0]!.startsWith(`<!-- ${BUNDLE_MARK} `)) return "the file exists and is not a bundle `flow export` wrote";
 
   if (inside) return writeProblem(root, rel, {});
@@ -197,6 +218,7 @@ function outProblem(root: string, specDir: string, out: string): string | null {
   return null;
 }
 
+/** `abs` relative to the root when inside it, else the absolute path; POSIX either way. */
 function displayPath(root: string, abs: string): string {
   const rel = toPosix(relative(root, abs));
 
@@ -209,6 +231,7 @@ function sectionText(root: string, analyzed: Analysis, file: string, name: strin
   const source = existingText(join(root, file));
 
   if (doc === undefined || source === null) return null;
+  // The section runs from its heading to the next heading of any section.
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const headed = doc.sections.filter((s) => s.heading !== null);
   const at = headed.findIndex((s) => s.kind === "flow" && s.name?.value === name);
@@ -220,10 +243,13 @@ function sectionText(root: string, analyzed: Analysis, file: string, name: strin
   return `${lines.slice(from, to).join("\n").trimEnd()}\n`;
 }
 
+/** Where a bundle comes from: the redacted `origin` URL (or the directory name) and the HEAD commit. */
 type GitOrigin = { repo: string; commit: string };
 
 /** The repository as git names it (the `origin` URL without credentials, else the directory) and HEAD; `n/a` without git. */
 export function gitOf(root: string): GitOrigin {
+  // Run git with an argument array in the root; any failure (no git, no
+  // repository, no remote) is null.
   const run = (args: string[]): string | null => {
     try {
       const r = spawnSync("git", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
@@ -248,6 +274,8 @@ export function gitOf(root: string): GitOrigin {
 export async function runFlowImport(request: FlowImportRequest, context: OperationContext): Promise<OperationEnvelope<"flow-import">> {
   const { root } = request;
 
+  // Validate: an absolute root, and an absolute bundle path unless the text
+  // itself was pasted.
   if (!isAbsolute(root) || (request.source === undefined && !isAbsolute(request.bundle))) return empty("flow-import", "failed", 2, "flow import: root and bundle must be absolute paths");
   const mode = request.mode ?? "algo";
 
@@ -277,6 +305,7 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
   const config = analyzed.config;
   const snapshot = analyzed.snapshot;
 
+  // This repository's layers are where the bundle's layers can land.
   const target: TargetLayer[] = [...config.layers].map(([name, globs]) => {
     const doc = snapshot?.nodes[name]?.doc ?? null;
 
@@ -284,6 +313,9 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
   });
 
   if (target.length === 0) return empty("flow-import", "failed", 2, "flow import: no layers in keylang.json to place the flows in");
+  // Layer map in three passes: `--layer-map` first (validated on both
+  // sides), then the model for the layers still open, then the algorithm
+  // for whatever is left.
   const used = usedLayers(bundle);
   const taken = new Map<string, LayerChoice>();
 
@@ -330,15 +362,20 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
     }
   }
 
+  // Sorted by source layer so the report and the plan are stable.
   const algo = algoLayers(used, target, taken);
   notes.push(...algo.notes);
   const choices = [...taken.values(), ...algo.choices].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
   const specDir = rootRelative(root, config.dir);
+  // The feature spec defaults to `<dir>/features/<first flow>.md` and must
+  // not be the migration table, the second target.
   const into = toPosix(request.into ?? `${specDir === "" ? "" : `${specDir}/`}features/${bundle.flows[0]!.name}.md`);
   const slug = basename(into).replace(/\.md$/, "");
   const migrationTarget = `${specDir === "" ? "" : `${specDir}/`}${MIGRATION_FILE}`;
 
   if (into === migrationTarget) return empty("flow-import", "failed", 2, `flow import: --into ${into} is the migration table`);
+  // Build both texts: the imported flows added to the feature spec, and the
+  // migration rows added to the migration table.
   const plannedElsewhere = new Set(analyzed.spec.planned.filter((p) => p.file !== into).map((p) => p.id));
   const plan = importPlan(bundle, choices, { layers: target, existing: new Set(Object.keys(snapshot?.nodes ?? {})), plannedElsewhere }, { name: slug, bundleFile: basename(request.bundle), mode });
   notes.push(...plan.notes);
@@ -359,6 +396,7 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
   if ((request.output ?? "proposal") === "preview") return { ...empty("flow-import", "completed", 0), payload, messages: [...messages, { level: "info", text: summary }] };
   const generated = generatedIn(analyzed.docs);
 
+  // Both proposals pass the refusal checks before either is written.
   const candidates = [
     { target: into, text: feature, before: featureBefore },
     { target: migrationTarget, text: migration, before: migrationBefore },
@@ -377,6 +415,8 @@ export async function runFlowImport(request: FlowImportRequest, context: Operati
 
   const inputs = sourceInputs(config, snapshot?.manifest.files ?? []);
 
+  // Commit the feature spec, then the migration table; a stop after the
+  // first names what was already written.
   for (const candidate of candidates) {
     const committed = await commitProposal({ root, specDir, generated, target: candidate.target, text: candidate.text, expected: { target: candidate.before, proposal: candidate.pending }, config, inputs }, context);
 

@@ -1,5 +1,10 @@
 // web-tree-sitter runtime with the grammar WASM files from @vscode/tree-sitter-wasm.
 // Languages are loaded lazily and cached for the process.
+//
+// The shared base of every language frontend (source → FileFacts): parsing
+// (`withTree`, `loadLanguage`, `query`), code-point positions (`located`,
+// `startCol`), syntax errors (`errorLine`) and the syntax fingerprints that
+// make a closure stale (`fingerprint`, `fingerprintFacts`, `valuesFingerprint`).
 
 import { createHash, type Hash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -13,10 +18,13 @@ const require = createRequire(import.meta.url);
 
 export type { Grammar };
 
+/** The one-time WASM runtime init, shared by every language load. */
 let ready: Promise<void> | null = null;
 
+/** Loaded grammars; the promise is cached so concurrent loads share one. */
 const languages = new Map<Grammar, Promise<Language>>();
 
+/** Compiled queries by `<grammar>:<name>`. */
 const queries = new Map<string, Query>();
 
 /** One parser per grammar: parsing is synchronous, and a parser per call leaks WASM heap. */
@@ -29,6 +37,7 @@ const parsers = new Map<Grammar, Parser>();
  */
 const surrogates = new WeakMap<Tree, number[]>();
 
+/** The directory holding the grammar WASM files: bundled in `dist/wasm`, else the dependency's own. */
 function wasmDir(): string {
   // prepack copies every grammar of `GRAMMARS` next to the compiled extractor (`dist/wasm`).
   const bundled = join(dirname(fileURLToPath(import.meta.url)), "../wasm");
@@ -38,6 +47,7 @@ function wasmDir(): string {
   return join(dirname(require.resolve("@vscode/tree-sitter-wasm/package.json")), "wasm");
 }
 
+/** The grammar `g`, loaded once per process after the runtime is initialised. */
 export function loadLanguage(g: Grammar): Promise<Language> {
   ready ??= Parser.init();
   let l = languages.get(g);
@@ -55,6 +65,7 @@ export function loadLanguage(g: Grammar): Promise<Language> {
  * lives in the WASM heap, so nothing `use` returns may hold a node.
  */
 export async function withTree<T>(g: Grammar, src: string, use: (tree: Tree, language: Language) => T): Promise<T> {
+  // Reuse one parser per grammar (see `parsers`).
   const language = await loadLanguage(g);
   let parser = parsers.get(g);
 
@@ -67,6 +78,8 @@ export async function withTree<T>(g: Grammar, src: string, use: (tree: Tree, lan
   const tree = parser.parse(src);
 
   if (!tree) throw new Error("tree-sitter: parse returned null");
+  // Remember where surrogate pairs sit so columns can be converted to code
+  // points; nothing is stored for a pure-BMP source.
   const pairs = surrogatePairs(src);
 
   if (pairs.length > 0) surrogates.set(tree, pairs);
@@ -80,6 +93,7 @@ export async function withTree<T>(g: Grammar, src: string, use: (tree: Tree, lan
 
 /** Compile a query once per (grammar, source). */
 export function query(language: Language, g: Grammar, name: string, source: string): Query {
+  // Keyed by grammar and name only: one name must always carry one source.
   const key = `${g}:${name}`;
   let q = queries.get(key);
 
@@ -91,6 +105,7 @@ export function query(language: Language, g: Grammar, name: string, source: stri
   return q;
 }
 
+/** The grammar a file is parsed with, by extension; anything unrecognised is read as JavaScript. */
 export function grammarFor(path: string): Grammar {
   if (path.endsWith(".rs")) return "rust";
 
@@ -105,6 +120,7 @@ export function grammarFor(path: string): Grammar {
   return "javascript";
 }
 
+/** A node's 1-based range (columns in code points) and its source text. */
 export interface Located {
   line: number;
   col: number;
@@ -139,9 +155,12 @@ function codePointColumn(tree: Tree, index: number, units: number): number {
 
   if (pairs === undefined) return units + 1;
 
+  // Subtract one column for every pair whose low half falls between the line
+  // start (`index - units`) and the point: binary searches give the count.
   return units + 1 - (firstAtOrAfter(pairs, index) - firstAtOrAfter(pairs, index - units + 1));
 }
 
+/** Indices of the low half of each surrogate pair in `src`, ascending. */
 function surrogatePairs(src: string): number[] {
   const out: number[] = [];
 
@@ -207,10 +226,14 @@ export function fingerprint(node: Node): string {
  * module of the repository.
  */
 export function fingerprintFacts(node: Node): FingerprintFacts {
+  // The node's own syntax, then the syntax of every value it reads by name
+  // in this file, in document order.
   const hash = createHash("sha256");
   const reads = hashSyntax(node, hash);
 
   for (const value of valuesRead(node, reads)) hash.update(`=${value.print}\u0002`);
+  // Imported values cannot be hashed here: mark the print as incomplete
+  // (relative import) or hand the names to the graph to decide.
   const imported = importedValueReads(node, reads);
 
   const facts: FingerprintFacts = { fingerprint: hash.digest("hex") + (imported.relative ? READS_IMPORTED_VALUE : "") };
@@ -220,6 +243,7 @@ export function fingerprintFacts(node: Node): FingerprintFacts {
   return facts;
 }
 
+/** A fingerprint, and the imported names whose origin only the graph can judge. */
 export interface FingerprintFacts {
   fingerprint: string;
   readsImports?: string[];
@@ -235,6 +259,7 @@ export interface FingerprintFacts {
  * code to hash.
  */
 export function valuesFingerprint(statements: readonly Node[], decls: readonly PlacedDecl[]): string | undefined {
+  // Flatten the declarations and their members into one list of start points.
   const starts: PlacedDecl[] = [];
 
   const place = (d: PlacedDecl): void => {
@@ -245,6 +270,7 @@ export function valuesFingerprint(statements: readonly Node[], decls: readonly P
 
   for (const d of decls) place(d);
 
+  // Whether a statement's range contains the start of any declaration.
   const holds = (n: Node): boolean => {
     const at = located(n);
 
@@ -260,6 +286,10 @@ export function valuesFingerprint(statements: readonly Node[], decls: readonly P
     any = true;
   };
 
+  // Classify each top-level statement: skip non-value syntax, descend into a
+  // PHP namespace block, skip `mod x;` and pure re-exports, hash a statement
+  // that holds no declaration, and from a declaration statement hash only its
+  // non-fn declarators.
   const visit = (statement: Node): void => {
     if (NO_VALUE_CODE.has(statement.type) || statement.type.includes("comment") || isDocstring(statement)) return;
 
@@ -270,10 +300,13 @@ export function valuesFingerprint(statements: readonly Node[], decls: readonly P
       return;
     }
 
+    // Rust `mod x;` only points at another file.
     if (statement.type === "mod_item" && statement.childForFieldName("body") === null) return;
 
+    // `export { a } from "./x"` or `export { a }`: names, no value code.
     if (statement.type === "export_statement" && statement.childForFieldName("declaration") === null && (statement.childForFieldName("source") !== null || statement.namedChildren.some((c) => c.type === "export_clause"))) return;
 
+    // No declaration starts inside: the whole statement is value code.
     if (!holds(statement)) {
       add(statement);
 
@@ -347,6 +380,8 @@ function hashSyntax(node: Node, hash: Hash): Set<string> {
 
     if (n.type.includes("comment")) continue;
 
+    // A leaf hashes its type and text (CRLF read as LF) and, when it is a
+    // name, is recorded as a read; an inner node opens a group closed by CLOSE.
     if (n.childCount === 0) {
       hash.update(`${n.type}\u0001${n.text.replace(/\r\n?/g, "\n")}\u0002`);
 
@@ -364,6 +399,7 @@ function hashSyntax(node: Node, hash: Hash): Set<string> {
   return reads;
 }
 
+/** The stack mark that closes an inner node's group in `hashSyntax`. */
 const CLOSE = Symbol("close");
 
 /** A value declared by name in a scope: a variable, constant or field. */
@@ -380,6 +416,7 @@ interface ValueDecl {
 /** Value declarations per scope node (by `Node.id`), per tree: the fns of a file look into the same scopes. */
 const scopeValues = new WeakMap<Tree, Map<number, ValueDecl[]>>();
 
+/** The imported names of each tree, computed once (see `importedValueNames`). */
 const importedValues = new WeakMap<Tree, ImportedNames>();
 
 /**
@@ -390,10 +427,13 @@ const importedValues = new WeakMap<Tree, ImportedNames>();
 function valuesRead(node: Node, reads: ReadonlySet<string>): ValueDecl[] {
   const scopes: ValueDecl[][] = [];
 
+  // Every enclosing scope's value declarations, innermost first.
   for (let scope = node.parent; scope !== null; scope = scope.parent) scopes.push(valuesOf(scope));
   const names = new Set(reads);
   const found = new Set<ValueDecl>();
 
+  // Fixed point: a found value adds the names it reads itself, so values read
+  // through other values are found too; stop when a pass finds nothing new.
   for (let grew = true; grew; ) {
     grew = false;
 
@@ -420,6 +460,7 @@ function valuesRead(node: Node, reads: ReadonlySet<string>): ValueDecl[] {
   return [...found].sort((a, b) => a.start - b.start);
 }
 
+/** The value declarations directly in `scope` (and the fields its constructor sets), cached per tree and scope node. */
 function valuesOf(scope: Node): ValueDecl[] {
   let byScope = scopeValues.get(scope.tree);
 
@@ -462,6 +503,9 @@ function constructorFields(member: Node): { name: string; node: Node }[] {
   if (!fn || receiver === null) return [];
   const out: { name: string; node: Node }[] = [];
 
+  // Parameter properties: PHP promoted properties, and TS parameters with an
+  // accessibility, `readonly` or `override` modifier.
+
   for (const param of fn.childForFieldName("parameters")?.namedChildren ?? []) {
     if (param.type === "property_promotion_parameter") {
       const variable = param.childForFieldName("name");
@@ -475,6 +519,7 @@ function constructorFields(member: Node): { name: string; node: Node }[] {
     }
   }
 
+  // Walk the constructor body for `receiver.x = …` assignments.
   const body = fn.childForFieldName("body");
   const stack: Node[] = body ? [...body.namedChildren] : [];
 
@@ -496,20 +541,24 @@ function constructorFields(member: Node): { name: string; node: Node }[] {
   return out.sort((a, b) => a.node.startIndex - b.node.startIndex);
 }
 
+/** Node types that bind their own receiver: assignments inside them are not the constructor's fields. */
 const NESTED_SCOPES = new Set(["function_declaration", "function_expression", "function", "generator_function", "generator_function_declaration", "class_declaration", "class", "function_definition", "class_definition", "lambda", "anonymous_function", "anonymous_function_creation_expression", "method_declaration"]);
 
 /** `this.x`, `self.x`, `$this->x` as an assignment target: `x`. Arrow functions keep the receiver, so they are walked. */
 function receiverField(target: Node | null, receiver: string): string | null {
   if (target === null) return null;
 
+  // TS/JS `this.x`.
   if (target.type === "member_expression" && target.childForFieldName("object")?.type === "this") {
     const property = target.childForFieldName("property");
 
     return property ? property.text : null;
   }
 
+  // Python `self.x`.
   if (target.type === "attribute" && target.childForFieldName("object")?.text === receiver) return target.childForFieldName("attribute")?.text ?? null;
 
+  // PHP `$this->x`.
   if (target.type === "member_access_expression" && target.childForFieldName("object")?.text === receiver) {
     const name = target.childForFieldName("name");
 
@@ -549,6 +598,7 @@ function valueDeclaration(statement: Node): Node | null {
   }
 }
 
+/** The names a value declaration binds, per declaration syntax of each language. */
 function declaredNames(decl: Node): string[] {
   switch (decl.type) {
     case "lexical_declaration":
@@ -607,9 +657,12 @@ interface ImportedValueReads {
 function importedValueReads(node: Node, reads: ReadonlySet<string>): ImportedValueReads {
   const imported = importedValueNames(node.tree);
 
+  // Fast path: the node reads no name any import binds.
   if (![...reads].some((name) => imported.relative.has(name) || imported.other.has(name))) return { relative: false, other: [] };
   let relative = false;
   const other = new Set<string>();
+  // Walk the node's leaves; a name an import binds counts only when it is
+  // read as a value, not called.
   const stack: Node[] = [node];
 
   while (stack.length > 0) {
@@ -634,7 +687,9 @@ function importedValueReads(node: Node, reads: ReadonlySet<string>): ImportedVal
   return { relative, other: [...other].sort() };
 }
 
+/** Whether a leaf is (the head of) what a call or `new` invokes, rather than a value read. */
 function isCallee(leaf: Node): boolean {
+  // Climb member chains while the leaf is their object (`a` in `a.b.c`).
   let top = leaf;
 
   for (let parent = top.parent; parent !== null && MEMBER_CHAINS.has(parent.type) && parent.namedChildren[0]?.id === top.id; parent = top.parent) top = parent;
@@ -642,6 +697,7 @@ function isCallee(leaf: Node): boolean {
 
   // PHP `new Limits()`: the class is named, not read.
   if (call?.type === "object_creation_expression") return true;
+  // The chain's top is the callee field of the call around it.
   const field = call ? CALLEES.get(call.type) : undefined;
 
   return call !== null && field !== undefined && call.childForFieldName(field)?.id === top.id;
@@ -674,6 +730,7 @@ function importedValueNames(tree: Tree): ImportedNames {
   return names;
 }
 
+/** Add the local names one top-level import binds to `names`, by language. */
 function collectImportedNames(statement: Node, names: ImportedNames): void {
   if (statement.type === "namespace_definition") {
     // PHP `namespace App { use …; }`.
@@ -687,9 +744,11 @@ function collectImportedNames(statement: Node, names: ImportedNames): void {
   if (source) {
     // TS/JS; `import type` binds types only.
     if (statement.children.some((c) => !c.isNamed && c.type === "type")) return;
+    // A specifier starting with `.` is a file of the repository.
     const into = /^["']\./.test(source.text) ? names.relative : names.other;
     const clause = statement.namedChildren.find((c) => c.type === "import_clause");
 
+    // Default, namespace and named imports; a named `type` specifier binds no value.
     for (const part of clause?.namedChildren ?? []) {
       if (part.type === "identifier") into.add(part.text);
       else if (part.type === "namespace_import") for (const id of part.namedChildren) into.add(id.text);
@@ -728,6 +787,7 @@ function collectImportedNames(statement: Node, names: ImportedNames): void {
     if (statement.children.some((c) => c.type === "function")) return;
     const clauses = [...statement.namedChildren, ...(statement.childForFieldName("body")?.namedChildren ?? [])].filter((c) => c.type === "namespace_use_clause");
 
+    // Each clause binds its alias, else the last segment of its qualified name.
     for (const clause of clauses) {
       if (clause.childForFieldName("type")?.type === "function") continue;
       const named = clause.namedChildren.find((c) => c.type === "qualified_name" || c.type === "name");
@@ -738,6 +798,7 @@ function collectImportedNames(statement: Node, names: ImportedNames): void {
   }
 }
 
+/** The local names a Rust `use` tree binds: the last segment, an alias, or every name of a `{…}` list. */
 function useNames(clause: Node): string[] {
   switch (clause.type) {
     case "identifier":

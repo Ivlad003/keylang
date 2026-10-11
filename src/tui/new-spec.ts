@@ -4,6 +4,8 @@
 // generated map, the explained map or the store of saved explanations, no
 // generated file, no directory, no link out of it. The session checks a
 // path when the form is accepted and again at the first save.
+// Layer: TUI. The new-spec form and the session's first save call these;
+// the path rules themselves live in `../proposals.ts`.
 
 import { basename, posix, win32 } from "node:path";
 import { isSegment } from "../parser.ts";
@@ -23,6 +25,8 @@ export const SPEC_KINDS: readonly { kind: SpecKind; label: string }[] = [
 export function defaultSpecPath(kind: SpecKind, specDir: string): string {
   const base = specDir === "" ? "" : `${specDir}/`;
 
+  // Flows and features get a directory prefix (the person types the file
+  // name); rules and wiring have one conventional file each.
   switch (kind) {
     case "flow":
       return `${base}flows/`;
@@ -77,6 +81,7 @@ export function specTemplate(kind: SpecKind, name: string): string {
  * document. An existing file is no problem here: the form opens it.
  */
 export function newSpecProblem(root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false): string | null {
+  // Cheap syntactic checks first: an empty path, a Windows or absolute path, a non-Markdown file.
   if (path === "") return "type a path";
 
   if (path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
@@ -86,6 +91,7 @@ export function newSpecProblem(root: string, specDir: string, path: string, gene
   try {
     // The proposal gate already refuses the explained map, saved explanations and a directory at the path.
     return proposalProblem(root, specDir, path, generated)?.replace("a proposal changes specs only", "new specs go there") ?? null;
+  // The gate reads the file system (links, directories); an I/O error becomes the reason.
   } catch (error) {
     return `cannot be checked: ${error instanceof Error ? error.message : String(error)}`;
   }

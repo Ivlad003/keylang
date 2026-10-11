@@ -3,10 +3,15 @@
 // The IR is a faithful tree of what was written: it keeps the raw tokens of
 // every item (for `keylang fmt`) plus the interpreted parts (declared name and
 // ID, code link, references, free text) with spans (for diagnostics and LSP).
+//
+// Pipeline: Markdown → IR (this file, built by `parser.ts`) → resolve/rules
+// (`resolve.ts`, `rules.ts`) and the formatter (`fmt.ts`). Main types:
+// `Document` → `Section` → `Item`/`Node`, with `Ref` for cross-references.
 
 import type { Diagnostic } from "./diag.ts";
 import type { Span, Spanned } from "./span.ts";
 
+/** One parsed Markdown file: its sections in source order plus parse-time diagnostics. */
 export interface Document {
   path: string;
   /** The `<!-- keylang:generated … -->` line, if the file is a generated map. */
@@ -16,6 +21,7 @@ export interface Document {
   diagnostics: Diagnostic[];
 }
 
+/** What a `# …` heading opens; the heading word decides it (`# flow checkout` → "flow"). */
 export type SectionKind = "map" | "rules" | "flow" | "wiring" | "migration" | "system";
 
 /** Content under one `# …` heading (or before the first heading). */
@@ -30,6 +36,7 @@ export interface Section {
   items: Item[];
 }
 
+/** One entry of a section in source order: a keylang list item, or verbatim prose or code kept for `fmt`. */
 export type Item =
   | ({ type: "node" } & Node)
   /** A paragraph of free Markdown (lines verbatim). */
@@ -37,6 +44,7 @@ export type Item =
   /** A fenced code block (lines verbatim, fences included). */
   | { type: "code"; lines: string[] };
 
+/** What a list item means; the keyword or the item's position decides it. Grouped below by the section kind that allows it. */
 export type NodeKind =
   // map
   | "layer"
@@ -160,6 +168,7 @@ export interface Node {
   span: Span;
 }
 
+/** A Markdown link `[text](target)`, used as a code anchor or a linked reference. */
 export interface Link {
   text: string;
   /** Everything inside `(…)`. */
@@ -171,6 +180,7 @@ export interface Link {
   span: Span;
 }
 
+/** A reference to an ID that the resolver must find among declarations. */
 export interface Ref {
   /** As written; for a link, its text. */
   text: string;
@@ -185,8 +195,10 @@ export interface Ref {
   link?: Link;
 }
 
+/** Lexical class of a head token: a bare word, a `[…](…)` link, a `"…"` string or a comma. */
 export type TokenKind = "word" | "link" | "quoted" | "comma";
 
+/** A raw token of an item line, kept so `fmt` can re-emit what was written. */
 export interface Token {
   kind: TokenKind;
   text: string;
@@ -200,6 +212,7 @@ export function walk(node: Node, f: (n: Node) => void): void {
   for (const c of node.children) walk(c, f);
 }
 
+/** The keylang nodes of a section, without its prose and code blocks. */
 export function sectionNodes(section: Section): Node[] {
   return section.items.filter((i): i is { type: "node" } & Node => i.type === "node");
 }

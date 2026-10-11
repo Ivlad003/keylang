@@ -1,6 +1,12 @@
 // Drawing a TUI state into a `Grid`: pure, so a test reads the frame as text.
 // Layout: title, [files] | editor with gutter | [navigation], a detail line
 // and the status bar. Popups (hover, completion, palette, help) draw on top.
+//
+// Layer: TUI drawing, the top of it. `app.ts` calls `render` for every frame
+// (in a terminal and in the web terminal alike); this module composes the panels from the other
+// drawing modules (`clip-view.ts`, `markdown.ts`, `nav.ts`, `zoom.ts`,
+// `reports/*`) over the evidence of the current analysis. Main entry points:
+// `render`, `layout`, `editorRows`. Nothing here mutates the state.
 
 import { selectedAgent } from "../agent-cli.ts";
 import { contextPack } from "../agent-context.ts";
@@ -25,6 +31,7 @@ import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
 import { clusters, fitWidth, graphemes, padWidth, sliceCells, stringWidth, wrapCells, type LineLayout } from "./width.ts";
 
+/** A rectangle of cells on the grid, 0-based. */
 export interface Rect {
   x: number;
   y: number;
@@ -32,6 +39,7 @@ export interface Rect {
   height: number;
 }
 
+/** Where each part of the frame goes for the current size and panel toggles. */
 export interface Layout {
   files: Rect | null;
   editor: Rect;
@@ -52,13 +60,18 @@ export const WIDE_COLS = 100;
 /** Below this width no side panel fits next to the editor. */
 export const PANEL_MIN_COLS = 60;
 
+/** Width of the file panel. */
 export const FILES_WIDTH = 24;
 
+/** Width of the navigation panel. */
 export const NAV_WIDTH = 32;
 
+/** Width of the context panel (F4) when the terminal is wide enough. */
 export const CONTEXT_WIDTH = 52;
 
+/** The frame's layout: the body sits between the title row and the detail and status rows. */
 export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }): Layout {
+  // The body is the rows between the title (row 0) and the detail and status lines (the last two).
   const bodyTop = 1;
   const bodyHeight = Math.max(1, state.rows - 3);
   const wide = state.cols >= WIDE_COLS;
@@ -93,10 +106,12 @@ export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showN
 /** One editor row: a text line, or the expanded evidence row under the cursor line. */
 export type EditorRow = { kind: "line"; line: number } | { kind: "detail"; line: number };
 
+/** Number of lines in the buffer. */
 export function lineCount(buffer: Buffer): number {
   return bufferLines(buffer).length;
 }
 
+/** Gutter cells: the mark and a space, the line number (at least 3 digits), then a space. */
 export function gutterWidth(buffer: Buffer): number {
   return 2 + Math.max(3, String(lineCount(buffer)).length) + 1;
 }
@@ -107,6 +122,7 @@ export function editorRows(state: State, buffer: Buffer, height: number): Editor
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
   const rows: EditorRow[] = [];
 
+  // The detail row takes a row of the height too, so it is added only while there is room.
   for (let line = state.top; line < count && rows.length < height; line++) {
     rows.push({ kind: "line", line });
 
@@ -125,9 +141,11 @@ function drawRuns(grid: Grid, x: number, y: number, width: number, clusters: Ite
   let col = x;
 
   for (const { cluster, point } of clusters) {
+    // Stop at the right edge; the rest of a long line is never segmented or styled.
     if (col >= x + width) break;
     let style = base;
 
+    // The last run that covers the code point wins, as `highlight` documents.
     for (const run of runs) if (point >= run.start && point < run.end) style = { ...base, ...run.style };
     col += grid.write(col, y, cluster, style, x + width - col);
   }
@@ -173,6 +191,7 @@ function dimmedIf(style: Style, dim: boolean): Style {
   return dim ? { ...style, dim: true } : style;
 }
 
+/** The gutter glyph of a line's evidence; stale evidence is dimmed and not bold. */
 function markCell(item: LineEvidence | undefined, stale: boolean): StyledGlyph {
   if (!item) return { glyph: " ", style: {} };
   const style = MARK_STYLE[item.mark];
@@ -180,10 +199,12 @@ function markCell(item: LineEvidence | undefined, stale: boolean): StyledGlyph {
   return { glyph: MARK_GLYPH[item.mark], style: stale ? { ...style, dim: true, bold: false } : style };
 }
 
+/** One of the evidence channels a flow step reports separately. */
 function isChannel(criterion: string): criterion is (typeof CHANNELS)[number] {
   return CHANNELS.some((channel) => channel === criterion);
 }
 
+/** Glyphs of the three verdicts. */
 const VERDICT_GLYPH = { ok: "✓", fail: "✗", unverified: "◌" } as const;
 
 /** `ID ✓  static ✓  tests —  trace ◌ …`: the channels of a line, never merged into one mark. */
@@ -192,6 +213,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
   const reported = new Set(item.criteria.map((c) => c.criterion));
   const flowLine = CHANNELS.some((channel) => reported.has(channel));
 
+  // A flow step shows every channel, with `—` for one not reported, so a missing trace is visible.
   if (flowLine) {
     for (const channel of CHANNELS) {
       const hit = item.criteria.find((c) => c.criterion === channel);
@@ -200,6 +222,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
     }
   }
 
+  // Then criteria outside the channels (rule checks and the like), then diagnostics, then the planned state.
   for (const criterion of item.criteria) {
     if (isChannel(criterion.criterion)) continue;
     parts.push({ text: `${criterion.criterion} `, style: THEME.lineNumber }, { text: `${VERDICT_GLYPH[criterion.verdict]}  `, style: MARK_STYLE[criterion.verdict] });
@@ -216,6 +239,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
 /** The message for the cursor line: the first failing or unverified finding, with a fix hint. */
 export function lineMessage(item: LineEvidence | undefined): { text: string; style: Style } | null {
   if (!item) return null;
+  // Diagnostics come first, errors before warnings; the fix line of `explain` is appended when it has one.
   const diag = item.diagnostics.find((d) => d.severity === "error") ?? item.diagnostics[0];
 
   if (diag) {
@@ -224,6 +248,7 @@ export function lineMessage(item: LineEvidence | undefined): { text: string; sty
     return { text: `${diag.code} ${diag.message}${fix ? ` — ${fix}` : ""}`, style: diag.severity === "error" ? THEME.error : MARK_STYLE.warning };
   }
 
+  // Then a failing criterion, else an unverified one.
   const bad = item.criteria.find((c) => c.verdict === "fail") ?? item.criteria.find((c) => c.verdict === "unverified");
 
   if (bad) return { text: `${bad.criterion}: ${bad.message}`, style: bad.verdict === "fail" ? THEME.error : THEME.hint };
@@ -236,7 +261,10 @@ export function lineMessage(item: LineEvidence | undefined): { text: string; sty
 /** Highlight runs per parsed document: a buffer is reparsed on every edit, so the document identifies the text. */
 const highlights = new WeakMap<object, { layers: string; runs: Map<number, Run[]> }>();
 
+/** Highlight runs of a buffer, cached by its parsed document and the layers. */
 function runsOf(buffer: Buffer, layers: readonly string[]): Map<number, Run[]> {
+  // A buffer without a parsed doc (keylang.json) is its own key, but its runs are never reused:
+  // its text can change under the same object.
   const key = layers.join(",");
   const owner = buffer.doc ?? buffer;
   const cached = highlights.get(owner);
@@ -248,6 +276,7 @@ function runsOf(buffer: Buffer, layers: readonly string[]): Map<number, Run[]> {
   return runs;
 }
 
+/** Draws the buffer in the editor rect: gutter, highlighted text, the detail row, ghost text and the cursor. */
 function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
@@ -256,9 +285,11 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
   const gutter = gutterWidth(buffer);
   const numberWidth = gutter - 3;
   const selection = state.selection === null ? null : [Math.min(state.selection, state.cursor.line), Math.max(state.selection, state.cursor.line)] as const;
+  // One pass over the visible rows: the detail row of the cursor line, or a text line.
   editorRows(state, buffer, rect.height).forEach((row, index) => {
     const y = rect.y + index;
 
+    // The detail row lists the cursor line's evidence channels on the cursor-line background.
     if (row.kind === "detail") {
       const item = evidence.get(row.line + 1)!;
       let x = rect.x + gutter;
@@ -271,6 +302,7 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
       return;
     }
 
+    // A text line: the selection background wins over the cursor line; then mark, line number and highlighted text from the horizontal scroll.
     const isCursor = row.line === state.cursor.line;
     const selected = selection !== null && row.line >= selection[0] && row.line <= selection[1];
     const base: Style = selected ? { ...THEME.text, bg: 24 } : isCursor ? { ...THEME.text, ...THEME.cursorLine } : THEME.text;
@@ -281,9 +313,11 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
     drawRuns(grid, rect.x + gutter, y, rect.width - gutter, fromLayout(lineLayout(buffer, row.line), state.left), runs.get(row.line + 1) ?? [], base);
   });
 
+  // Ghost text (inline completion) right after what is typed on its line, with its variant counter.
   if (state.ghost && state.mode === "edit" && state.ghost.path === buffer.path) {
     const rowIndex = state.ghost.line - state.top;
     const typed = lineLayout(buffer, state.ghost.line);
+    // Only the part of the suggestion past the typed clusters is drawn.
     const rest = graphemes(state.ghost.variants[state.ghost.index] ?? "").slice(typed.clusters.length).join("");
     const x = rect.x + gutter + cellsBetween(typed, state.left, typed.clusters.length);
     const more = state.ghost.variants.length > 1 ? `  (${state.ghost.index + 1}/${state.ghost.variants.length}, Alt+])` : "";
@@ -291,6 +325,7 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
     if (rowIndex >= 0 && rowIndex < rect.height) grid.write(x, rect.y + rowIndex, `${rest}${more}`, { ...THEME.text, ...THEME.cursorLine, fg: 242, italic: true }, rect.x + rect.width - x);
   }
 
+  // The terminal cursor shows only while editing with the editor focused and the cursor on screen.
   if (state.mode === "edit" && state.focus === "editor") {
     const rowIndex = state.cursor.line - state.top;
     const x = rect.x + gutter + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, state.cursor.col);
@@ -305,14 +340,17 @@ interface ReadLayout {
   firstRow: Map<number, number>;
 }
 
+// One layout per buffer, rebuilt when the text or the width changes.
 const reading = new WeakMap<Buffer, ReadLayout & { text: string; width: number }>();
 
+/** The reading-mode layout of a buffer at `width`, cached. */
 function readLayout(buffer: Buffer, width: number): ReadLayout {
   const cached = reading.get(buffer);
 
   if (cached && cached.text === buffer.text && cached.width === width) return cached;
   const rows = renderMarkdown(buffer.text, width);
   const firstRow = new Map<number, number>();
+  // Map each source line to the first rendered row it produced.
   rows.forEach((row, index) => {
     if (!firstRow.has(row.source)) firstRow.set(row.source, index);
   });
@@ -325,8 +363,10 @@ function readLayout(buffer: Buffer, width: number): ReadLayout {
 /** Reading mode: the rendered rows, the first row of each source line, the row of the cursor line, and the first row shown. */
 function readRows(state: State, buffer: Buffer, rect: Rect): ReadLayout & { cursorRow: number; top: number } {
   const { rows, firstRow } = readLayout(buffer, rect.width - 3);
+  // The cursor row is the first rendered row at or past the cursor's source line; a line that renders to nothing (a fence) maps to the next one.
   const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
   const cursorRow = at === -1 ? rows.length - 1 : at;
+  // Keep the cursor a third from the top where the rows allow it.
   const top = Math.max(0, Math.min(cursorRow - Math.floor(rect.height / 3), rows.length - rect.height));
 
   return { rows, firstRow, cursorRow, top };
@@ -339,6 +379,7 @@ export function readCursorRow(state: State, buffer: Buffer, rect: Rect): number 
   return Math.max(0, cursorRow - top);
 }
 
+/** Draws reading mode: rendered Markdown with gutter marks on each source line's first row. */
 function drawRead(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
@@ -363,6 +404,7 @@ function drawRead(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   }
 }
 
+/** Draws the read-only code viewer: a title row with the file link, then highlighted lines with the target marked `▶`. */
 function drawCode(grid: Grid, state: State, rect: Rect): void {
   const code = state.code!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
@@ -397,6 +439,7 @@ export function zoomListHeight(state: Pick<State, "rows">, rect: Rect): number {
 /** Below this many terminal columns a zoom row leaves its brief out; the mark and the edges stay. */
 const ZOOM_BRIEF_COLS = 100;
 
+/** The short kind label of each zoom row kind. */
 const ZOOM_KIND: Record<ZoomRow["kind"], string> = { layer: "layer", module: "module", class: "class", package: "pkg", fn: "fn", type: "type", event: "event", more: "" };
 
 /** Where an explanation's words come from, as the nav panel says it. */
@@ -417,15 +460,17 @@ export function fitCrumbs(labels: readonly string[], width: number): string {
   return labels.at(-1) ?? "";
 }
 
-/** The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room. */
 /** A row of the zoom screen: its text, and what stands at its right edge. */
 export interface ZoomRowText {
   text: string;
   right: string;
 }
 
+/** The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room. */
 export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null): ZoomRowText {
+  // The `more` row stands for the rows the depth limit cut.
   if (row.kind === "more") return { text: `  … ${row.more} more at depth ${row.distance}: > shows them`, right: "" };
+  // With a flow over the level, the row shows the numbers of the steps it stands for, and their worst mark instead of its own.
   const steps = overlay?.steps.get(row.id) ?? [];
   const away = `${row.distance > 0 ? ` ·${row.distance}` : ""}${steps.length > 0 ? ` ${steps.map(circled).join("")}` : ""}`;
   const mark = overlay ? stepsMark(overlay, steps) : row.mark;
@@ -433,6 +478,7 @@ export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: 
   const head = `${row.container ? "▸" : " "} ${ZOOM_KIND[row.kind].padEnd(6)} ${row.label}${away}`;
   const e = state.analysis?.snapshot ? explanationOf(state.analysis.snapshot, state.briefs, row.id) : null;
 
+  // The brief (explanation) only fits from `ZOOM_BRIEF_COLS` on, and only when the room left is worth it.
   if (state.cols < ZOOM_BRIEF_COLS) return { text: head, right };
   const room = width - stringWidth(head) - stringWidth(right) - 5;
   const brief = e === null ? "—" : e.text.replace(/\s+/g, " ");
@@ -440,6 +486,7 @@ export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: 
   return { text: room > 4 ? `${head} · ${fitWidth(brief, room)}` : head, right };
 }
 
+/** How an edges-view row names the group of its edge. */
 const EDGE_GROUP: Record<ZoomEdge["group"], string> = { in: "in", out: "out", external: "package", inside: "inside", unresolved: "◌" };
 
 /** An end of an edge row as the level names it: a child by its name under the focus, anything else by its ID. */
@@ -449,6 +496,7 @@ function endLabel(focus: string, id: string): string {
 
 /** The text of an edges-view row: group, `from → to`, the kinds with counts, and the count. */
 export function zoomEdgeText(focus: string, edge: ZoomEdge, walked = false): ZoomRowText {
+  // The unresolved group lists why edges inside could not be resolved, never invented ends.
   if (edge.group === "unresolved") {
     const reasons = (edge.reasons ?? []).map((item) => `${item.reason} ×${item.count}`).join(", ");
 
@@ -511,6 +559,7 @@ export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow
     { text: " " },
   ];
 
+  // Lay the parts out right-aligned and record the cells of each clickable one.
   const text = parts.map((part) => part.text).join("");
   let x = Math.max(0, width - stringWidth(text));
   const buttons: ZoomButton[] = [];
@@ -534,8 +583,10 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   const analysis = state.analysis;
   const zoom = state.zoom;
 
+  // Nothing to draw without a snapshot or an open zoom.
   if (!analysis?.snapshot || !zoom) return;
   const level = zoomLevel(analysis, zoom.focus, zoom.depth);
+  // Row 0: crumbs and buttons. With a flow chosen, its overlay marks the rows it walks.
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   const overlay = zoom.flow === null ? null : flowOverlay(analysis, zoom.flow, zoom.focus, (file, line) => evidenceOf(analysis, file).get(line)?.mark ?? null);
   // The buttons keep their place on any width; the crumbs get what is left (c4-zoom/10).
@@ -543,6 +594,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   const room = header.buttons[0]!.x - 2;
   grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), room), THEME.panelTitle, room);
   grid.write(rect.x + rect.width - stringWidth(header.text), rect.y, header.text, { ...THEME.panelTitle, bold: true });
+  // Rows 1–2: what the focus is (its explanation and origin), or a hint how to get one.
   const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
   const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wordRows(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
   // A flow over the level takes the second row: its layers in the order written at the top and on a layer, else its steps here.
@@ -553,8 +605,10 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   if (flowRow !== null) grid.write(rect.x + 2, rect.y + 2, flowRow, { ...THEME.hint, fg: 75 }, rect.width - 3);
   const height = zoomListHeight(state, rect);
 
+  // The edges view: one row per aggregated edge, edges the flow does not walk dimmed.
   if (zoom.view === "edges") {
     const edges = zoomEdges(analysis, zoom.focus);
+    // The selection is kept per focus and view, clamped to the list.
     const at = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, edges.length - 1));
 
     if (edges.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "no edges here: c goes back to the nodes", THEME.hint);
@@ -575,6 +629,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
     return;
   }
 
+  // The nodes view: children, then the neighbours with their distance; rows outside the flow dimmed.
   const selected = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, level.rows.length - 1));
 
   if (level.rows.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "nothing inside: - goes up", THEME.hint);
@@ -591,6 +646,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
     const { text, right } = zoomRowText(state, row, rect.width, overlay);
     grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
 
+    // The right edge: the mark glyph in its colour, then the edge count.
     if (right !== "") {
       const mark = overlay ? stepsMark(overlay, overlay.steps.get(row.id) ?? []) : row.mark;
       const markStyle = mark ? { ...style, ...MARK_STYLE[mark] } : style;
@@ -600,18 +656,22 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   }
 }
 
+/** The glyph of each hunk decision in the merge view. */
 const DECISION_GLYPH = { pending: "·", accepted: "a", rejected: "r" } as const;
 
+/** The merge view: a title with the decision counts, then the diff rows with the current hunk marked `▌`. */
 function drawMerge(grid: Grid, state: State, rect: Rect): void {
   const merge = state.merge!;
   const rows = mergeRows(merge.base, merge.hunks);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   const counts = { accepted: 0, rejected: 0, pending: 0 };
 
+  // Count the decisions for the title.
   for (const decision of merge.decisions) counts[decision]++;
   const title = `MERGE ${merge.path} · ${merge.origin} · hunk ${merge.current + 1}/${merge.hunks.length} · ${counts.accepted} accepted, ${counts.rejected} rejected, ${counts.pending} pending`;
   grid.write(rect.x + 1, rect.y, title, THEME.panelTitle, rect.width - 2);
 
+  // Each row: current-hunk bar, decision glyph, `+`/`-`, then the text.
   for (let i = 0; i < rect.height - 1; i++) {
     const row = rows[merge.top + i];
 
@@ -631,6 +691,7 @@ function drawMerge(grid: Grid, state: State, rect: Rect): void {
   }
 }
 
+/** A side panel: a title row, then entries from `top` with the selection highlighted (brighter when focused) and marks at the right edge. */
 function drawPanelList(grid: Grid, rect: Rect, title: string, entries: PanelEntry[], selected: number, focused: boolean, top: number): void {
   grid.fill(rect.x, rect.y, rect.width, rect.height, THEME.panel);
   grid.write(rect.x, rect.y, padWidth(` ${title}`, rect.width), THEME.panelTitle);
@@ -653,6 +714,7 @@ function drawPanelList(grid: Grid, rect: Rect, title: string, entries: PanelEntr
   }
 }
 
+/** The navigation panel's items as the analysis and the expanded keys give them. */
 export function navEntries(state: State): NavItem[] {
   return navItems(state.analysis, state.navExpanded);
 }
@@ -673,9 +735,11 @@ export function navNote(state: State, width: number): string[] {
   const e = explanationOf(snapshot, state.briefs, item.id);
 
   if (!e) return [];
+  // Where the words come from: a doc comment is `code`; a model's words carry the model and date.
   const origin = e.origin === "doc" ? "code" : `llm · ${e.agent ?? "?"} · ${e.date ?? "?"}${e.stale ? " · stale" : ""}`;
   const rows = wordRows(`${e.text} (${origin})`, width);
 
+  // Cut to `NAV_NOTE_ROWS`, the last row ending with `…`.
   return rows.length > NAV_NOTE_ROWS ? [...rows.slice(0, NAV_NOTE_ROWS - 1), `${rows[NAV_NOTE_ROWS - 1]!.slice(0, Math.max(0, width - 1))}…`] : rows;
 }
 
@@ -693,10 +757,12 @@ export function navListHeight(state: State, rect: Rect): number {
   return note === 0 ? rect.height : Math.max(2, rect.height - note - 1);
 }
 
+/** The navigation panel: the tree rows, and the explanation of the selected node under a rule at the bottom. */
 function drawNav(grid: Grid, state: State, rect: Rect): void {
   const note = navNote(state, rect.width - 2);
   const listHeight = navListHeight(state, rect);
 
+  // The note takes the bottom rows; the list keeps the rest.
   if (note.length > 0) {
     const y = rect.y + listHeight;
     grid.fill(rect.x, y, rect.width, rect.height - listHeight, THEME.panel);
@@ -707,6 +773,7 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
 
   const stale = state.updating || state.outdated;
 
+  // Each item: indentation by depth, an expand arrow for parents, the label, and its mark (dimmed when stale).
   const entries = navEntries(state).map((item) => {
     const arrow = item.parent ? (item.expanded ? "▾ " : "▸ ") : item.kind === "heading" ? "" : "  ";
 
@@ -725,6 +792,7 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
 
 /** What goes to the model: kind, label and tokens per item; `◇` planned, `?` incomplete data. */
 function drawContext(grid: Grid, state: State, rect: Rect): void {
+  // The pack is built for the open buffer at the cursor line, with the person's added and removed items.
   const buffer = state.current ? state.buffers.get(state.current) : undefined;
   const pack = buffer && state.analysis ? contextPack(state.analysis, { path: buffer.path, text: buffer.text, line: state.cursor.line, added: state.context.added, removed: state.context.removed }) : null;
 
@@ -741,6 +809,7 @@ export function contextTop(index: number, rect: Rect): number {
   return Math.max(0, index - rect.height + 2);
 }
 
+/** The file panel: each file with `+` when unsaved and `≈` when a proposal waits for it; the open one bold. */
 function drawFiles(grid: Grid, state: State, rect: Rect): void {
   const entries = state.files.map((file) => {
     const buffer = state.buffers.get(file);
@@ -773,6 +842,7 @@ export interface ResultsSplit {
 /** How the F6 panel splits: the entries list on top, the content of the selected entry below. */
 export function resultsSplit(state: State, height: number): ResultsSplit {
   const entries = state.records.length + 1; // the pinned current analysis, then the records
+  // The list takes at most half the body (minus the title and separator rows); the report gets the rest.
   const list = Math.max(1, Math.min(entries, Math.floor((height - 4) / 2)));
 
   return { list, report: height - list - 2 };
@@ -786,6 +856,7 @@ export function findingStateRow(state: State): string | null {
   const unsaved = [...state.buffers.values()].flatMap((buffer) => (!buffer.readOnly && isDirty(buffer) ? [buffer.path] : []));
   const parts: string[] = [];
 
+  // The reasons are listed in a fixed order: config, failure or staleness, update, unsaved buffers, config note.
   if (state.config.kind === "invalid-config") parts.push(`invalid keylang.json: ${state.config.reason}`);
 
   if (state.error !== null) parts.push(`outdated: ${state.error}`);
@@ -804,6 +875,7 @@ export function findingStateRow(state: State): string | null {
 /** Rows above the list for the full message of the selected finding and for its metadata. */
 const DETAIL_MESSAGE_ROWS = 3;
 
+/** Rows for the metadata of the selected finding. */
 const DETAIL_META_ROWS = 2;
 
 /**
@@ -815,6 +887,7 @@ const DETAIL_META_ROWS = 2;
 export function findingDetailRows(state: State, width: number): string[] {
   const selected = visibleFindings(findingsOf(state.analysis), state.results.filter)[state.results.finding];
 
+  // Without a selection, explain why the list is empty.
   if (!selected) {
     const why =
       state.analysis === null ? (state.error !== null ? "the analysis failed; no report yet" : (noSnapshotReason(state) ?? "analyzing…")) : "no findings match the filter";
@@ -830,6 +903,7 @@ function clipRows(rows: string[], count: number, width: number): string[] {
   return rows.length > count ? [...rows.slice(0, count - 1), `${fitWidth(rows[count - 1]!, width - 1)}…`] : rows;
 }
 
+/** Rows padded with empty ones to the fixed detail height. */
 function padRows(rows: string[]): string[] {
   return [...rows, ...Array<string>(Math.max(0, DETAIL_MESSAGE_ROWS + DETAIL_META_ROWS - rows.length)).fill("")];
 }
@@ -859,6 +933,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec" || record?.result?.kind === "feature-questions") && record.result.payload?.proposal != null;
   const codeProposed = record?.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0;
 
+  // The key hint names what Enter does for the selected entry, from the most specific case to the plain rerun.
   const hint = analysis
     ? " Enter open · Tab findings · Esc back "
     : record?.status === "running"
@@ -888,10 +963,12 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   // Sideways scrolling is named only where a row is cut.
   const wide = !analysis && results.scrollReport && reportOverflow(resultsReportRows(state), rect.width - 4) > 0;
   const shown = wide ? hint.replace(" · Esc back ", " · ←→ scroll · Esc back ") : hint;
+  // Title row: the run count on the left, the key hint on the right.
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   // On a narrow panel the keys win over the title: they are the way on and back.
   grid.write(Math.max(rect.x, rect.x + rect.width - stringWidth(shown) - 1), rect.y, shown, THEME.panelTitle, rect.width);
+  // The entries list: the pinned current analysis first, then the records, scrolled to keep the selected one visible.
   const { list: listHeight } = resultsSplit(state, rect.height);
   const entryIndex = analysis ? 0 : results.index + 1;
   const first = Math.max(0, Math.min(entryIndex, records.length + 1 - listHeight));
@@ -914,6 +991,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
     }
   }
 
+  // A divider, then the content of the selected entry: the findings report or the record's report.
   const dividerY = rect.y + 1 + listHeight;
   grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
   grid.write(rect.x, dividerY, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
@@ -923,6 +1001,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   // A long row is cut at the panel's edge with `…`; ←→ (after Tab) scroll the report sideways to read it whole.
   const left = Math.max(0, Math.min(results.left, reportOverflow(rows, rect.width - 4)));
 
+  // The report rows from the scroll position, shifted sideways by `left` cells.
   for (let i = 0; i < rect.height - listHeight - 2; i++) {
     const row = rows[results.top + i];
     const y = dividerY + 1 + i;
@@ -971,6 +1050,7 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
     { text: ` · ${hidden} hidden`, style: { ...THEME.panel, fg: hidden > 0 ? 179 : 243 } },
     { text: " · f/u/w/o filter", style: { ...THEME.panel, fg: 243 } },
   );
+  // Row under the divider: the counts by verdict (dim when filtered out), totals and filter keys.
   grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
   let x = rect.x + 1;
 
@@ -978,12 +1058,14 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
   let y = dividerY + 1;
   const stateRow = findingStateRow(state);
 
+  // Then the state row (why the analysis is not a plain current check), when there is one.
   if (stateRow) {
     grid.fill(rect.x, y, rect.width, 1, THEME.panel);
     grid.write(rect.x + 1, y, stateRow, state.error !== null ? { ...THEME.panel, fg: 160 } : { ...THEME.panel, fg: 179 }, rect.width - 2);
     y++;
   }
 
+  // Then the fixed-height details of the selected finding.
   for (const detail of findingDetailRows(state, rect.width - 2)) {
     if (y >= rect.y + rect.height) break;
     grid.fill(rect.x, y, rect.width, 1, THEME.panel);
@@ -991,6 +1073,7 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
     y++;
   }
 
+  // The list fills the rest; the selection is highlighted only while Tab is in the list.
   const listTop = y;
 
   for (let i = 0; listTop + i < rect.y + rect.height; i++) {
@@ -1007,6 +1090,7 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
 
 /** The hover's box: below its anchor where it fits, else above; inside the editor. */
 function hoverRect(hover: NonNullable<State["hover"]>, editor: Rect): Rect {
+  // Width: the widest line plus the frame and padding, between 24 and 72 cells and inside the editor.
   const width = Math.min(editor.width - 2, Math.max(24, ...hover.lines.map((line) => stringWidth(line.text) + 4)), 72);
   const height = Math.min(hover.lines.length + 2, Math.max(3, editor.height - 1));
   const x = Math.max(editor.x, Math.min(hover.x, editor.x + editor.width - width));
@@ -1016,6 +1100,7 @@ function hoverRect(hover: NonNullable<State["hover"]>, editor: Rect): Rect {
   return { x, y, width, height };
 }
 
+/** The hover popup: a frame and the lines styled by their kind (title, code, evidence, rule). */
 function drawHover(grid: Grid, state: State, editor: Rect): void {
   const hover = state.hover!;
   const rect = hoverRect(hover, editor);
@@ -1034,8 +1119,10 @@ interface CompletionBox {
   offset: number;
 }
 
+/** Where the completion popup goes: eight items around the selection, at the column where completion started. */
 function completionBox(state: State, editor: Rect, buffer: Buffer): CompletionBox {
   const completion = state.completion!;
+  // Keep the selected item in the window of eight.
   const offset = Math.max(0, completion.index - 7);
   const visible = completion.items.slice(offset, offset + 8);
   const width = Math.min(editor.width - 4, Math.max(20, ...visible.map((item) => stringWidth(item.label) + stringWidth(item.detail ?? "") + 5)), 70);
@@ -1047,6 +1134,7 @@ function completionBox(state: State, editor: Rect, buffer: Buffer): CompletionBo
   return { rect: { x, y, width, height }, visible, offset };
 }
 
+/** The completion popup: the visible items with their detail, the selected one highlighted. */
 function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer): void {
   const completion = state.completion!;
   const { rect, visible, offset } = completionBox(state, editor, buffer);
@@ -1158,6 +1246,7 @@ function keyRows(pairs: readonly [string, string][], width: number): string[] {
   const column = KEY_COLUMN;
   const rows: string[] = [];
 
+  // Pair a cell with the next one when both fit their column; otherwise the cell takes a row of its own.
   for (let i = 0; i < cells.length; i++) {
     const left = cells[i]!;
     const right = cells[i + 1];
@@ -1194,6 +1283,7 @@ export function helpRows(state: State, width: number): string[] {
   }
 
   lines.push(...keyRows(HELP[state.mode], width));
+  // The catalogue by group in registry order; `open:` actions (one per file) are summed up in one line instead.
   const entries = catalog(state);
   lines.push("", `Actions · Ctrl+P${state.mode === "view" || state.mode === "read" ? " or :" : ""} finds each by its name or CLI alias:`);
   const groups = [...new Set(ACTIONS.map((action) => action.group))];
@@ -1227,6 +1317,7 @@ interface HelpBox {
   visible: number;
 }
 
+/** The help popup's box: centred in the panel area, at most 96 cells wide, as tall as its rows allow. */
 function helpBox(state: State): HelpBox {
   const panel = layout(state).panel;
   const width = Math.max(10, Math.min(panel.width, 96));
@@ -1245,12 +1336,14 @@ export function helpScrollMax(state: State): number {
   return Math.max(0, box.rows.length - box.visible);
 }
 
+/** The help popup: its visible rows from `helpTop`, and a position line when it scrolls. */
 function drawHelp(grid: Grid, state: State): void {
   const { rect, rows, visible } = helpBox(state);
   const top = Math.max(0, Math.min(state.helpTop, rows.length - visible));
   drawBox(grid, rect, `keys · ${state.mode}`, THEME.popup, THEME.popupTitle);
   rows.slice(top, top + visible).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, THEME.popup, rect.width - 4));
 
+  // A scrolled help shows its position and keys on the last row inside the frame.
   if (visible < rows.length) grid.write(rect.x + 2, rect.y + rect.height - 2, `${top + 1}–${top + visible} of ${rows.length} · ↑↓ PgUp PgDn scroll · any other key closes`, { ...THEME.popup, fg: 243 }, rect.width - 4);
 }
 
@@ -1268,6 +1361,7 @@ interface PromptLook {
   noted: boolean;
 }
 
+/** How each prompt kind shows; a new prompt kind must add an entry here. */
 const PROMPT_LOOKS: Record<Prompt["kind"], PromptLook> = {
   search: { label: "/", noted: false },
   context: { label: "@", noted: false },
@@ -1313,13 +1407,19 @@ const PROMPT_LOOKS: Record<Prompt["kind"], PromptLook> = {
   "export-c4": { label: "export c4: ", title: () => "C4 diagram of the map · no model", noted: true },
 };
 
+/** A label that does not depend on the prompt's state. */
 function isFixedLabel(label: PromptLook["label"]): label is string {
   return typeof label === "string";
 }
 
+/**
+ * The prompt line (in the detail row) with the typed text and the note, and
+ * for every kind but search and context a box of its items over the panel.
+ */
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   const look = PROMPT_LOOKS[prompt.kind];
+  // The prompt line: label, typed text, and the terminal cursor after it.
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
   const label = isFixedLabel(look.label) ? look.label : look.label(prompt);
   const typed = look.typed?.(prompt) ?? prompt.text;
@@ -1346,6 +1446,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   // Rows that describe the form (init: the root, the layout, the files) stand above its choices and are never selected.
   const noteRows = noteCut ? wrapCells(noteText, Math.max(8, editor.width - 4)) : [];
+  // Detail rows (the whole cut note first) fit above the items; the box sits at the bottom of the area.
   const details = [...noteRows, ...(prompt.details ?? [])].slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
@@ -1359,6 +1460,7 @@ function newSpecLabel(field: "kind" | "path" | "name" | undefined): string {
   return field === "path" ? "new spec path: " : field === "name" ? "flow name: " : "new spec kind: ";
 }
 
+/** The footer keys of one mode, and the tail that always shows. */
 interface FooterHint {
   keys: string[];
   tail: string;
@@ -1383,6 +1485,7 @@ export function footerHint(mode: State["mode"], width: number): string {
   const { keys, tail } = HINTS[mode];
   const shown: string[] = [];
 
+  // Take keys in order while they still fit together with the tail.
   for (const key of keys) {
     if (stringWidth([...shown, key, tail].join(" · ")) > width) break;
     shown.push(key);
@@ -1412,6 +1515,7 @@ function drawBarrier(grid: Grid, state: State, editor: Rect): void {
   const barrier = state.barrier!;
   const rows: { text: string; style: Style }[] = [];
 
+  // The rows: the files it writes, the unsaved files it reads, and an error from a failed save.
   if (barrier.writes !== null) {
     rows.push({ text: barrier.writesNote ?? "Writes (generated files only; a manual file stops it):", style: THEME.popup });
     rows.push(...barrier.writes.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
@@ -1424,6 +1528,7 @@ function drawBarrier(grid: Grid, state: State, editor: Rect): void {
 
   if (barrier.error !== null) rows.push({ text: `not saved: ${barrier.error}`, style: { ...THEME.popup, ...THEME.error, bg: THEME.popup.bg! } });
   rows.push({ text: "", style: THEME.popup });
+  // A centred box near the top of the area, then the two buttons and the key line.
   const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row.text) + 4)));
   const height = Math.min(editor.height, rows.length + 4);
   const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
@@ -1446,6 +1551,7 @@ function drawQuit(grid: Grid, state: State, editor: Rect): void {
     ? [`Cancelling ${step.label}: waiting for its current file step.`, "The session ends when it settles; unsaved buffers are asked about first."]
     : [`${step.label} is running.`, "Cancel and exit stops it after its current file step; what it wrote stays.", "Unsaved buffers are asked about after it."];
 
+  // A centred box near the top of the area.
   const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row) + 4)));
   const height = Math.min(editor.height, rows.length + 5);
   const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
@@ -1454,6 +1560,7 @@ function drawQuit(grid: Grid, state: State, editor: Rect): void {
   rows.slice(0, height - 4).forEach((row, i) => grid.write(x + 2, y + 1 + i, row, THEME.popup, width - 4));
   const buttonsY = y + height - 3;
 
+  // While cancelling there is nothing to choose: only the state and how to stay.
   if (step.waiting) {
     grid.write(x + 2, buttonsY, "cancelling…", { ...THEME.popup, fg: 179 }, width - 4);
     grid.write(x + 2, y + height - 2, "Esc stay in the session (the cancel goes on)", { ...THEME.popup, fg: 243 }, width - 4);
@@ -1483,6 +1590,7 @@ function drawStart(grid: Grid, state: State, rect: Rect): void {
     { text: "", style: THEME.text },
   ];
 
+  // The start actions, the chosen one marked `>`.
   const labels = new Map(ACTIONS.map((action) => [action.id, action.label]));
   START_ACTIONS.forEach((id, index) => rows.push({ text: `${index === state.start ? ">" : " "} ${labels.get(id) ?? id}`, style: index === state.start ? THEME.selected : THEME.text }));
   rows.push({ text: "", style: THEME.text });
@@ -1512,6 +1620,7 @@ function editorCursorCell(state: State, editor: Rect, buffer: Buffer | null): Ce
  * cursor or a popup under it. A click goes to the clip only where it is drawn.
  */
 export function clipOnScreen(state: State, area: Layout = layout(state)): Rect | null {
+  // The clip yields where it would cover the cursor or a popup.
   const rect = assistantShown(state) ? clipRect(state, area.editor) : null;
 
   if (rect === null) return null;
@@ -1525,6 +1634,10 @@ export function clipOnScreen(state: State, area: Layout = layout(state)): Rect |
   return clipYields(rect, editorCursorCell(state, area.editor, buffer), popups) ? null : rect;
 }
 
+/**
+ * The whole frame for `state`: title, side panels, the body of the mode,
+ * detail line and status bar, then the popups in their stacking order.
+ */
 export function render(state: State): Grid {
   const grid = new Grid(state.cols, state.rows);
   const area = layout(state);
@@ -1540,6 +1653,7 @@ export function render(state: State): Grid {
   // The start screen takes the whole body: there are no panels to show before Browse.
   const start = state.start !== null && state.mode === "view";
 
+  // The file panel with its divider on the right.
   if (area.files && !start) {
     drawFiles(grid, state, area.files);
     grid.fill(area.files.x + area.files.width, area.files.y, 1, area.files.height, { fg: 238 });
@@ -1547,6 +1661,7 @@ export function render(state: State): Grid {
     for (let y = area.files.y; y < area.files.y + area.files.height; y++) grid.write(area.files.x + area.files.width, y, "│", { fg: 238 });
   }
 
+  // The nav or context panel with its divider on the left.
   if (area.nav && !start) {
     for (let y = area.nav.y; y < area.nav.y + area.nav.height; y++) grid.write(area.nav.x - 1, y, "│", { fg: 238 });
 
@@ -1554,6 +1669,7 @@ export function render(state: State): Grid {
     else drawNav(grid, state, area.nav);
   }
 
+  // The body by mode: the start screen, code viewer, zoom, merge, reading mode, the editor, or a hint with no spec files.
   if (start) drawStart(grid, state, { x: 0, y: area.editor.y, width: state.cols, height: area.editor.height });
   else if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
   else if (state.mode === "zoom" && state.zoom) drawZoom(grid, state, area.editor);
@@ -1581,6 +1697,7 @@ export function render(state: State): Grid {
   // On a narrow terminal the clip is a badge at the start of the line: a click on it opens the chat.
   if (assistantShown(state) && badgeRect(state) !== null) put(`${badgeText(state.clip)}  `, BADGE_STYLE);
 
+  // Evidence totals, dimmed while the analysis is stale.
   if (state.analysis) {
     const count = totals(state.analysis);
     const stale = state.updating || state.outdated;
@@ -1595,6 +1712,7 @@ export function render(state: State): Grid {
   if (feature !== null && feature.path === state.current) put(`  feature ${feature.stage} · questions ${feature.questions}`, { ...THEME.status, fg: 75 });
   const invalid = state.config.kind === "invalid-config" ? state.config.reason : null;
 
+  // The analysis phase, by priority: updating, invalid config, failure, outdated, current, or not yet analysed.
   const phase = state.updating
     ? "  updating… results shown are stale"
     : invalid !== null
@@ -1618,11 +1736,13 @@ export function render(state: State): Grid {
   // A snapshot is its own property: a valid config may find no sources.
   if (state.analysis && !state.analysis.snapshot) put("  no supported source files", { ...THEME.status, fg: 179 });
 
+  // Waiting proposals, then the mode's footer keys right-aligned in what is left.
   if (state.proposals.length > 0 && state.mode !== "merge") put(`  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
   const hints = footerHint(state.mode, state.cols - x - 3);
   grid.write(Math.max(x + 2, state.cols - stringWidth(hints) - 1), area.status.y, hints, THEME.status);
 
   // Popups
+  // Popups in stacking order; later ones draw over earlier ones.
   if (state.results.open && !state.results.viewing) drawResults(grid, state, area.panel);
   const clip = clipOnScreen(state, area);
 

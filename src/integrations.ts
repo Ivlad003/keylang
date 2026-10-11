@@ -7,6 +7,11 @@
 // (entry points of kind `webhook`, routes whose path names a webhook,
 // callback, notify or IPN, and `integrations.webhooks` of keylang.json); and
 // queues: publishers by topic, consumers, and the pairs a topic joins.
+//
+// Pipeline: a report over the snapshot (source → FileFacts → graph →
+// snapshot), read by the CLI. Entry points: `loadIntegrations`,
+// `findIntegrations`, `findWebhooks`, `integrationsText`; key terms:
+// integration client, call site, reach, webhook, publisher/consumer, pair.
 
 import { readFileSync } from "node:fs";
 import { callGraph, callMatches, callsOf, compileMatcher, importMatches, internalCallPositions, literalArgument, resourcePath, snapshotFacts, sourceReader, urlOf, type Matcher } from "./call-sites.ts";
@@ -17,6 +22,7 @@ import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "./json
 import type { AnalysisSnapshot, EntryKind, EntryPoint } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
+/** What kind of external system a client talks to. */
 export type IntegrationKind = "http" | "soap" | "sdk" | "payment" | "queue";
 
 /** One client the data file names. */
@@ -35,6 +41,7 @@ export interface Reach {
   flow: { name: string; source: "spec" | "discovered" } | null;
 }
 
+/** One call of a client in the code, with where it points and which entry points reach it. */
 export interface IntegrationSite {
   file: string;
   line: number;
@@ -49,6 +56,7 @@ export interface IntegrationSite {
   reachedFrom: Reach[];
 }
 
+/** One client the repository uses: its call sites and the imports of it. */
 export interface Integration {
   id: string;
   label: string;
@@ -59,6 +67,7 @@ export interface Integration {
   imports: { file: string; line: number; source: string }[];
 }
 
+/** An incoming entry point treated as a webhook, with why it counts as one. */
 export interface Webhook {
   /** `kind`: an entry point of kind webhook; `path`: a route whose label names a webhook; `config`: `integrations.webhooks` names its file or path. */
   via: "kind" | "path" | "config";
@@ -71,6 +80,7 @@ export interface Webhook {
   glob?: string;
 }
 
+/** The whole `keylang integrations` report (also its JSON form). */
 export interface IntegrationsReport {
   snapshotId: string;
   /** Clients with call sites or imports, in the data file's order. */
@@ -112,6 +122,7 @@ function isIntegrationClient(item: JsonValue): item is JsonObject & IntegrationC
 /** Route paths that name an incoming notification. */
 const WEBHOOK_PATH = /(webhook|callback|notify|ipn)/i;
 
+/** Entry kinds whose label is an HTTP-style path that may name a webhook. */
 const ROUTE_KINDS: readonly EntryKind[] = ["route", "rest", "graphql", "controller"];
 
 /** The path of a route label (`POST /stripe/webhook` → `/stripe/webhook`). */
@@ -125,7 +136,9 @@ export function findWebhooks(snapshot: AnalysisSnapshot, globs: readonly string[
   const seen = new Set<string>();
 
   for (const entry of snapshot.entries) {
+    // A configured glob may match the entry's file or its route path (without the leading `/`).
     const glob = globs.length === 0 ? null : (firstMatchingGlob(entry.file, globs) ?? firstMatchingGlob(routePath(entry.label).replace(/^\//, ""), globs));
+    // The first reason wins: the entry kind, then a webhook-like path, then the config glob.
     const via = entry.kind === "webhook" ? "kind" : ROUTE_KINDS.includes(entry.kind) && WEBHOOK_PATH.test(routePath(entry.label)) ? "path" : glob !== null ? "config" : null;
 
     if (via === null) continue;
@@ -147,6 +160,7 @@ export function findWebhooks(snapshot: AnalysisSnapshot, globs: readonly string[
     }
   }
 
+  // By file, line and id so the list is stable.
   return out.sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.id, b.id));
 }
 
@@ -163,9 +177,12 @@ export async function findIntegrations(config: Config, snapshot: AnalysisSnapsho
   const discovered = new Map(discoverFlows(snapshot, specified).flows.map((flow) => [flow.trigger, flow.name]));
   const entriesById = new Map<string, EntryPoint[]>();
 
+  // Entry points by fn ID: several entries may point at the same fn.
   for (const entry of snapshot.entries) entriesById.set(entry.id, [...(entriesById.get(entry.id) ?? []), entry]);
   const reachCache = new Map<string, Reach[]>();
 
+  // The entry points that reach a fn: walk callers backwards over the call graph,
+  // then keep the snapshot's entries among them. Cached per fn, since many sites share one.
   const reachOf = (id: string | null): Reach[] => {
     if (id === null) return [];
     const known = reachCache.get(id);
@@ -201,6 +218,7 @@ export async function findIntegrations(config: Config, snapshot: AnalysisSnapsho
   const publishers: IntegrationsReport["queues"]["publishers"] = [];
   const claimed = new Set<string>();
 
+  // For each client in the data file's order: its imports and its matched call sites, file by file.
   for (const client of clients) {
     const matcher = compileMatcher(client);
     const sites: IntegrationSite[] = [];
@@ -233,12 +251,14 @@ export async function findIntegrations(config: Config, snapshot: AnalysisSnapsho
   const consumers = snapshot.entries.filter((entry) => entry.kind === "consumer").map((entry) => ({ label: entry.label, id: entry.id, file: entry.file, line: entry.line }));
   const pairs: IntegrationsReport["queues"]["pairs"] = [];
 
+  // Join publishers and consumers by topic: a consumer label equal to the topic, or naming it as a word.
   for (const publisher of publishers) {
     if (publisher.topic === null) continue;
 
     for (const consumer of consumers) if (consumer.label === publisher.topic || consumer.label.split(/[\s:]+/).includes(publisher.topic)) pairs.push({ topic: publisher.topic, publisher: `${publisher.file}:${publisher.line}`, consumer: consumer.id });
   }
 
+  // Sorted so publishers and pairs print in a stable order.
   publishers.sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.integration, b.integration));
   pairs.sort((a, b) => compareText(a.topic, b.topic) || compareText(a.publisher, b.publisher) || compareText(a.consumer, b.consumer));
 

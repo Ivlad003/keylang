@@ -8,7 +8,9 @@ import { Parser as PackageParser } from "web-tree-sitter-package";
 
 export * from "web-tree-sitter-package";
 
+/** The package's `Parser`, whose `init` locates the runtime WASM beside the worker unless the caller says otherwise. */
 export class Parser extends PackageParser {
+  // The caller's options are spread last, so an explicit `locateFile` still wins.
   static override init(options: Parameters<typeof PackageParser.init>[0] = {}): Promise<void> {
     return PackageParser.init({ locateFile: (name: string) => new URL(`wasm/${name}`, self.location.href).href, ...options });
   }

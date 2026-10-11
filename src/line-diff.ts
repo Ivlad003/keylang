@@ -1,6 +1,7 @@
 // A line diff as hunks (business-flows/24 moved it here from `tui/merge.ts`):
 // MERGE in the TUI takes them one by one, and a diagram proposal of
 // `keylang web` names how many its targets hold. Pure, no dependencies.
+// Entry point: `diffLines`; each `Hunk` it returns is the unit MERGE accepts or skips.
 
 export interface Hunk {
   /** First base line the hunk replaces (0-based) and how many. */
@@ -28,6 +29,7 @@ export function diffLines(base: readonly string[], proposed: readonly string[]):
 
   const a = base.slice(start, endBase);
   const b = proposed.slice(start, endNew);
+  // table[i][j] = length of the LCS of a[i..] and b[j..], filled bottom-up from the ends.
   const table: Uint32Array[] = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
 
   for (let i = a.length - 1; i >= 0; i--) {
@@ -36,6 +38,8 @@ export function diffLines(base: readonly string[], proposed: readonly string[]):
     }
   }
 
+  // Walk the table from the start, growing one open hunk over each run of
+  // differing lines; a shared line closes it.
   const hunks: Hunk[] = [];
   let open: Hunk | null = null;
   let i = 0;
@@ -47,10 +51,13 @@ export function diffLines(base: readonly string[], proposed: readonly string[]):
   };
 
   while (i < a.length || j < b.length) {
+    // Equal lines are kept as they are: no hunk.
     if (i < a.length && j < b.length && a[i] === b[j]) {
       close();
       i++;
       j++;
+    // Take a proposed line when that keeps the LCS as long (ties prefer the
+    // insertion); otherwise drop a base line.
     } else if (j < b.length && (i === a.length || table[i]![j + 1]! >= table[i + 1]![j]!)) {
       open ??= { baseStart: start + i, baseCount: 0, lines: [] };
       open.lines.push(b[j]!);

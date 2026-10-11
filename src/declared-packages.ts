@@ -16,6 +16,9 @@
 // the resolvers read them. `@types/x`
 // counts as `x`. A missing manifest is skipped. One that cannot be read, or
 // whose JSON or TOML is invalid, is an error that names the file and the field.
+// Pipeline: source side, beside the import resolvers — manifests → declared
+// packages → `external.*` nodes of the graph and `knownExternal` for resolve.
+// Entry point: `readManifests`.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
@@ -27,6 +30,7 @@ import { inside, isGlob, listWorkspaceGlob, parseJsonc, parseJsoncStrict, pnpmWo
 import { isJsonObject, isJsonString, parseJson, type JsonValue } from "./json.ts";
 import { compareText } from "./span.ts";
 
+// The manifest fields that declare packages, per ecosystem: npm, Cargo, composer.
 const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
 
 const CRATE_FIELDS = ["dependencies", "dev-dependencies", "build-dependencies"] as const;
@@ -81,6 +85,8 @@ export interface ManifestRead {
 export function readManifests(config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()): ManifestRead {
   const inputs = new Map<string, string | null>();
 
+  // Every manifest read goes through here: reuse the text a resolver already
+  // read (so the snapshot id and this list agree), and record it as an input.
   const read = (rel: string): string | null => {
     const held = inputs.has(rel) ? inputs.get(rel) : known.get(rel);
     const text = held !== undefined ? held : readInput(join(config.root, rel), rel);
@@ -92,6 +98,7 @@ export function readManifests(config: Config, files: readonly string[], known: R
   const declared = new Map<string, Declaration[]>();
   const cargo = cargoWorkspaces(read);
 
+  // Record a declaration, skipping local ranges and folding `@types/x` into `x`.
   const add: Add = (name, manifest, field, range) => {
     if (range !== null && LOCAL_RANGE.test(range)) return;
     const target = typesTarget(name);
@@ -100,6 +107,7 @@ export function readManifests(config: Config, files: readonly string[], known: R
     declared.set(target, [...(declared.get(target) ?? []), { manifest, field, range }]);
   };
 
+  // Read package.json, Cargo.toml and composer.json in each candidate directory, in path order.
   const dirs = [...manifestDirs(files)].sort(compareText);
 
   for (const dir of dirs) {
@@ -131,6 +139,7 @@ export function readManifests(config: Config, files: readonly string[], known: R
   const list = (rel: string): string | null => known.get(rel) ?? listWorkspaceGlob(config.root, rel);
   const crateDirs = dirs.filter((dir) => inputs.get(dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`) != null);
 
+  // Names that are this repository's own code: workspace members, composer path repos, Cargo members, linked packages.
   const internal = new Set([
     ...workspaceNames(read, list),
     ...composerPathNames(read, list),
@@ -138,6 +147,7 @@ export function readManifests(config: Config, files: readonly string[], known: R
     ...linkedPackages(config.root, declared, inputs),
   ]);
 
+  // What is left is external; assign ids and sort declarations and packages for stable output.
   const entries = [...declared].filter(([name]) => !internal.has(name));
   const { ids } = assignExternalIds(entries.map(([name]) => name));
 
@@ -165,6 +175,7 @@ function manifestDirs(files: readonly string[]): Set<string> {
   const dirs = new Set<string>([""]);
 
   for (const file of files) {
+    // Walk up from the file's directory until the root (or outside the root).
     for (let dir = posix.dirname(toPosix(file)); dir !== "." && dir !== "/" && !dir.startsWith(".."); dir = posix.dirname(dir)) {
       if (dirs.has(dir)) break; // its ancestors are in already
       dirs.add(dir);
@@ -199,6 +210,7 @@ function workspaceNames(read: (rel: string) => string | null, list: (rel: string
   const names = new Set<string>();
   const dirs = patterns.flatMap((pattern) => (isJsonString(pattern) && !pattern.startsWith("!") ? workspaceDirs(pattern, list) : []));
 
+  // Each matched directory names its package through its own package.json.
   for (const dir of withoutNegated(dirs, patterns)) {
     const text = read(`${dir}/package.json`);
     const member = text === null ? null : jsoncValue(text);
@@ -222,6 +234,8 @@ function linkedPackages(root: string, declared: ReadonlyMap<string, readonly Dec
     for (const { manifest } of declarations) {
       if (posix.basename(manifest) !== "package.json" || names.has(name)) continue;
 
+      // Look for `node_modules/<name>` from the manifest's directory upwards, as Node
+      // resolves it; the first hit decides, and it is internal when it lands inside the repo.
       for (let dir = posix.dirname(manifest); ; dir = posix.dirname(dir)) {
         const at = dir === "." ? "" : dir;
         const key = at === "" ? `node_modules/${name}` : `${at}/node_modules/${name}`;
@@ -255,6 +269,7 @@ function linkedPackages(root: string, declared: ReadonlyMap<string, readonly Dec
 function cargoWorkspaces(read: (rel: string) => string | null): CargoWorkspaces {
   const parsed = new Map<string, TomlTable | null>();
 
+  // Parsed Cargo.toml per directory, cached; null when absent or unparsable.
   const manifestAt = (dir: string): TomlTable | null => {
     const cached = parsed.get(dir);
 
@@ -267,6 +282,7 @@ function cargoWorkspaces(read: (rel: string) => string | null): CargoWorkspaces 
     return manifest;
   };
 
+  // The nearest ancestor (or self) whose Cargo.toml has a `[workspace]` table.
   const workspaceOf = (dir: string): CargoWorkspace | null => {
     for (let at = dir; ; at = posix.dirname(at)) {
       const here = at === "." ? "" : at;
@@ -278,6 +294,7 @@ function cargoWorkspaces(read: (rel: string) => string | null): CargoWorkspaces 
     }
   };
 
+  // Whether a relative `path` from `dir` stays inside the repository.
   const insideAt = (dir: string, path: string): boolean => {
     const at = posix.normalize(posix.join(dir === "" ? "." : dir, toPosix(path)));
 
@@ -336,10 +353,12 @@ interface CargoWorkspace {
 
 /** Directories one `[workspace] members` entry names, root-relative; a glob in the last segment is expanded, as the resolver does. */
 function cargoMemberDirs(workspace: string, member: string, list: (rel: string) => string | null): string[] {
+  // Resolve the member against the workspace directory; refuse anything outside the repo.
   const full = posix.normalize(posix.join(workspace === "" ? "." : workspace, toPosix(member))).replace(/\/$/, "");
 
   if (full === ".." || full.startsWith("../") || full.startsWith("/")) return [];
 
+  // No glob: the member is one directory. A glob is only expanded in its last segment.
   if (!/[*?[{]/.test(full)) return [full === "." ? "" : full];
   const parent = posix.dirname(full);
 
@@ -362,6 +381,7 @@ function composerPathNames(read: (rel: string) => string | null, list: (rel: str
 
   if (!isJsonObject(manifest) || !Array.isArray(manifest.repositories)) return names;
 
+  // Only `path` repositories point at code inside this repository.
   for (const repository of manifest.repositories) {
     if (!isJsonObject(repository) || repository.type !== "path" || !isJsonString(repository.url)) continue;
 
@@ -394,6 +414,7 @@ function readInput(abs: string, rel: string): string | null {
   return isFile(abs) ? readText(abs, rel) : null;
 }
 
+/** Whether `abs` exists and is a regular file. */
 function isFile(abs: string): boolean {
   try {
     return statSync(abs).isFile();
@@ -444,6 +465,7 @@ function isTomlTable(value: TomlValue | undefined): value is TomlTable {
   return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
+/** A TOML string value. */
 function isTomlString(value: TomlValue | undefined): value is string {
   return typeof value === "string";
 }
@@ -492,6 +514,7 @@ function addCrates(rel: string, text: string, add: Add, local: (key: string, dep
   if (!isTomlTable(value.package)) return;
   const targets = table(rel, "target", "target" in value ? value.target : undefined, "table", isTomlTable);
 
+  // Platform-specific tables: `[target.<cfg>.dependencies]` and the like.
   const nested = targets === undefined ? [] : Object.entries(targets).flatMap(([name, item]) => {
     const crate = table(rel, `target.${name}`, item, "table", isTomlTable);
 
@@ -502,6 +525,7 @@ function addCrates(rel: string, text: string, add: Add, local: (key: string, dep
     for (const [key, dep] of Object.entries(names)) {
       // This repository's crate (`path`, or a `path` the workspace gives): never an external package.
       if (local(key, dep)) continue;
+      // A renamed dependency (`foo = { package = "bar" }`) is the package `bar`; a version may be a string or a table field.
       const renamed = isTomlTable(dep) && isTomlString(dep.package) ? dep.package : key;
       const range = isTomlString(dep) ? dep : isTomlTable(dep) && isTomlString(dep.version) ? dep.version : null;
       add(renamed, rel, field, range);
@@ -530,6 +554,7 @@ function addComposer(rel: string, text: string, add: Add): void {
   }
 }
 
+/** The dependency tables of a Cargo manifest (or a `[target.*]` table), validated, in field order. */
 function crateTables(rel: string, source: TomlTable, prefix: string): [DependencyField, TomlTable][] {
   const out: [DependencyField, TomlTable][] = [];
 

@@ -8,6 +8,11 @@
 // generated exception; a wider baseline is a removed deny or a new allow).
 // `hook stop`, `check --changed` and `feature` report each one; a plain
 // `check` has no base and never does (ADR 0005, amendment).
+//
+// Sits beside resolve/rules (Markdown -> IR -> SpecIR) and compares two
+// SpecIRs and two configs rather than spec against code. Entry points:
+// `readWeakenings` (git base vs working tree), `configWeakenings`,
+// `specWeakenings`, and `weakeningDiagnostic` (a weakening as a K108).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -52,6 +57,7 @@ interface ScopeFields {
   frameworks: string[] | undefined;
 }
 
+/** The config fields that can stop keylang reading a file. */
 type ClassField = "exclude" | "outside" | "assume";
 
 /** A JSON array of strings; anything else (a mixed array included) is undefined. */
@@ -73,11 +79,13 @@ function configObject(text: string): JsonObject {
   }
 }
 
+/** The `ScopeFields` of a keylang.json text; a missing or malformed field takes its default. */
 function scopeFields(text: string): ScopeFields {
   const raw = configObject(text);
   const rawLayers = raw.layers;
   let layers: Map<string, string[]> | null = null;
 
+  // A layer maps to one glob or a list of globs; a layer of another shape is dropped, not an error.
   if (isJsonObject(rawLayers)) {
     layers = new Map();
 
@@ -103,6 +111,7 @@ function scopeFields(text: string): ScopeFields {
 /** How much keylang reads of a file: analysed, a hole (`exclude`), or neither read nor a hole. */
 const READ_RANK = { analysed: 0, excluded: 1, outside: 2, assumed: 2 } as const;
 
+/** The config field that puts a file in each non-analysed class. */
 const FIELD_OF = { excluded: "exclude", outside: "outside", assumed: "assume" } as const;
 
 /** The 1-based line of `"field"` in the JSON text, else 1. */
@@ -112,8 +121,10 @@ function fieldLine(text: string, field: string): number {
   return index === -1 ? 1 : index + 1;
 }
 
+/** A list field for a message; an absent one reads as `(detected)`. */
 const listText = (list: readonly string[] | undefined): string => (list === undefined ? "(detected)" : JSON.stringify(list));
 
+/** Up to three file names, then how many more: messages stay one readable line. */
 function someFiles(files: readonly string[]): string {
   const shown = files.slice(0, 3).join(", ");
 
@@ -141,6 +152,9 @@ export function configWeakenings(input: {
   const unread = new Map<ClassField, { file: string; rule: string }[]>();
   const moved: { file: string; from: string; to: string; rule: string }[] = [];
 
+  // Per source file: compare how it was read at the base and now. Files that
+  // were not read at the base (assumed, outside) cannot lose anything, and
+  // only files in a layer some rule reaches matter.
   for (const file of input.files ?? []) {
     const before = sourceClass(file, base);
     const after = sourceClass(file, now);
@@ -156,12 +170,14 @@ export function configWeakenings(input: {
       const field = FIELD_OF[after];
       unread.set(field, [...(unread.get(field) ?? []), { file, rule }]);
     } else if (after === before) {
+      // Read the same way: did a `layers` change move it to another layer?
       const to = input.place?.(file, now) ?? layer;
 
       if (to !== layer) moved.push({ file, from: layer, to, rule });
     }
   }
 
+  // One finding per field, listing the files and the rules they escape; the field order fixes the output order.
   for (const field of ["exclude", "assume", "outside"] as const) {
     const hits = unread.get(field);
 
@@ -195,6 +211,7 @@ interface Atom {
   col: number;
 }
 
+/** The atoms of every rule in a spec: dependency rules split per target, other rules kept whole by their text. */
 function atoms(spec: SpecIR): Atom[] {
   const out: Atom[] = [];
 
@@ -208,6 +225,7 @@ function atoms(spec: SpecIR): Atom[] {
   return out;
 }
 
+/** A multiset: how many items have each key. Duplicated lines count separately. */
 function counts<T>(items: readonly T[], key: (item: T) => string): Map<string, number> {
   const out = new Map<string, number>();
 
@@ -257,6 +275,9 @@ export function specWeakenings(baseDocs: readonly Document[], nowDocs: readonly 
   const nowAtoms = atoms(now);
   const left = counts(nowAtoms, (atom) => atom.key);
 
+  // Removed rules: match each base atom against the current ones as a
+  // multiset (anywhere in the spec), so a moved line is not a removal. A
+  // removed `allow` makes the spec stricter and is not reported.
   for (const atom of baseAtoms) {
     const count = left.get(atom.key) ?? 0;
 
@@ -290,6 +311,7 @@ export function specWeakenings(baseDocs: readonly Document[], nowDocs: readonly 
       .flatMap((flow) => planItems(flow).flatMap(({ key, item }) => (item.kind === "question" ? [] : [{ key: `${flow.file}\0${key}`, item, flow }])));
   };
 
+  // Same multiset match for flow items, keyed by file and the item's plan key.
   const kept = counts(flowItems(now, nowDocs), (entry) => entry.key);
 
   for (const { key, item, flow } of flowItems(base, baseDocs)) {
@@ -304,6 +326,7 @@ export function specWeakenings(baseDocs: readonly Document[], nowDocs: readonly 
     weakened("step", flow.file, line, col, `${item.kind} \`${item.target.target}\` of flow \`${flow.name}\` (${flow.file}:${line} at ${at}) was removed`);
   }
 
+  // Sorted by position so reports are stable across runs.
   return out.sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.message, b.message));
 }
 
@@ -311,6 +334,7 @@ export function specWeakenings(baseDocs: readonly Document[], nowDocs: readonly 
 export function weakeningDiagnostic(weakening: Weakening, display: (path: string) => string = (path) => path): Diagnostic {
   const { line, col } = weakening;
 
+  // A one-column span: a weakening has a position but no extent (offset is unknown here).
   return diagnostic("K108", display(weakening.file), { start: { offset: 0, line, col }, end: { offset: 0, line, col: col + 1 } }, weakening.message);
 }
 
@@ -325,8 +349,10 @@ export function readWeakenings(config: Config, ref: string, label: string, at: s
   const root = config.root;
   let baseConfig: string | null;
   let baseSpecs: Map<string, string>;
+  // Generated files are not specs a person weakens: the map directory and reading aids are skipped.
   const skip = (dir: string) => (path: string) => path.startsWith(`${specPath(dir, "map")}/`) || readingAid(join(root, dir), join(root, path));
 
+  // Read the base from git; any git failure becomes a note, never a failed command.
   try {
     baseConfig = gitFileAt(root, ref, CONFIG_FILE, label);
 
@@ -337,6 +363,7 @@ export function readWeakenings(config: Config, ref: string, label: string, at: s
     return { weakenings: [], note: `the spec was not compared with ${at}: ${error instanceof Error ? error.message : String(error)}` };
   }
 
+  // The current specs from disk, sorted for a stable comparison.
   const specDir = join(root, config.dir);
 
   const nowSpecs = existsSync(specDir)
@@ -348,9 +375,13 @@ export function readWeakenings(config: Config, ref: string, label: string, at: s
 
   const baseDocs = [...baseSpecs].map(([path, text]) => parse(path, text));
   const nowDocs = nowSpecs.map((path) => parse(path, readFileSync(join(root, path), "utf8")));
+  // A rule counts as reaching a layer when it does so at the base or now, so removing the rule too does not hide the change.
   const reached = reachingRule([compileSpec(baseDocs).spec, compileSpec(nowDocs).spec]);
   const guessed = new Map<string, Map<string, string[]>>();
 
+  // A file's layer under given fields. Without `layers` the layout is guessed,
+  // which is costly: guesses are cached per exclude/outside/assume set, and the
+  // current config's own guess is reused when the sets match.
   const place = (file: string, fields: ScopeFields): string => {
     let layers = fields.layers;
 
@@ -364,6 +395,7 @@ export function readWeakenings(config: Config, ref: string, label: string, at: s
     return placeFile({ ...config, layers, outside: fields.outside }, file)?.layer ?? "unassigned";
   };
 
+  // Every source file with nothing excluded, so files the new config hides are still compared.
   const files = classifySources({ ...config, exclude: [], outside: [], assume: [] }).analysed;
   const weakenings = [...configWeakenings({ base: baseConfig, now: config.text ?? "{}", files, place, reached }), ...specWeakenings(baseDocs, nowDocs, config.dir, at)];
 

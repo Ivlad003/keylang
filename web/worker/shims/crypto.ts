@@ -7,6 +7,7 @@ import { Buffer } from "buffer";
 
 const encoder = new TextEncoder();
 
+/** An incremental SHA-256 hash, as `createHash("sha256")` returns on Node. */
 export class Hash {
   private readonly state = sha256.create();
 
@@ -16,6 +17,7 @@ export class Hash {
     return this;
   }
 
+  /** The hash as a Buffer, or as text in the given encoding. */
   digest(encoding?: "hex" | "base64" | "base64url"): string | Buffer {
     const bytes = Buffer.from(this.state.digest());
 
@@ -23,12 +25,14 @@ export class Hash {
   }
 }
 
+/** A SHA-256 `Hash`; any other algorithm throws, naming it, rather than hashing differently from Node. */
 export function createHash(algorithm: string): Hash {
   if (algorithm.toLowerCase() !== "sha256") throw new Error(`crypto: only sha256 in the browser, not ${algorithm}`);
 
   return new Hash();
 }
 
+/** `size` random bytes from Web Crypto, as a Buffer. */
 export function randomBytes(size: number): Buffer {
   return Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(size)));
 }

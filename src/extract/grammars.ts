@@ -3,8 +3,10 @@
 // copies each into dist/wasm), so a new language cannot be left out of the
 // published package.
 
+/** Every grammar keylang ships. */
 export const GRAMMARS = ["typescript", "tsx", "javascript", "rust", "python", "php"] as const;
 
+/** The name of one shipped grammar. */
 export type Grammar = (typeof GRAMMARS)[number];
 
 /** The grammar's file name in @vscode/tree-sitter-wasm and in dist/wasm. */

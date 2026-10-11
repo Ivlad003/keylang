@@ -3,6 +3,9 @@
 // lives in `<dir>/explain/<id>.md` (a brief for the explained map in
 // `<dir>/explain/brief/<id>.md`) beside its baseline — the closure
 // fingerprint of the node when it was written — and never in a verdict.
+// Sits after analysis: it reads the snapshot and specs, builds an `LlmRequest`
+// (`explanationRequest`, `briefRequest`, `systemRequest`), cleans the answer
+// (`answerText`, `briefText`) and plans brief batches (`planBriefs`).
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -18,12 +21,15 @@ import { compareText } from "./span.ts";
 import { plannedDeclaration as plannedDecl } from "./spec-ir.ts";
 import { leavesUnresolved } from "./snapshot.ts";
 
+/** A saved explanation as read from the store. */
 export type Explanation = StoredExplanation;
 
 /** The saved explanation of `id` at this detail: `short` and `full` share `<id>.md`, a brief has its own file. */
 export function readExplanation(config: Config, id: string, detail: ExplanationDetail = "short"): Explanation | null {
   const e = readStoredExplanation(config.root, explanationPath(config, id, detail));
 
+  // A file of the other family (a brief where an answer was asked, or back)
+  // is not this explanation.
   return e !== null && (e.detail === "brief") === (detail === "brief") ? e : null;
 }
 
@@ -49,6 +55,8 @@ export function moveHint(config: Config, count: number): string {
  * "" for a planned node, which has no code yet; null when the id is gone.
  */
 export function currentBaseline(analysis: Analysis, id: string): string | null {
+  // The repository's own brief is compared with a baseline over the whole
+  // system; a node with code with its closure fingerprint; a plan with "".
   if (id === SYSTEM_ID) return analysis.snapshot ? systemBaseline(analysis.snapshot, loadBriefs(analysis.config)) : null;
 
   if (analysis.snapshot?.nodes[id]) return snapshotBaseline(analysis.snapshot, id);
@@ -56,6 +64,7 @@ export function currentBaseline(analysis: Analysis, id: string): string | null {
   return plannedDecl(analysis.docs, id) ? "" : null;
 }
 
+/** Whether the saved explanation was written against another baseline than the current one (a gone ID is stale too). */
 export function isStale(analysis: Analysis, id: string, e: Explanation): boolean {
   return currentBaseline(analysis, id) !== e.closure;
 }
@@ -83,6 +92,8 @@ export function answerText(answer: string): string {
 
 /** The inside of one fenced block of Markdown or plain text that is the whole of `text`; `text` itself otherwise. */
 function unfenced(text: string): string {
+  // An opening fence of backticks or tildes at the very start, optionally
+  // tagged as Markdown or plain text; any other language is real code.
   const open = /^(`{3,}|~{3,})[ \t]*(?:markdown|md|text|txt|plaintext)?[ \t]*\n/i.exec(text);
 
   if (!open) return text;
@@ -92,11 +103,14 @@ function unfenced(text: string): string {
   const closer = new RegExp(`^ {0,3}${fence[0] === "`" ? "`" : "~"}{${fence.length},}[ \\t]*$`);
   const close = lines.findIndex((line) => closer.test(line));
 
+  // Unwrap only when the first closing fence is the last line, i.e. the
+  // block holds the whole answer.
   return close === lines.length - 1 ? lines.slice(0, close).join("\n").trim() : text;
 }
 
 /** `text` without its first paragraph when that is a remark before the answer and another paragraph follows. */
 function withoutRemark(text: string): string {
+  // A paragraph ends at the first blank line; a one-paragraph answer has no remark.
   const cut = /\n[ \t]*\n/.exec(text);
 
   if (!cut) return text;
@@ -104,6 +118,8 @@ function withoutRemark(text: string): string {
 
   // Markdown structure is the answer's own: a heading, a list item, a quote, a table row, a fence.
   if (/^(?:#|[-*+>|]|\d+[.)]|`{3}|~{3})/.test(first)) return text;
+  // Count words (letters or digits, with inner apostrophes and hyphens); a
+  // remark ends with a colon (maybe bold) or is under four words.
   const words = first.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
 
   return /:\**$/.test(first) || words < 4 ? text.slice(cut.index + cut[0].length).trim() : text;
@@ -114,9 +130,12 @@ function withoutRemark(text: string): string {
  * `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
  */
 export function unknownIds(analysis: Analysis, text: string): string[] {
+  // The first segments that make a dotted name an ID: configured layers and
+  // the top segments the snapshot has.
   const layers = new Set([...analysis.config.layers.keys(), ...Object.keys(analysis.snapshot?.nodes ?? {}).map((id) => id.split(".")[0]!)]);
   const out = new Set<string>();
 
+  // Backticked dotted identifiers: two or more segments of letters, digits, `_`, `$`, `-`.
   for (const m of text.matchAll(/`([\p{L}_$][\p{L}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{N}_$-]*)+)`/gu)) {
     const id = m[1]!;
 
@@ -140,6 +159,8 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
   const source = node?.file ? snapshotSource(analysis, node.file) : null;
   const code = source !== null && node?.line !== null && node?.line !== undefined ? sourceLines(source, node.line, node.endLine ?? node.line) : null;
 
+  // The prompt: summary, code (or why it is missing), neighbours'
+  // signatures, members, unresolved constructs for `full`, and the layer.
   const parts = [
     `Node:\n${formatSummary(summary)}`,
     ...(code ? [`Code (${node!.file}:${node!.line}):\n\`\`\`\n${code}\n\`\`\``] : []),
@@ -151,6 +172,7 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     `Layer: ${summary.id.split(".")[0]}`,
   ];
 
+  // The size and shape of the answer depend on the detail asked for.
   const brief = options.detail === "brief";
 
   const detail = brief
@@ -194,6 +216,7 @@ const MAX_UNRESOLVED = 20;
 function unresolved(analysis: Analysis, id: string): string[] {
   const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id && leavesUnresolved(c));
 
+  // No section when everything resolved; the list is capped to keep the prompt small.
   if (items.length === 0) return [];
   const lines = items.slice(0, MAX_UNRESOLVED).map((c) => `- ${c.file}:${c.line}: \`${c.text.replace(/\s+/g, " ").trim()}\` — ${c.reason}`);
 
@@ -216,8 +239,10 @@ const MAX_MEMBERS = 80;
 function members(analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>): string[] {
   const snapshot = analysis.snapshot;
 
+  // A fn or type has no members to list.
   if (!snapshot || snapshot.nodes[id]?.kind === "fn" || snapshot.nodes[id]?.kind === "type") return [];
   const prefix = `${id}.`;
+  // Direct children only: one more segment after the prefix, in snapshot key order.
   const direct = Object.keys(snapshot.nodes).filter((other) => other.startsWith(prefix) && !other.slice(prefix.length).includes("."));
 
   if (direct.length === 0) return [];
@@ -235,6 +260,7 @@ function members(analysis: Analysis, id: string, briefs: ReadonlyMap<string, Sto
   return [`Members, with what the explained map says about them:\n${lines.join("\n")}`];
 }
 
+/** Lines `from`..`to` (1-based, inclusive) of `text`, cut after 200 lines. */
 function sourceLines(text: string, from: number, to: number): string {
   // A long body is cut, and the prompt says so: the summary and signatures carry the rest.
   const lines = text.split("\n").slice(from - 1, to);
@@ -248,6 +274,7 @@ export type BriefBatch = "missing" | "stale";
 /** Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs. */
 export type BriefLevel = "fn/type" | "class/module" | "layer" | "system";
 
+/** One node a brief batch would ask about, with its level and wave. */
 export interface PlannedBrief {
   id: string;
   level: BriefLevel;
@@ -268,12 +295,16 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
   if (!snapshot) return [];
   const out: PlannedBrief[] = [];
 
+  // Pick the nodes the batch covers: `stale` takes only stale briefs,
+  // `missing` takes stale ones and nodes with no brief at all.
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     if (node.layer === EXTERNAL || node.doc) continue;
     const brief = briefs.get(id);
     const stale = brief !== undefined && snapshotBaseline(snapshot, id) !== brief.closure;
 
     if (batch === "stale" ? !stale : brief !== undefined && !stale) continue;
+    // Waves order the batch bottom-up: fn/type in wave 0, modules by depth
+    // (deeper first, below 1000), then everything else at 1000 as a layer.
     const depth = id.split(".").length;
 
     if (node.kind === "fn" || node.kind === "type") out.push({ id, level: "fn/type", wave: 0 });
@@ -281,6 +312,8 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
     else out.push({ id, level: "layer", wave: 1000 });
   }
 
+  // The repository's brief comes last, and only when no README or manifest
+  // already describes it.
   if (!snapshot.system?.brief) {
     const brief = briefs.get(SYSTEM_ID);
     const stale = brief !== undefined && systemBaseline(snapshot, briefs) !== brief.closure;
@@ -288,6 +321,7 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
     if (batch === "stale" ? stale : brief === undefined || stale) out.push({ id: SYSTEM_ID, level: "system", wave: 2000 });
   }
 
+  // By wave, then by ID, so the order is the same on every run.
   return out.sort((a, b) => a.wave - b.wave || compareText(a.id, b.id));
 }
 
@@ -311,6 +345,7 @@ export function systemRequest(analysis: Analysis, options: { lang: string; brief
   const flows = analysis.spec.flows.slice(0, MAX_FLOWS).map((flow) => `- flow ${flow.name}${flow.triggers[0] ? ` (trigger \`${flow.triggers[0].target.target}\`)` : ""}`);
 
   if (analysis.spec.flows.length > MAX_FLOWS) flows.push(`… (${analysis.spec.flows.length - MAX_FLOWS} more not shown)`);
+  // Package nodes only (`external.<pkg>`), not their members.
   const packages = snapshot === null ? [] : Object.keys(snapshot.nodes).filter((id) => id.startsWith(`${EXTERNAL}.`) && !id.slice(EXTERNAL.length + 1).includes("."));
 
   const parts = [
@@ -340,6 +375,8 @@ export interface TokenEstimate {
 export function estimateTokens(analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>): TokenEstimate {
   let chars = 0;
 
+  // Build every request the batch would send and measure its text; the
+  // members' briefs are the saved ones, not the ones the batch would write.
   for (const { id } of plan) {
     const request = briefRequest(analysis, id, analysis.config.explain.lang, briefs);
 

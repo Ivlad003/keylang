@@ -1,6 +1,7 @@
 // Drawing the clip (ADR 0021): the figure in the editor's corner and the
 // window of its chat. Where they stand and what the window holds come from
 // `clip.ts`; `view.ts` calls these in its order of layers.
+// Layer: TUI drawing; writes into the `Grid` from `screen.ts`.
 
 import { chatLayout, chatTakesKeys, clipEyes, counterText, historyRows, inputTail, shownHistory, type ClipState, type HistoryRow } from "./clip.ts";
 import { drawBox, type Grid, type Style } from "./screen.ts";
@@ -9,8 +10,10 @@ import { MARK_STYLE, THEME } from "./theme.ts";
 import type { Rect } from "./view.ts";
 import { graphemes, stringWidth } from "./width.ts";
 
+/** The clip's wire body. */
 const WIRE: Style = { fg: 110 };
 
+/** The clip's two eye cells. */
 const EYES: Style = { fg: 231, bold: true };
 
 /** The badge in the status line of a narrow terminal. */
@@ -29,6 +32,8 @@ const ROW_STYLE: Record<HistoryRow["role"], Style> = { you: THEME.popup, clip: {
  */
 export function drawClip(grid: Grid, rect: Rect, clip: ClipState): void {
   const rows = [`╭─${clipEyes(clip)}╮`, "│╭─╮│", "╰╯ ╰╯"];
+  // Draw the three rows cell by cell, keeping the background under each cell;
+  // cells 2 and 3 of the top row are the eyes.
   rows.forEach((row, dy) => {
     graphemes(row).forEach((cell, dx) => {
       const x = rect.x + dx;
@@ -40,6 +45,7 @@ export function drawClip(grid: Grid, rect: Rect, clip: ClipState): void {
   const counter = counterText(clip.questions);
 
   if (counter === "") return;
+  // The counter goes right of the clip, or left of it when it would run off the terminal.
   const right = rect.x + rect.width;
   const x = right + stringWidth(counter) <= grid.cols ? right : rect.x - stringWidth(counter);
   grid.write(x, rect.y, counter, { ...MARK_STYLE.question, ...bgAt(grid, x, rect.y) });
@@ -62,10 +68,12 @@ export function drawChat(grid: Grid, state: State, rect: Rect): void {
   const chat = state.clip.chat;
   const focused = chatTakesKeys(state);
   const frame: Style = { ...THEME.popup, fg: focused ? 75 : 243 };
+  // The frame, the close mark and the key hints along the bottom edge.
   drawBox(grid, rect, `${clipEyes(state.clip)} скрепка`, frame, THEME.popupTitle, true);
   grid.write(rect.x + rect.width - 4, rect.y, " ✕ ", THEME.popupTitle);
   grid.write(rect.x + 2, rect.y + rect.height - 1, ` ${CHAT_KEYS} `, { ...frame, fg: 245 }, rect.width - 3);
   const { history, input } = chatLayout(rect);
+  // The visible part of the history, then the input line with its visible tail.
   shownHistory(historyRows(chat.messages, history.width, state.clip.waiting), history.height, chat.scroll).forEach((row, i) => {
     grid.write(history.x, history.y + i, row.text, ROW_STYLE[row.role], history.width);
   });

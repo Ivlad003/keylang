@@ -26,6 +26,7 @@ export interface PreparedRef {
   specs: Map<string, Map<string, string>>;
 }
 
+/** Everything prepared for one root: the summary and feature base, computed once, and one entry per base asked so far. */
 export interface PreparedGit {
   /** Why there is no git: no `.git`, or one isomorphic-git cannot read. */
   unavailable: string | null;
@@ -34,6 +35,7 @@ export interface PreparedGit {
   refs: Map<string, PreparedRef>;
 }
 
+/** Per root: the answers prepared so far; a root is prepared once and then extended ref by ref. */
 const prepared = new Map<string, PreparedGit>();
 
 /** Per root: the files of the folder that were not read (binary, too large), by path. */
@@ -47,6 +49,7 @@ export function setUnread(root: string, files: readonly UnreadFile[]): void {
 /** A blob's git ID: SHA-1 of `blob <size>\0` and the bytes. */
 function blobOid(bytes: Uint8Array): string {
   const head = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  // Header and content concatenated, exactly the bytes git hashes for a loose blob object.
   const all = new Uint8Array(head.length + bytes.length);
   all.set(head);
   all.set(bytes, head.length);
@@ -65,6 +68,7 @@ export function preparedFor(root: string): PreparedGit | null {
  * to rewrite `.git/index`, and every write fails as keylang's own do.
  */
 function fsFor() {
+  // isomorphic-git expects uid and gid on stats; the in-memory fs has no owners, so both are 0.
   const withIds = <T extends object>(stats: T): T & { uid: number; gid: number } => Object.assign(stats, { uid: 0, gid: 0 });
 
   return {
@@ -87,6 +91,7 @@ function fsFor() {
 /** keylang's own state is never a change (src/git-changes.ts, `ownState`). */
 const ownState = (path: string): boolean => path === ".keylang" || path.startsWith(".keylang/");
 
+/** Git's own heuristic: a NUL byte within the first 8000 bytes makes a file binary. */
 const isBinary = (bytes: Uint8Array): boolean => bytes.subarray(0, 8000).includes(0);
 
 const decoder = new TextDecoder();
@@ -96,6 +101,7 @@ function isGitText(value: unknown): value is string {
   return typeof value === "string";
 }
 
+/** The branches tried as the main line, in git-changes.ts's order, as full ref and display name. */
 const MAIN_BRANCHES: readonly (readonly [string, string])[] = [
   ["refs/heads/main", "main"],
   ["refs/heads/master", "master"],
@@ -103,6 +109,7 @@ const MAIN_BRANCHES: readonly (readonly [string, string])[] = [
   ["refs/remotes/origin/master", "origin/master"],
 ];
 
+/** Reads one root's repository with isomorphic-git, sharing one object cache across all its questions. */
 class Reader {
   private readonly root: string;
   private readonly fs: ReturnType<typeof fsFor>;
@@ -124,16 +131,20 @@ class Reader {
    */
   async commit(ref: string): Promise<string | null> {
     if (ref.startsWith("-")) return null;
+
+    // Split the ref into a name and its trailing ancestry suffix (any run of `~N` / `^N`).
     // `^{commit}` and `^{}` peel to the commit, which this does anyway.
     const [, name = "", suffix = ""] = /^(.*?)((?:[~^]\d*)*)$/.exec(ref.replace(/\^\{(commit)?\}$/, "")) ?? [];
 
     if (name === "") return null;
 
     try {
+      // A hex string of 4–40 characters is an abbreviated or full object ID; anything else is a ref name.
       const oid = /^[0-9a-f]{4,40}$/.test(name) ? await git.expandOid({ ...this.base, oid: name }) : await git.resolveRef({ ...this.base, ref: name });
       const object = await git.readObject({ ...this.base, oid });
       let commit = object.format === "parsed" && object.type === "tag" ? object.object.object : object.type === "commit" ? oid : null;
 
+      // Walk the suffix left to right: `~N` follows first parents N times, `^N` takes the N-th parent (`^0` is the commit itself).
       for (const [, op, digits] of suffix.matchAll(/([~^])(\d*)/g)) {
         if (commit === null) return null;
         const n = digits === "" ? 1 : Number(digits);
@@ -145,14 +156,17 @@ class Reader {
 
       return commit;
     } catch {
+      // An unknown name, a missing object or a parent past the root: no commit, as `rev-parse --verify` fails.
       return null;
     }
   }
 
+  /** As `gitSummary` of src/git-changes.ts: HEAD's commit and branch, the origin URL, and every branch, local then remote. */
   async summary(): Promise<GitSummary> {
     const commit = await this.commit("HEAD");
     let branch: string | null = null;
 
+    // Resolving HEAD one level deep gives the branch ref it points at; a detached HEAD gives an object ID, so no branch.
     try {
       const target = await git.resolveRef({ ...this.base, ref: "HEAD", depth: 2 });
       branch = target.startsWith("refs/heads/") ? target.slice("refs/heads/".length) : null;
@@ -162,6 +176,7 @@ class Reader {
 
     const configured = await git.getConfig({ fs: this.fs, dir: this.root, path: "remote.origin.url" });
     const origin = isGitText(configured) ? configured : null;
+    // Branches are sorted so the summary is stable whatever order the refs are stored in; a remote's HEAD alias is not a branch.
     const local = (await git.listBranches({ ...this.base })).sort(compareText);
     const remotes = (await git.listRemotes({ fs: this.fs, dir: this.root })).map((remote) => remote.remote).sort(compareText);
     const remote: string[] = [];
@@ -176,6 +191,7 @@ class Reader {
     const headBase: BaseOrigin = { ref: "HEAD", source: "HEAD", label: "HEAD" };
     let target = "";
 
+    // origin/HEAD, when the clone recorded it, names the remote's default branch and is tried first.
     try {
       target = await git.resolveRef({ ...this.base, ref: "refs/remotes/origin/HEAD", depth: 2 });
     } catch {
@@ -185,6 +201,7 @@ class Reader {
     const candidates = target.startsWith("refs/remotes/") ? [[target, target.slice("refs/remotes/".length)] as const, ...MAIN_BRANCHES] : MAIN_BRANCHES;
     let main: readonly [string, string] | undefined;
 
+    // The first candidate that resolves to a commit is the main line.
     for (const candidate of candidates) {
       if ((await this.commit(candidate[0])) !== null) {
         main = candidate;
@@ -192,7 +209,9 @@ class Reader {
       }
     }
 
+    // Without a main line, or on it (merge base is HEAD itself), the feature's base is HEAD.
     if (main === undefined) return headBase;
+
     const head = await this.commit("HEAD");
     const tip = await this.commit(main[0]);
 
@@ -218,15 +237,20 @@ class Reader {
     const base = unborn ? null : await this.commit(ref);
 
     if (!unborn && base === null) return null;
+
+    // Pass 1: walk the base tree and the index together, recording per path its blob in each and the index's stat.
     const tracked = new Map<string, { base: string | null; stage: string | null; size: number | null; mtime: number | null }>();
     await git.walk({
       ...this.base,
       trees: [...(base ? [git.TREE({ ref: base })] : []), git.STAGE()],
       map: async (path, entries) => {
         if (path === ".") return true;
+
+        // With no base tree (unborn HEAD) the walk has only the index, so the base slot is filled with null.
         const [baseEntry, stage] = base ? entries : [null, ...entries];
         const types = await Promise.all([baseEntry?.type(), stage?.type()]);
 
+        // Descend into directories; only files are recorded.
         if (types.some((type) => type === "tree")) return true;
         const stat = stage ? await stage.stat() : null;
         tracked.set(path, {
@@ -239,6 +263,7 @@ class Reader {
         return null;
       },
     });
+    // Pass 2: compare each tracked file's working copy (read or unread) with the base.
     const unread = unreadOf.get(this.root) ?? new Map<string, UnreadFile>();
     // Racy git: a file modified no earlier than the index was written may differ at the same size and time.
     const indexTime = memory.existsSync(`${this.root}/.git/index`) ? memory.statSync(`${this.root}/.git/index`)!.mtimeMs : 0;
@@ -271,6 +296,7 @@ class Reader {
         continue;
       }
 
+      // Git's stat check: same size and mtime as the index entry, and not racy, means the working file is the indexed blob.
       const size = work ? work.size : skipped!.size;
       const mtime = work ? work.mtimeMs : skipped!.mtime;
       const asIndexed = entry.stage !== null && entry.size === size && entry.mtime === Math.floor(mtime) && Math.floor(mtime) < indexTime;
@@ -281,6 +307,7 @@ class Reader {
         continue;
       }
 
+      // Read files: hash only when the stat check fails, then drop what `diff -U0` would show no hunk for (empty or binary on either side).
       const bytes = memory.readFileSync(abs);
       const oid = asIndexed ? entry.stage : blobOid(bytes);
 
@@ -309,6 +336,7 @@ class Reader {
     return (await git.readBlob({ ...this.base, oid })).blob;
   }
 
+  /** The text of `path` in commit `oid`, or null when the commit has no such file. */
   async file(oid: string, path: string): Promise<string | null> {
     try {
       return decoder.decode((await git.readBlob({ ...this.base, oid, filepath: path })).blob);
@@ -317,6 +345,7 @@ class Reader {
     }
   }
 
+  /** The `.md` files under `dir` in commit `oid` with their text, in path order; `""` or `.` means the whole tree. */
   async specs(oid: string, dir: string): Promise<Map<string, string>> {
     const files = new Map<string, string>();
     const listed = (await git.listFiles({ ...this.base, ref: oid })).filter((path) => (dir === "" || dir === "." || path.startsWith(`${dir}/`)) && path.endsWith(".md")).sort(compareText);
@@ -352,6 +381,7 @@ function specDirOf(config: string | null, fallback: string): string {
 export async function prepareGit(root: string, since: string | null, specDir: string): Promise<void> {
   let state = prepared.get(root);
 
+  // First request for this root: compute the summary and feature base once, or record why git is unavailable.
   if (!state) {
     if (!memory.existsSync(`${root}/.git/HEAD`)) {
       prepared.set(root, { unavailable: "not a git repository (the folder was opened without its .git, or it has none)", summary: null, base: null, refs: new Map() });
@@ -372,6 +402,8 @@ export async function prepareGit(root: string, since: string | null, specDir: st
   }
 
   if (state.unavailable !== null || state.base === null) return;
+
+  // Each base is prepared once; an empty `since` means the feature's base, as on the CLI.
   const ref = since === null || since === "" ? state.base.ref : since;
 
   if (state.refs.has(ref)) return;
@@ -381,6 +413,7 @@ export async function prepareGit(root: string, since: string | null, specDir: st
   const files = new Map<string, string | null>();
   const specs = new Map<string, Map<string, string>>();
 
+  // The spec directory may differ at the base: read both the base's own and the working tree's, deduplicated.
   if (oid !== null) {
     const config = await reader.file(oid, "keylang.json");
     files.set("keylang.json", config);
@@ -391,4 +424,5 @@ export async function prepareGit(root: string, since: string | null, specDir: st
   state.refs.set(ref, { changed, files, specs });
 }
 
+/** Per root: the reader whose object cache later bases reuse. */
 const readers = new Map<string, Reader>();

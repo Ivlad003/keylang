@@ -8,6 +8,10 @@
 // (5) «logic in data»: calls into configuration readers listed in
 // `resources/data-logic.json`, to check by hand. The same snapshot, specs
 // and data give the same report.
+// Pipeline: AnalysisSnapshot (graph) + specs + data file → CoverageReport →
+// text or `--json`. Entry points: `loadDataLogic`, `findDataLogic`,
+// `coverageReport`, `coverageText`. Terms: entry point, orphan, hole (an
+// unresolved place in the coverage list), signal (a «logic in data» matcher).
 
 import { readFileSync } from "node:fs";
 import type { Config } from "./config.ts";
@@ -42,6 +46,7 @@ export interface HoleReason {
   count: number;
 }
 
+/** Everything `keylang coverage` reports, as `--json` prints it. */
 export interface CoverageReport {
   snapshotId: string;
   reach: {
@@ -78,6 +83,7 @@ export interface CoverageReport {
 /** `resources/data-logic.json`: the configuration readers whose calls are «logic in data». */
 export function loadDataLogic(path = resourcePath("data-logic.json")): DataLogicSignal[] {
   const value = parseJson(readFileSync(path, "utf8"));
+  // Validate the resource file's shape and name the offending index on error.
   const signals = isJsonObject(value) ? value.signals : undefined;
 
   if (!Array.isArray(signals)) throw new Error(`${path}: \`signals\` must be an array`);
@@ -96,6 +102,7 @@ function isDataLogicSignal(value: JsonValue): value is JsonObject & DataLogicSig
 
 /** Calls and reads of the snapshot's files that the signals match, in signal order, then file and position. */
 export async function findDataLogic(config: Config, snapshot: AnalysisSnapshot, signals: readonly DataLogicSignal[]): Promise<DataLogicSite[]> {
+  // Calls and reads per file from the facts, plus helpers to tell internal calls apart and place a hit in its fn.
   const files = callsOf(snapshot, await snapshotFacts(config, snapshot));
   const internal = internalCallPositions(snapshot);
   const place = placer(snapshot);
@@ -104,6 +111,7 @@ export async function findDataLogic(config: Config, snapshot: AnalysisSnapshot, 
   // A place two signals match counts once, under the first in the data's order.
   const seen = new Set<string>();
 
+  // Each signal matches calls, reads and, when it has text patterns, raw source text.
   for (const signal of signals) {
     const matcher = compileMatcher(signal);
     const sites: DataLogicSite[] = [];
@@ -128,6 +136,7 @@ export async function findDataLogic(config: Config, snapshot: AnalysisSnapshot, 
       }
     }
 
+    // Within a signal, sites are sorted by file and position for a stable report.
     out.push(...sites.sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col));
   }
 
@@ -143,6 +152,7 @@ export function normaliseReason(reason: string): string {
 function holeModule(snapshot: AnalysisSnapshot, source: string | null): string | null {
   let id = source;
 
+  // Walk up the dotted ID to the nearest file module (a class is a module node too, but not a file).
   while (id !== null) {
     const node = snapshot.nodes[id];
 
@@ -154,6 +164,7 @@ function holeModule(snapshot: AnalysisSnapshot, source: string | null): string |
   return null;
 }
 
+/** Reasons by count, most first; ties by kind and text, so the order is stable. */
 function reasonList(counts: ReadonlyMap<string, HoleReason>): HoleReason[] {
   return [...counts.values()].sort((a, b) => b.count - a.count || compareText(a.kind, b.kind) || compareText(a.reason, b.reason));
 }
@@ -170,6 +181,7 @@ export function coverageReport(
   dataLogic: readonly DataLogicSite[],
   viewText: (file: string) => string | null,
 ): CoverageReport {
+  // Reach: fns reachable over resolved call edges from any entry point; test files are not counted.
   const graph = callGraph(snapshot);
   const entryIds = new Set(snapshot.entries.map((entry) => entry.id));
   const seen = reachable(graph.out, entryIds);
@@ -177,6 +189,7 @@ export function coverageReport(
   const counted = fns.filter(([, node]) => node.file === null || !isTestFile(node.file));
   const reachableCount = counted.filter(([id]) => seen.has(id)).length;
 
+  // Orphans: counted fns nothing reaches, except the entry points themselves.
   const orphans = counted
     .filter(([id]) => !seen.has(id) && !entryIds.has(id))
     .map(([id, node]) => ({ id, file: node.file ?? "", line: node.line ?? 1, callers: graph.in.get(id)?.size ?? 0, escapes: node.escapes?.reason ?? null }))
@@ -186,6 +199,8 @@ export function coverageReport(
   const all = new Map<string, HoleReason>();
   let total = 0;
 
+  // Holes: every coverage item that leaves something unresolved (except files
+  // outside the analysis), grouped by module and by normalised reason.
   for (const item of snapshot.coverage) {
     if (!leavesUnresolved(item) || item.kind === "outside-file") continue;
     total++;
@@ -196,6 +211,7 @@ export function coverageReport(
     const reason = normaliseReason(item.reason);
     const reasonKey = `${item.kind}\0${reason}`;
 
+    // Count the reason both in its module and across the whole report.
     for (const counts of [group.reasons, all]) {
       const known = counts.get(reasonKey);
 
@@ -215,6 +231,8 @@ export function coverageReport(
   const drafted = new Map(discovery.flows.map((flow) => [flow.trigger, flow]));
   const views = new Map<string, string | null>();
 
+  // For each entry point without a flow, the discovered flow and whether the
+  // discovered view on disk already has it (each view file is read at most once).
   const unflowed = snapshot.entries
     .filter((entry) => !specified.has(entry.id))
     .map((entry) => {
@@ -247,6 +265,7 @@ const TOP_MODULES = 10;
 
 const SHOWN_ORPHANS = 50;
 
+// A share as a percentage with one decimal.
 const percent = (share: number): string => `${(share * 100).toFixed(1)} %`;
 
 /** What `keylang coverage` prints: the five sections, each with what to do about it. */
@@ -287,6 +306,7 @@ export function coverageText(report: CoverageReport, specDir = "keylang"): strin
   const labels = new Map(report.dataLogic.signals.map((signal) => [signal.id, signal.label]));
   let last: string | null = null;
 
+  // Sites are already grouped by signal: print a signal heading whenever it changes.
   for (const site of report.dataLogic.sites) {
     if (site.signal !== last) {
       out.push(`  ${site.signal} · ${labels.get(site.signal) ?? site.signal}`);

@@ -3,10 +3,14 @@
 // criteria, codes, order, deduplication, file/line/col and provenance match
 // the CLI one-to-one. The gutter stays aggregated per line; this list shows
 // every finding separately, including a K102 on a line of source code.
+//
+// Layer: TUI. Reads the analysis after rules have run; `results-panel.ts` and
+// `view.ts` draw the list.
 
 import type { Analysis } from "../analyze.ts";
 import { checkResults, type CheckResult } from "../check-results.ts";
 
+/** The verdict of one finding, as `check --format json` reports it. */
 export type FindingVerdict = CheckResult["verdict"];
 
 /** The verdicts in the order the panel counts and filters them. */
@@ -26,6 +30,7 @@ export const FILTER_KEYS: ReadonlyMap<string, FindingVerdict> = new Map([
   ["o", "ok"],
 ]);
 
+/** The glyph before each finding in the list. */
 export const FINDING_GLYPH: Record<FindingVerdict, string> = { fail: "✗", unverified: "◌", warning: "!", ok: "✓" };
 
 // An analysis never changes once made, and the panel asks for its findings on every key and frame.
@@ -44,6 +49,7 @@ export function findingsOf(analysis: Analysis | null): readonly CheckResult[] {
   return findings;
 }
 
+/** The findings the filter lets through, in report order. */
 export function visibleFindings(findings: readonly CheckResult[], filter: VerdictFilter): CheckResult[] {
   return findings.filter((result) => filter[result.verdict]);
 }

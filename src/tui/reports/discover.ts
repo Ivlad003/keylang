@@ -2,11 +2,14 @@
 // (each flow opens at its heading in the view), and the one flow `flows
 // adopt` proposed as a spec; and the portable bundle of `flow export` and
 // `flow import` (business-flows/26), which the CLI runs.
+// Layer: TUI reports, joined into one table by `records.ts`; the payloads come
+// from the shared operations (`operations.ts`).
 
 import type { FlowsDiscoverPayload } from "../../operations.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, messageRow, MUTED, outcomeRow, shortId, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
+/** The operation kinds this module reports. */
 type DiscoverKind = "flows-discover" | "flows-adopt" | "flow-export" | "flow-import";
 
 /** Each discovered flow at its `# flow` heading in the view's file. */
@@ -14,12 +17,14 @@ function flowPlaces(payload: FlowsDiscoverPayload): ReportItem[] {
   return payload.flows.map((flow) => {
     const path = `${payload.dir}/${flow.file}`;
     const text = payload.files.find((file) => file.path === path)?.text ?? "";
+    // The 1-based line of the flow's heading in the generated file; 0 (not found) falls back to line 1.
     const line = text.split("\n").indexOf(`# flow ${flow.name}`) + 1;
 
     return { file: path, line: Math.max(line, 1), col: 1, text: `${flow.name}  ${flow.entry.kind} ${flow.entry.label}  ${flow.steps.length} step(s), ${flow.holes} hole(s)` };
   });
 }
 
+/** The F6 reports of `flows discover`, `flows adopt`, `flow export` and `flow import`. */
 export const DISCOVER_REPORTS = {
   "flows-discover": {
     label: (request) => `flows discover${request.output === "check" ? " --check" : request.output === "print" ? " --print" : ""}${request.only !== undefined ? ` --kind ${request.only}` : ""}${request.layer !== undefined ? ` --layer ${request.layer}` : ""}`,
@@ -34,6 +39,7 @@ export const DISCOVER_REPORTS = {
         { text: "  a draft per entry point; `keylang flows adopt <name>` proposes one as a spec", style: MUTED },
       ];
 
+      // One selectable row per flow; `gap` ties the row to the item Tab selects.
       flowPlaces(payload).forEach((item, index) => rows.push({ text: `  ${item.text}`, style: index === view.selected ? THEME.selected : THEME.panel, gap: index }));
 
       if (payload.flows.length > 0) rows.push({ text: "  Tab, then ↑↓ select a flow and Enter opens it in the view", style: THEME.hint });
@@ -53,6 +59,7 @@ export const DISCOVER_REPORTS = {
 
       for (const message of result.messages) rows.push(messageRow(message));
 
+      // Show the proposed flow text as it would land in the spec.
       for (const line of result.payload.flow.text.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
 
       return rows;
@@ -79,6 +86,7 @@ export const DISCOVER_REPORTS = {
 
       for (const message of result.messages) rows.push(messageRow(message));
 
+      // Show the imported feature text as proposed.
       for (const line of result.payload.feature.trimEnd().split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
 
       return rows;

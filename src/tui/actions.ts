@@ -4,6 +4,11 @@
 // reason; `App.runAction(id)` executes it. The palette never synthesizes fake
 // key events. A new action joins this registry with the feature that
 // implements it — an unimplemented generator is not listed as a fake success.
+//
+// Part of the TUI surface, not of the analysis pipelines: it only reads the
+// session `State`. Entry points: `ACTIONS`, `catalog`, `availabilityOf`,
+// `matchActions` (palette search), `actionKey`/`actionLabel`, and the record
+// pickers `exportRecord` and `applyRecord`.
 
 import { selectedAgent } from "../agent-cli.ts";
 import { featureSlugOf } from "../operations.ts";
@@ -40,6 +45,7 @@ export interface ActionContext {
   featureSlug: string | null;
 }
 
+/** One palette entry: identity, display, search aliases, key hint and availability. */
 export interface Action {
   id: string;
   label: string;
@@ -52,6 +58,7 @@ export interface Action {
   note?: (ctx: ActionContext) => string | null;
 }
 
+/** An action with its availability evaluated for the current state. */
 export interface ActionEntry {
   action: Action;
   /** The availability reason, or null when the action can run. */
@@ -69,6 +76,8 @@ export const MERGE_CLICK = "finish the merge first: w writes the decided hunks, 
 /** The shared reason for editor actions while the start screen covers the editor. */
 export const START_REASON = "choose Browse on the start screen first (Enter)";
 
+// Reusable availability predicates, from the loosest to the strictest; each
+// returns the first reason that blocks, or null.
 const mergeOnly = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REASON : null);
 
 const editor = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REASON : ctx.start ? START_REASON : null);
@@ -85,12 +94,16 @@ const viewOnly = (ctx: ActionContext): string | null =>
 
 const writable = (ctx: ActionContext): string | null => bufferOrMerge(ctx) ?? (ctx.readOnly ? "generated map files are read-only" : null);
 
-/** The way to a model when none is set: the config and the diagnostics are actions of this catalogue too. */
-/** Model modes without an agent: the algorithmic one works offline. */
+/**
+ * Model modes without an agent: the algorithmic one works offline. The note
+ * names the way to a model; the config and the diagnostics are actions of this
+ * catalogue too.
+ */
 const ALGO_ONLY_NOTE = "algo works offline; the model modes need an agent → Open keylang.json · Environment diagnostics";
 
 const EXPLAIN_NO_AGENT_NOTE = "no agent: Enter shows the summary and the saved answer → Open keylang.json · Environment diagnostics";
 
+/** The reason a model-only action is blocked without an agent. */
 export const NO_AGENT_REASON = "no agent in keylang.json → Open keylang.json (set agent) · Environment diagnostics (credentials)";
 
 /** The static actions, in palette order; per-file "open" entries come from `catalog()`. */
@@ -455,6 +468,7 @@ export function openAction(path: string): Action {
 
 /** The full catalogue for the current session: static actions plus one "open" entry per file. */
 export function catalog(state: State): ActionEntry[] {
+  // Evaluate every predicate against one context built from the state.
   const ctx = availabilityOf(state);
 
   return [...ACTIONS, ...state.files.map((path) => openAction(path))].map((action) => ({ action, reason: action.when?.(ctx) ?? null, note: action.note?.(ctx) ?? null }));
@@ -493,6 +507,7 @@ export const EXPORTABLE_KINDS: ReadonlySet<OperationRecord["kind"]> = new Set(["
  */
 export function exportRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
   const { results, records } = state;
+  // An open F6 panel means the user's selection, never a fallback to the newest.
   const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => EXPORTABLE_KINDS.has(candidate.kind));
 
   if (!record) return { reason: results.open ? "select a check report in F6: the current analysis is not a saved report" : "no report yet: run a check first" };
@@ -513,6 +528,7 @@ export function exportRecord(state: Pick<State, "records" | "results">): { recor
  */
 export function applyRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
   const { results, records } = state;
+  // Same choice as Export: the F6 selection while the panel is open, else the newest run.
   const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => candidate.kind === "spec-to-code");
 
   if (!record || record.kind !== "spec-to-code") return { reason: results.open ? "select a finished spec-to-code run in F6" : "no spec-to-code run yet → Spec to code" };
@@ -528,6 +544,8 @@ export function applyRecord(state: Pick<State, "records" | "results">): { record
 
 /** Why the session has no code snapshot, or null when it has one. Also the status line's note. */
 export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "error" | "updating">): string | null {
+  // The reasons in priority order: an invalid config first, then an analysis
+  // without code, then one still running or failed.
   if (state.analysis?.snapshot) return null;
 
   if (state.config.kind === "invalid-config") return "keylang.json is invalid: fix it and save (Ctrl+S)";
@@ -549,6 +567,7 @@ export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "err
  */
 export function actionKey(action: Action, mode: State["mode"]): string | null {
   if (action.key === undefined) return null;
+  // A single character, Enter or Alt+Enter is a view key; a chord such as Ctrl+S works everywhere.
   const plain = [...action.key].length === 1 || action.key === "Enter" || action.key === "Alt+Enter";
 
   return plain && mode !== "view" && mode !== "read" ? null : action.key;
@@ -583,6 +602,7 @@ export function matchActions(entries: readonly ActionEntry[], query: string): Ac
   // Then an action whose label or alias holds the query as typed: `spec to code` before "Code to spec", whose words it also has.
   const literal = (entry: ActionEntry): boolean => !named(entry) && !exact(entry) && [entry.action.label, ...entry.action.aliases].some((text) => text.toLowerCase().includes(phrase));
 
+  // Four tiers, each in catalogue order: file name, exact alias, literal phrase, the rest.
   return [...matched.filter(named), ...matched.filter(exact), ...matched.filter(literal), ...matched.filter((entry) => !named(entry) && !exact(entry) && !literal(entry))];
 }
 
@@ -593,10 +613,12 @@ function fileName(id: string): string {
   return (base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base).toLowerCase();
 }
 
+/** The words a palette query is matched against. */
 function searchText(action: Action): string {
   return `${action.label} ${action.key ?? ""} ${action.aliases.join(" ")}`;
 }
 
+/** Every character of `query` appears in `text` in order, not necessarily adjacent (`dfl` in `draftflow`). */
 function subsequence(text: string, query: string): boolean {
   let at = 0;
 

@@ -2,6 +2,10 @@
 // sections of a repository, one of them as a tree with the `system` verdicts
 // of its relations, the system of the code as a section to adopt, and a new
 // system's skeleton. Read-only except `new`, which writes one new file.
+//
+// Place in the pipeline: an operation (see `operations.ts`) over the parsed
+// specs (`# system` → SystemSpec) and, for `discover`, the snapshot.
+// Entry points: `runSystem`, `systemText`, `systemTemplate`.
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -16,18 +20,21 @@ import type { SystemSpec } from "../system.ts";
 import { empty, rootRelative } from "./shared.ts";
 import type { OperationContext, OperationEnvelope, SystemPayload, SystemRequest } from "./types.ts";
 
+/** The mark before a relation in `system show`, by its verdict. */
 const GLYPH = new Map([
   ["ok", "✓"],
   ["fail", "✗"],
   ["unverified", "◌"],
 ]);
 
+/** The verdicts the summary line counts. */
 type CountedVerdict = "ok" | "unverified" | "fail";
 
 function isCountedVerdict(verdict: string): verdict is CountedVerdict {
   return verdict === "ok" || verdict === "unverified" || verdict === "fail";
 }
 
+/** The `system list` rows: each system with its size (components, tables) and the names of its sequences. */
 function listing(systems: readonly SystemSpec[]): SystemPayload["systems"] {
   return systems.map((system) => ({
     name: system.name,
@@ -44,12 +51,16 @@ export function systemText(system: SystemSpec, verdicts: SystemPayload["verdicts
   const lines: string[] = [`system ${system.name} — ${system.file}:${system.line}`];
   const byArea = new Map(verdicts.map((verdict) => [verdict.area, verdict]));
 
+  // A component line, then one line per outgoing relation with its verdict
+  // (looked up by the verdict's area, `from verb to`), its scale and tables.
   const component = (indent: string, item: SystemSpec["components"][number]): void => {
     lines.push(`${indent}${item.kind} ${item.name}${item.tech ? ` (${item.tech})` : ""}${item.code.length > 0 ? ` — code ${item.code.join(", ")}` : ""}`);
 
     for (const relation of system.relations) {
       if (relation.from !== item.name) continue;
       const verdict = byArea.get(`${relation.from} ${relation.verb} ${relation.to}`);
+      // The verdict's message starts with its area and ": "; strip that so
+      // the area is not printed twice.
       lines.push(`${indent}  ${verdict ? `${GLYPH.get(verdict.verdict) ?? "·"} ` : "· "}${relation.verb} ${relation.to}${relation.caption ? ` ${relation.caption}` : ""}${verdict ? ` — ${verdict.message.slice(verdict.area.length + 2)}` : ""}`);
     }
 
@@ -61,6 +72,8 @@ export function systemText(system: SystemSpec, verdicts: SystemPayload["verdicts
     }
   };
 
+  // Zones nest: print the components of a zone, then its child zones
+  // indented one step deeper; `null` is the top level outside any zone.
   const zone = (name: string | null, indent: string): void => {
     for (const item of system.components) if (item.zone === name) component(indent, item);
 
@@ -79,6 +92,7 @@ export function systemText(system: SystemSpec, verdicts: SystemPayload["verdicts
   }
 
   for (const note of system.notes) lines.push(`  ${note.kind === "question" ? "?" : note.kind} ${note.text}`);
+  // The summary line counts only the three verdicts a relation can have.
   const counts: Record<CountedVerdict, number> = { ok: 0, unverified: 0, fail: 0 };
 
   for (const verdict of verdicts) if (isCountedVerdict(verdict.verdict)) counts[verdict.verdict]++;
@@ -121,11 +135,18 @@ export function systemTemplate(name: string, interview: boolean): string {
   ].join("\n");
 }
 
+/**
+ * The `system` subcommands: `new` writes a skeleton under `<spec dir>/system/`
+ * without analysing; `list`, `discover` and `show` read a fresh analysis.
+ * Code 1 for `show` when the system's file has errors; 2 on bad input.
+ */
 export async function runSystem(request: SystemRequest, context: OperationContext): Promise<OperationEnvelope<"system">> {
   const fail = (text: string): OperationEnvelope<"system"> => empty("system", "failed", 2, `system ${request.action}: ${text}`);
 
   if (!isAbsolute(request.root)) return fail("root must be an absolute path");
 
+  // `new` needs no analysis: validate the name, place the file under the
+  // spec dir and refuse to overwrite an existing one.
   if (request.action === "new") {
     const name = request.name ?? "";
 
@@ -172,6 +193,9 @@ export async function runSystem(request: SystemRequest, context: OperationContex
     return { ...empty("system", "completed", 0), payload: { action: "list", systems, markdown: null, verdicts: [], text } };
   }
 
+  // `discover` derives a system from the code's snapshot and the database
+  // schemas found in it; schema files that could not be read are appended
+  // as HTML comments (with `--` defused) so the Markdown stays adoptable.
   if (request.action === "discover") {
     if (analyzed.snapshot === null) return fail("no code to read (`languages` in keylang.json is empty)");
     const name = request.name ?? adoptedName(analyzed.snapshot);
@@ -183,6 +207,8 @@ export async function runSystem(request: SystemRequest, context: OperationContex
     return { ...empty("system", "completed", 0), payload: { action: "discover", systems, markdown, verdicts: [], text: markdown } };
   }
 
+  // `show`: the named system with its own verdicts and the errors found in
+  // its file.
   const system = analyzed.systems.find((item) => item.name === request.name);
 
   if (!system) {

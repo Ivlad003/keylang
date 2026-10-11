@@ -4,6 +4,8 @@
 // runs it. One handler does that for all of them; a `PromptKeys` per kind
 // says which text a row edits and what follows each key. The helpers below
 // are the shapes the forms' rows share.
+// Layer: TUI input. `app.ts` routes a key here while a prompt is open; the
+// forms in `forms/*.ts` supply their `PromptKeys`.
 
 import type { KeyEvent } from "./input.ts";
 import type { Prompt } from "./state.ts";
@@ -58,6 +60,7 @@ export function fieldOf<K extends string>(form: Record<K, string>, key: K, digit
   return field;
 }
 
+/** The field the selected row edits: the kind's own choice, else the prompt's text. */
 function fieldIn(prompt: Prompt, keys: PromptKeys): TextField | null {
   return keys.field ? keys.field(prompt) : promptText(prompt);
 }
@@ -71,6 +74,7 @@ export function backspaced(text: string): string {
 export function typeInto(prompt: Prompt, keys: PromptKeys, text: string): void {
   const field = fieldIn(prompt, keys);
 
+  // A digits-only field drops everything else from the typed text.
   if (field) field.set(field.value + (field.digits ? text.replace(/[^0-9]/g, "") : text));
   keys.typed?.();
 }
@@ -91,6 +95,7 @@ export function promptKey(prompt: Prompt, keys: PromptKeys, event: KeyEvent): vo
 
   if ((event.name === "left" || event.name === "right") && keys.change) return keys.change(event.name === "left" ? -1 : 1);
 
+  // ↑↓ wrap around the ends of the list.
   if ((event.name === "up" || event.name === "down") && prompt.items.length > 0) {
     prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
     keys.moved?.();
@@ -100,6 +105,7 @@ export function promptKey(prompt: Prompt, keys: PromptKeys, event: KeyEvent): vo
 
   if (event.name === "enter") return keys.submit();
 
+  // Plain text only: a Ctrl or Alt chord is not typing.
   if (event.text !== undefined && !event.ctrl && !event.alt) typeInto(prompt, keys, event.text);
 }
 
@@ -138,6 +144,8 @@ export function cycle<T>(list: readonly T[], value: T, delta: number): T {
 
 /** Selects `row` among rows that depend on the values just changed: built once to find it, once to show it selected. */
 export function selectRow(prompt: Prompt, row: string, refresh: () => void): void {
+  // The first refresh rebuilds the rows with no selection, so the index of
+  // `row` can be found among them; the second shows it selected.
   prompt.index = -1;
   prompt.ids = [];
   refresh();

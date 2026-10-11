@@ -1,18 +1,23 @@
 // `.keylang/stats.json`: how often people accept what a model proposed
 // (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines,
 // and per kind of suggestion; local, never a verdict. A damaged file starts over.
+// Sits beside the drafting and editor surfaces (CLI `draft`, TUI MERGE, LSP
+// suggestions), not in the analysis pipeline. Entry points: `readStats`,
+// `updateStats` (a race-safe read-modify-write), `statusesIn` and `addDrafts`.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isJsonNumber, isJsonObject, parseJson, type JsonValue } from "./json.ts";
 import { safeWrite } from "./safe-write.ts";
 
+/** How many items were proposed, and how many of them people accepted or rejected. */
 export interface Tally {
   proposed: number;
   accepted: number;
   rejected: number;
 }
 
+/** The whole stats file, schema 1. */
 export interface Stats {
   schema: 1;
   /** Draft lines by status: `agree`, `llm-only`, `algo-only`, `conflict`. */
@@ -21,8 +26,10 @@ export interface Stats {
   suggestions: Record<string, Tally & { ms: number }>;
 }
 
+/** The stats file, relative to the repository root. */
 export const STATS_FILE = ".keylang/stats.json";
 
+/** The counts on disk; empty counts when the file is missing or damaged. */
 export function readStats(root: string): Stats {
   return readStatsFile(root).stats;
 }
@@ -50,6 +57,8 @@ function tableOf<T>(value: JsonValue | undefined, read: (entry: JsonValue) => T 
   if (value === null) return {};
 
   if (!isJsonObject(value)) return null;
+  // All or nothing: one bad entry rejects the table, so the caller starts over
+  // instead of keeping half a file.
   const entries: [string, T][] = [];
 
   for (const [key, entry] of Object.entries(value)) {
@@ -67,12 +76,15 @@ function readStatsFile(root: string): StatsFile {
   const empty: Stats = { schema: 1, drafts: {}, suggestions: {} };
   let text: string;
 
+  // No file (or no access): nothing counted yet, and no text to guard the write with.
   try {
     text = readFileSync(join(root, STATS_FILE), "utf8");
   } catch {
     return { text: null, stats: empty };
   }
 
+  // Validate the shape; any mismatch (unknown schema, a bad table, broken
+  // JSON) yields empty counts but keeps the text, so the next write replaces it.
   try {
     const value = parseJson(text);
 
@@ -95,6 +107,7 @@ function readStatsFile(root: string): StatsFile {
  * again and applies `change` once more, so neither update is lost.
  */
 export function updateStats(root: string, change: (stats: Stats) => void): void {
+  // At most two attempts: the second runs only after a lost race.
   for (let attempt = 1; ; attempt++) {
     const { text, stats } = readStatsFile(root);
     change(stats);
@@ -114,6 +127,8 @@ export function updateStats(root: string, change: (stats: Stats) => void): void 
 export function statusesIn(lines: readonly string[]): Map<string, number> {
   const out = new Map<string, number>();
 
+  // Matches `<!-- keylang:llm … status=agree` (or `keylang:algo`) and captures
+  // the status word; at most one comment counts per line.
   for (const line of lines) {
     const m = /<!-- keylang:(?:llm|algo)\b[^>]*\bstatus=([a-z-]+)/.exec(line);
 
@@ -123,6 +138,7 @@ export function statusesIn(lines: readonly string[]): Map<string, number> {
   return out;
 }
 
+/** Adds per-status `counts` to the `field` (proposed, accepted or rejected) of the draft tallies, creating missing tallies. */
 export function addDrafts(stats: Stats, counts: Iterable<readonly [string, number]>, field: keyof Tally): void {
   for (const [status, n] of counts) {
     const tally = (stats.drafts[status] ??= { proposed: 0, accepted: 0, rejected: 0 });

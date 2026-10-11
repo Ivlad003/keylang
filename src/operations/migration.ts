@@ -4,6 +4,11 @@
 // `# migration`, as `ok`/`fail`/`unverified`, and what is not carried over
 // yet. One text for the CLI and the F6 report, one JSON shape for `--json`
 // and MCP. Read-only: the old repository is analysed without writing.
+//
+// Place in the pipeline: an operation (see `operations.ts`) that joins two
+// snapshots (this repository and the old stack) through the `# migration`
+// spec; entry point: `runMigrationStatus`. The comparison lives in
+// `migration.ts`, loading the old stack in `migration-stack.ts`.
 
 import { isAbsolute } from "node:path";
 import { analyze, type Analysis } from "../analyze.ts";
@@ -26,6 +31,8 @@ export async function runMigrationStatus(request: MigrationStatusRequest, contex
   let analysis: Analysis;
 
   try {
+    // `withoutMigration`: the migration check is what this operation computes
+    // itself, so the analysis must not run it too.
     analysis = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true, withoutMigration: true });
   } catch (error) {
     return empty("migration-status", "failed", 2, `migration status: ${errorText(error)}`);
@@ -34,6 +41,7 @@ export async function runMigrationStatus(request: MigrationStatusRequest, contex
   if (context.signal?.aborted) return empty("migration-status", "cancelled", null);
 
   if (analysis.snapshot === null) return empty("migration-status", "failed", 2, "migration status: no code to read (`languages` in keylang.json is empty)");
+  // The old stack: the `--from` argument wins over `migration.from` in keylang.json.
   const from = request.from ?? analysis.config.migration.from;
 
   if (from === null) return empty("migration-status", "failed", 2, "migration status: no old stack: pass `--from <old index.json|old repository>` or set `migration.from` in keylang.json");

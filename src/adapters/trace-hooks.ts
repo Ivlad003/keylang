@@ -3,6 +3,9 @@
 // symbols of one flow, or reads them from a `keylang trace-plan` file, and
 // plans a wrapper for each function body; `load` applies the plan to the
 // source of those files only.
+// Pipeline: specs + snapshot (or a trace-plan file) → per-file wrapper plan →
+// instrumented module source at load time → run records (trace.ts) that
+// `check` reads as trace evidence. Entry points: `initialize`, `load`, `readPlan`.
 
 import { readFileSync, realpathSync } from "node:fs";
 import type { LoadFnOutput, LoadHookContext } from "node:module";
@@ -16,6 +19,7 @@ import { generateMap } from "../map.ts";
 import { sha256 } from "../snapshot.ts";
 import { flowSymbols } from "../trace-plan.ts";
 
+/** What the adapter passes to `initialize` when it registers these hooks. */
 export interface TraceHooksData {
   root: string;
   /** The flow whose trigger and steps are instrumented, read from the specs; null with `plan`. */
@@ -40,6 +44,7 @@ export type TracePlanMessage =
   | { kind: "loaded"; ids: string[]; commonjs: boolean }
   | { kind: "skipped"; ids: string[] };
 
+/** The plan for one file: its expected hash, the instrumented source and the IDs wrapped in it. */
 interface FilePlan {
   /** The file the snapshot saw, and the same file with the wrappers in place. */
   sha256: string;
@@ -47,15 +52,19 @@ interface FilePlan {
   ids: string[];
 }
 
+// Planned files by their real file: URL, the key Node's `load` hook receives.
 const plans = new Map<string, FilePlan>();
 
+// The channel back to the adapter on the main thread; set once by `initialize`.
 let port: MessagePort | null = null;
 
+/** Build the wrapper plan for every planned file and post a `plan` message; never throws, errors go in the message. */
 export async function initialize(data: TraceHooksData): Promise<void> {
   port = data.port;
 
   try {
     const { snapshotId, symbols } = data.plan !== null ? readPlan(data.plan) : await flowPlan(data.root, data.flow ?? "");
+    // Group the symbols by file: each file is read, parsed and rewritten once.
     const byFile = new Map<string, PlannedSymbol[]>();
 
     for (const symbol of symbols) {
@@ -68,6 +77,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
     const unplanned: Record<string, string> = {};
     const files: { path: string; ids: string[] }[] = [];
 
+    // Plan each file; a function that cannot be wrapped is recorded in `unplanned` with the reason.
     for (const [file, fns] of byFile) {
       let src: string;
 
@@ -86,6 +96,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
         continue;
       }
 
+      // Function bodies keyed by `line:col` of the declaration, matched against the snapshot's position.
       const bodies = await functionBodies(file, src);
       const edits: Edit[] = [];
       const ids: string[] = [];
@@ -118,12 +129,14 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       files.push({ path, ids });
     }
 
+    // Sorted so the run record lists the instrumented IDs in a stable order.
     data.port.postMessage({ kind: "plan", snapshotId, planned: instrumented.sort(), files, unplanned } satisfies TracePlanMessage);
   } catch (e) {
     data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], unplanned: {}, error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
   }
 }
 
+/** A function to wrap and where the snapshot saw it. */
 interface PlannedSymbol {
   id: string;
   file: string;
@@ -140,6 +153,7 @@ async function flowPlan(root: string, flow: string): Promise<{ snapshotId: strin
   const wanted = flowSymbols(root, config.dir, flow) ?? new Set<string>();
   const symbols: PlannedSymbol[] = [];
 
+  // Keep only functions with a known position; other kinds of IDs cannot be wrapped.
   for (const id of wanted) {
     const node = index.nodes[id];
 
@@ -167,6 +181,7 @@ export function readPlan(path: string): TracePlanFile {
     throw new Error(`${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Validate the top-level shape, then keep only well-formed symbol entries.
   const value = isJsonObject(plan) ? plan : {};
   const { snapshotId, flow, symbols: items } = value;
 
@@ -214,6 +229,8 @@ function wrap(id: string, body: FunctionBody): Edit[] {
 
 /** Insert every edit; edits at one offset keep the order they were made in. */
 function applyEdits(src: string, edits: readonly Edit[]): string {
+  // Apply from the end of the file backwards so earlier offsets stay valid; at
+  // one offset, later edits go in first so the final order is creation order.
   const order = edits.map((edit, i) => ({ ...edit, i })).sort((a, b) => b.at - a.at || b.i - a.i);
   let out = src;
 
@@ -222,6 +239,7 @@ function applyEdits(src: string, edits: readonly Edit[]): string {
   return out;
 }
 
+// The source a load hook may return: text or bytes.
 type ModuleSource = NonNullable<LoadFnOutput["source"]>;
 
 function isSourceText(source: ModuleSource): source is string {
@@ -231,6 +249,7 @@ function isSourceText(source: ModuleSource): source is string {
 // Keeps a leading BOM, so the hash covers the file's exact text.
 const utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 
+/** Node's load hook: serve the instrumented source for planned files whose content still matches the plan. */
 export async function load(
   url: string,
   context: LoadHookContext,

@@ -3,6 +3,7 @@
 // saved for it. One result for the CLI, the TUI palette and `e`: the doc
 // comment of the code (in the summary), the saved short/full answer and the
 // saved brief stay apart, each with its own provenance. Reads only; never asks a model.
+// Entry points: `codeExplanation`, `nodeExplanation`, `offlineExplanationText`.
 
 import type { Analysis } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
@@ -46,6 +47,7 @@ export interface ExplainLink {
   text: string;
 }
 
+/** The help of one diagnostic code. */
 export interface CodeExplanation {
   subject: "code";
   /** Upper case, as printed. */
@@ -54,6 +56,7 @@ export interface CodeExplanation {
   text: string;
 }
 
+/** What keylang knows about one node: the summary, the saved answers and the places they name. */
 export interface NodeExplanation {
   subject: "node";
   id: string;
@@ -66,6 +69,7 @@ export interface NodeExplanation {
   links: ExplainLink[];
 }
 
+/** The result of `explain <code|id>` without a model. */
 export type OfflineExplanation = CodeExplanation | NodeExplanation;
 
 /** The help of a diagnostic code, or null for a code keylang does not have. */
@@ -99,6 +103,7 @@ export function nodeExplanation(analysis: Analysis, id: string, detail: Explanat
   };
 }
 
+/** A saved explanation with its freshness, unknown IDs and file, judged against `analysis`. */
 export function savedAnswer(analysis: Analysis, id: string, e: Explanation): SavedAnswer {
   return { agent: e.agent, date: e.date, lang: e.lang, detail: e.detail, text: e.text, fresh: !isStale(analysis, id, e), unknownIds: unknownIds(analysis, e.text), file: explanationPath(analysis.config, id, e.detail) };
 }
@@ -108,6 +113,7 @@ export type AnswerMiss = "missing" | "stale" | "lang" | "detail";
 
 /** Why `saved` does not answer a request of `lang` and `detail`, or null when it does: a fresh one is read, never asked for again. */
 export function savedAnswerMiss(analysis: Analysis, id: string, saved: Explanation | null, lang: string, detail: ExplanationDetail): AnswerMiss | null {
+  // Checked in this order, so the reason names the first thing that fails.
   if (saved === null) return "missing";
 
   if (isStale(analysis, id, saved)) return "stale";
@@ -135,11 +141,14 @@ export function offlineExplanationText(explanation: OfflineExplanation): string 
 /** The places the summary names, in its order; a related ID is a place only where the snapshot or a `planned` declares it. */
 function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
   const links: ExplainLink[] = [];
+  // The node's own location, split back out of `file:line`.
   const at = summary.at === null ? null : /^(.*):(\d+)$/.exec(summary.at);
 
   if (at) links.push({ role: "location", id: null, file: at[1]!, line: Number(at[2]), col: 1, text: `at ${summary.at}` });
   const place = (file: string | null, line: number): string => (file === null ? "no file: outside the code" : `${file}:${line}`);
 
+  // A related ID links to its file in the snapshot, else to its `planned`
+  // line, else to nothing (an external package or a layer).
   const related = (role: ExplainLink["role"], ids: readonly string[]): void => {
     for (const id of ids) {
       const node = analysis.snapshot?.nodes[id];
@@ -155,6 +164,7 @@ function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
   related("depends on", summary.deps);
   related("used by", summary.dependents);
 
+  // Flows link to the `# flow` heading that declares them.
   for (const name of summary.flows) {
     const flow = analysis.spec.flows.find((candidate) => candidate.name === name);
     const file = flow?.file ?? null;
@@ -162,6 +172,7 @@ function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
     links.push({ role: "flow", id: name, file, line, col: flow?.span.start.col ?? 1, text: `flow ${name}  ${place(file, line)}` });
   }
 
+  // Rule lines are `file:line: text`; the lazy match keeps a `:` inside the text.
   for (const rule of summary.rules) {
     const m = /^(.*?):(\d+): /.exec(rule);
 

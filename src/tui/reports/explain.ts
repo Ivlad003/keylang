@@ -1,6 +1,10 @@
 // Reports of the explanations: offline help and summaries, the model's
 // answer for one node, the inventory of what needs explaining and the batch
 // of briefs.
+//
+// Layer: TUI reports, joined into one table by `records.ts`; the payloads come
+// from the shared operations (`operations.ts`). Every report keeps the model's
+// text apart from the snapshot's facts and names its provenance.
 
 import { formatSummary } from "../../explain-node.ts";
 import { briefCounts } from "../../explain-inventory.ts";
@@ -9,12 +13,14 @@ import type { ExplainBatchPayload, ExplainBatchRequest, ExplainPlanPayload, Expl
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, MUTED, outcomeRow, shortId, WARNING, type Report, type ReportItem, type ReportRow } from "./rows.ts";
 
+/** The operation kinds `EXPLAIN_REPORTS` describes. */
 type ExplainKind = "explain" | "explain-llm" | "explain-plan" | "explain-batch";
 
 /** The CLI command of an inventory: `explain --stale`, `explain --missing --dry-run --limit 3 --jobs 2`. */
 function explainPlanLabel(request: ExplainPlanRequest): string {
   if (request.list === "stale-saved") return "explain --stale";
 
+  // `--dry-run` is how the CLI asks for the token estimate.
   return [`explain --${request.batch}`, ...(request.estimate === true ? ["--dry-run"] : []), ...(request.limit !== undefined ? ["--limit", String(request.limit)] : []), ...(request.jobs !== undefined ? ["--jobs", String(request.jobs)] : [])].join(" ");
 }
 
@@ -25,6 +31,7 @@ function explainBatchLabel(request: ExplainBatchRequest): string {
 
 /** `2 stale, 1 gone of 5 saved explanation(s)`, `nothing to explain: zero work, no request`, `6 brief(s) planned, ~1200 in, ~480 out tokens (approximate)`. */
 function explainPlanOutcome(payload: ExplainPlanPayload): string {
+  // The stale-saved list: every listed entry is stale or gone; none listed means all are fresh.
   if (payload.list === "stale-saved") {
     const stale = payload.entries.filter((entry) => entry.state === "stale").length;
 
@@ -32,6 +39,7 @@ function explainPlanOutcome(payload: ExplainPlanPayload): string {
   }
 
   if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
+  // A brief plan cut by `--limit` names how many candidates there were.
   const cut = payload.candidates > payload.plan.length ? ` of ${payload.candidates}` : "";
 
   return `${payload.plan.length}${cut} brief(s) planned${payload.estimate === null ? "" : `, ~${payload.estimate.input} in, ~${payload.estimate.output} out tokens (approximate)`}`;
@@ -42,6 +50,7 @@ function explainBatchOutcome(payload: ExplainBatchPayload): string {
   if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
   const counts = `${payload.done.length} of ${payload.plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
 
+  // Why the batch stopped, if it did, comes first; failures alone make it partial.
   if (payload.stopped === "cancelled") return `cancelled: ${counts}`;
 
   if (payload.stopped === "outdated") return `outdated, stopped: ${counts}`;
@@ -89,6 +98,7 @@ function linkItems(links: readonly { file: string | null; line: number; col: num
   return links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
 }
 
+/** The F6 reports of `explain` (offline), `explain --llm`, the inventory and the batch. */
 export const EXPLAIN_REPORTS = {
   explain: {
     label: (request) => `explain ${request.subject}`,
@@ -103,6 +113,7 @@ export const EXPLAIN_REPORTS = {
       // Offline: a code's help, or the node's summary with its saved answer and brief apart, each with its provenance.
       const { payload } = result;
 
+      // An error code's help is plain text, with no node behind it.
       if (payload.subject === "code") {
         return [
           { text: `Explain · ${payload.code} · offline help of the code · nothing read, nothing written`, style: BOLD },
@@ -160,6 +171,7 @@ export const EXPLAIN_REPORTS = {
         outcomeRow(view.summary, result.exitCode === 0),
       ];
 
+      // Why the model was asked: the saved answer was missing, stale, or in another language or detail.
       const why = payload.reason === "missing" ? "no saved answer" : payload.reason === "stale" ? "the saved answer was stale" : payload.reason === "lang" ? `the saved answer was in ${payload.previous?.lang ?? "another language"}` : payload.reason === "detail" ? `the saved answer was ${payload.previous?.detail ?? "another detail"}` : null;
 
       if (payload.source === "cache") rows.push({ text: "  read from the saved file: fresh, same detail and language; the model was not asked, nothing was written", style: MUTED });
@@ -171,6 +183,7 @@ export const EXPLAIN_REPORTS = {
 
       for (const line of formatSummary(payload.summary).split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
 
+      // A model run shows the new answer; when it was not written, the saved one it would have replaced.
       if (payload.source === "model" && payload.answer !== null) savedRows(rows, payload.written === null ? "the model's answer, not written" : "new answer, saved", payload.answer);
 
       if (payload.source === "model" && payload.written === null) {
@@ -178,6 +191,7 @@ export const EXPLAIN_REPORTS = {
         else rows.push({ text: "  no saved answer: nothing was written", style: MUTED });
       }
 
+      // Cache or offline: the saved answer, if there is one.
       if (payload.source !== "model") {
         if (payload.answer !== null) savedRows(rows, payload.source === "cache" ? "saved answer, read" : "saved answer", payload.answer);
         else rows.push({ text: "  no saved answer", style: MUTED });
@@ -223,6 +237,7 @@ export const EXPLAIN_REPORTS = {
         if (payload.estimate !== null) rows.push({ text: `  approximate tokens: ~${payload.estimate.input} in, ~${payload.estimate.output} out — about 4 characters a token and 80 a brief; not the API's count or cost`, style: THEME.panel });
         rows.push({ text: `  left out: ${payload.skipped.documented} node(s) with a doc comment, ${payload.skipped.fresh} with a fresh brief${payload.gone.length > 0 ? ` · gone, never asked for: ${payload.gone.join(", ")}` : ""}`, style: MUTED });
         rows.push({ text: "  a preview, not a permission: the batch (the form's last row, or keylang explain --missing --llm) plans again on its own analysis", style: MUTED });
+        // The plan is flat across waves: `index` walks it alongside the waves, so a row's gap matches its item.
         let index = 0;
         payload.waves.forEach((wave, number) => {
           rows.push({ text: `── wave ${number + 1} · ${wave.level} · ${wave.ids.length} ──`, style: MUTED });
@@ -262,6 +277,7 @@ export const EXPLAIN_REPORTS = {
       // A batch: what it planned, what landed, what failed with why, what was never asked; Tab, then Enter opens a node.
       const { payload } = result;
 
+      // Rebuild a request from the payload, only to name the batch with the CLI's command.
       const request: ExplainBatchRequest = { kind: "explain-batch", root: "", batch: payload.batch, jobs: payload.jobs };
 
       if (payload.limit !== null) request.limit = payload.limit;
@@ -277,9 +293,11 @@ export const EXPLAIN_REPORTS = {
 
       if (payload.stopped === "refused") rows.push({ text: "  the session refused the write: nothing was written", style: WARNING });
 
+      // Errors are shown only when they are refusals; other failures appear on their node's row.
       for (const message of result.messages) if (message.level === "warning" || (message.level === "error" && payload.refused.includes(message.text))) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? ERROR : WARNING });
 
       if (payload.plan.length > 0) rows.push({ text: `  ${payload.plan.length} planned · ${payload.done.length} written · ${payload.failed.length} failed · ${payload.notStarted.length} not started · jobs ${payload.jobs} · limit ${payload.limit ?? "none"} · a run again asks only for what is still missing or stale`, style: MUTED });
+      // A heading row whenever the plan moves to the next wave.
       let wave: number | null = null;
       payload.plan.forEach((entry, index) => {
         if (entry.wave !== wave) rows.push({ text: `── ${entry.level} ──`, style: MUTED });

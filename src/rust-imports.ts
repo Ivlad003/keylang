@@ -10,6 +10,11 @@
 // path that is a module names the file; when that is the whole path, the
 // import binds the module itself. A path that goes on into a module that is
 // not a file (an inline `mod x {}`, a `#[path]` module) is unresolved.
+//
+// Part of source → FileFacts: the Rust frontend asks `RustResolver.resolve`
+// for every `use` path, and the `Resolution` decides the graph's edge. The
+// `Cargo.toml` files it reads are recorded in `inputs`, so a cache can tell
+// when a manifest change invalidates the edges.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
@@ -21,6 +26,7 @@ import { globToRegExp } from "./glob.ts";
 /** Crates of the toolchain: always there, never in `Cargo.toml`. */
 const TOOLCHAIN = new Set(["std", "core", "alloc", "proc_macro", "test"]);
 
+/** One Cargo package of the repository, with its targets and dependency names. */
 interface Crate {
   /** Directory of `Cargo.toml`, POSIX, relative to the root ("" for the root). */
   dir: string;
@@ -34,6 +40,7 @@ interface Crate {
   deps: Map<string, { pkg: string; path: string | null }>;
 }
 
+/** Resolves Rust `use` paths (`crate::`, `self::`, `super::`, crate names) to files or packages; caches manifests, crates and `mod` scans. */
 export class RustResolver implements SourceResolver {
   private readonly root: string;
   private readonly manifests = new Map<string, TomlTable | null>();
@@ -55,6 +62,8 @@ export class RustResolver implements SourceResolver {
   }
 
   resolve(fromFile: string, spec: string): Resolution {
+    // A file in no crate cannot be resolved; otherwise find its target root and
+    // its own module path under that root.
     const crate = this.crateOf(fromFile);
 
     if (!crate) return { kind: "unresolved" };
@@ -66,6 +75,9 @@ export class RustResolver implements SourceResolver {
     let base: string[];
     let rest: string[];
 
+    // Pick the starting point from the first segment: the target root (`crate`),
+    // the current module (`self`/`super`), another crate's library, or an
+    // external package, which needs no file lookup.
     if (head === "crate") {
       // `build.rs` and other files outside every target are crate roots of their own.
       if (here === null) return { kind: "unresolved" };
@@ -102,12 +114,15 @@ export class RustResolver implements SourceResolver {
 
     if (target === null) return { kind: "unresolved" };
 
+    // Longest prefix of the path that is a module file wins.
     for (let k = rest.length; k >= 0; k--) {
       const file = this.moduleFile(target, [...base, ...rest.slice(0, k)]);
 
       if (file === null) continue;
       const beyond = rest.slice(k);
 
+      // Two or more segments left and the first is lowercase: it names a
+      // module, not an item (Rust convention), and that module has no file.
       if (beyond.length > 1 && /^[a-z_]/.test(beyond[0]!)) {
         // `a::inner::f` with `mod inner {}` in `a.rs`: a dependency on `a.rs`, whose member `f` is not indexed.
         // Any other module without a file of its own (`#[path]`, a macro, a `pub use` alias) is unknown.
@@ -129,6 +144,7 @@ export class RustResolver implements SourceResolver {
     if (path.length === 0) return rootFile;
     const dir = posix.dirname(rootFile);
 
+    // `a/b.rs` (2018 style) before `a/b/mod.rs` (2015 style).
     for (const c of [`${path.join("/")}.rs`, `${path.join("/")}/mod.rs`]) {
       const file = dir === "." ? c : posix.join(dir, c);
 
@@ -175,6 +191,8 @@ export class RustResolver implements SourceResolver {
   private declares(file: string, name: string, inline = false): boolean {
     let names = this.declared.get(file);
 
+    // Scan once per file, from disk: strip block and line comments, then
+    // match `mod name;` (a file module) or `mod name {` (an inline one).
     if (!names) {
       names = { files: new Set(), inline: new Set() };
       const abs = join(this.root, file);
@@ -187,6 +205,7 @@ export class RustResolver implements SourceResolver {
     return names.inline.has(name) || (!inline && names.files.has(name));
   }
 
+  /** The nearest crate at or above the file's directory, as Cargo finds a package. */
   private crateOf(file: string): Crate | null {
     for (let dir = posix.dirname(file); ; dir = posix.dirname(dir)) {
       const at = dir === "." ? "" : dir;
@@ -198,6 +217,7 @@ export class RustResolver implements SourceResolver {
     }
   }
 
+  /** The crate whose `Cargo.toml` with `[package]` is in `dir`, or null (a workspace-only manifest, or none); cached. */
   private crateAt(dir: string): Crate | null {
     const cached = this.crates.get(dir);
 
@@ -206,6 +226,7 @@ export class RustResolver implements SourceResolver {
     let crate: Crate | null = null;
 
     if (manifest && isTable(manifest.package)) {
+      // Code writes a crate's name with `_` where Cargo.toml may have `-`.
       const pkg = manifest.package;
       const name = isText(pkg.name) ? pkg.name.replace(/-/g, "_") : null;
       const at = (path: string): string => posix.normalize(posix.join(dir, path));
@@ -214,6 +235,8 @@ export class RustResolver implements SourceResolver {
       const targets = isTable(manifest.target) ? Object.values(manifest.target).filter(isTable) : [];
       const tables = [manifest, ...targets].flatMap((t) => [t.dependencies, t["dev-dependencies"], t["build-dependencies"]]);
 
+      // Each dependency under the name code uses (the key), with its real
+      // package name (`package = "…"` renames) and an in-repository `path`.
       for (const table of tables) {
         if (!isTable(table)) continue;
 
@@ -224,6 +247,8 @@ export class RustResolver implements SourceResolver {
         }
       }
 
+      // Targets: Cargo's auto-discovered library and binaries plus the ones the
+      // manifest declares; binaries are sorted for a stable root choice.
       const exists = (path: string): boolean => this.sources.has(path) || existsSync(join(this.root, path));
       const libPath = isTable(manifest.lib) && isText(manifest.lib.path) ? at(manifest.lib.path) : at("src/lib.rs");
       const bins = new Set<string>();
@@ -262,6 +287,7 @@ export class RustResolver implements SourceResolver {
   private membersOf(crate: Crate): Map<string, Crate> {
     let workspace = crate.dir;
 
+    // Climb to the nearest manifest with `[workspace]`.
     for (let dir = crate.dir; ; dir = posix.dirname(dir)) {
       const at = dir === "." ? "" : dir;
       const manifest = this.manifestAt(at);
@@ -297,6 +323,8 @@ export class RustResolver implements SourceResolver {
     const members = Array.isArray(workspace?.members) ? workspace.members.filter(isText) : [];
     const out: string[] = [];
 
+    // A literal member is a directory; a glob is matched against the entries
+    // of its parent directory only. Members outside the repository are dropped.
     for (const member of members) {
       if (!/[*?[{]/.test(member)) {
         const at = insideRoot(posix.normalize(posix.join(dir, member)));
@@ -332,6 +360,7 @@ export class RustResolver implements SourceResolver {
     return manifest;
   }
 
+  /** A parsed TOML file, recording its text (or its absence) in `inputs`; a syntax error names the file. */
   private readToml(file: string): TomlTable | null {
     const abs = join(this.root, file);
 
@@ -370,6 +399,7 @@ function insideRoot(dir: string): string | null {
   return dir === ".." || dir.startsWith("../") || dir.startsWith("/") ? null : dir;
 }
 
+/** The subdirectory names of `abs`, sorted. */
 function readdirNames(abs: string): string[] {
   return readdirSync(abs, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
@@ -379,6 +409,7 @@ function isTable(value: TomlValue | undefined): value is TomlTable {
   return typeof value === "object" && !Array.isArray(value) && !(value instanceof TomlDate);
 }
 
+/** A TOML string. */
 function isText(value: TomlValue | undefined): value is string {
   return typeof value === "string";
 }

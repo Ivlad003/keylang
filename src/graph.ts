@@ -1,6 +1,11 @@
 // Facts → graph: files become modules in layers, declarations become fn/type
 // nodes, imports become dependencies. A resolved call is a syntactic edge;
 // a local or missing callee stays a gap instead of a confirmed edge.
+//
+// Pipeline: source → FileFacts (extractors) → graph (this) → snapshot → map
+// and index. Entry points: `buildGraph`, `placeFile`, `directoryModule`,
+// `memberKey`; key terms: layer, module, fn/type node, dep, call (with `via`),
+// gap (hole), open edge, export table, framework bindings, event node.
 
 import { posix } from "node:path";
 import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
@@ -21,6 +26,7 @@ import type { EntryPoint, Interception } from "./snapshot.ts";
 
 export { EXTERNAL };
 
+/** The whole code graph of one analysis: layers of modules with their nodes and edges, plus what it could not see. */
 export interface Graph {
   layers: Layer[];
   modules: Map<string, Module>;
@@ -62,6 +68,7 @@ export interface EventNode {
   calls: (Call & { file: string })[];
 }
 
+/** A hole of the analysis: something in the code keylang could not turn into a confirmed node or edge. */
 export interface Gap {
   /**
    * `ambiguous-binding`: a call through a type a framework's config binds to two classes in one
@@ -85,6 +92,7 @@ export interface Gap {
 /** An import of a file `assume` lists: the architecture imports it, and keylang neither reads nor requires it. */
 export type AssumedImport = Omit<Gap, "kind">;
 
+/** A type edge, or a call keylang could not pin to one target. */
 export interface OpenEdge {
   kind: "call" | "type";
   source: string;
@@ -99,12 +107,14 @@ export interface OpenEdge {
   resolution: "resolved" | "ambiguous" | "unresolved";
 }
 
+/** One architecture layer of `keylang.json` (or a synthetic one: external, unassigned, outside). */
 export interface Layer {
   name: string;
   /** Top-level modules in map order. */
   modules: Module[];
 }
 
+/** A module node: a file, a directory, a class, or an external package. */
 export interface Module {
   id: string;
   layer: string;
@@ -139,6 +149,7 @@ export interface Module {
   values?: string;
 }
 
+/** A dependency of a module on another, from an import (or re-export) statement. */
 export interface Dep {
   alias: string;
   target: string;
@@ -160,6 +171,7 @@ export interface Dep {
   docblock?: true;
 }
 
+/** A function or method node with its outgoing calls. */
 export interface Fn {
   id: string;
   name: string;
@@ -186,6 +198,7 @@ export interface Fn {
   interceptedBy?: Interception[];
 }
 
+/** Where and why a fn may be called by code that does not name it. */
 export interface Escape {
   file: string;
   line: number;
@@ -196,6 +209,7 @@ export interface Escape {
 /** How a call edge that is not a plain call of the code came about; see `Call.via`. */
 export type Via = "default" | "injected" | "callable-arg" | "closure-arg" | "preference" | "argument" | "plugin:before" | "plugin:around" | "plugin:after" | "dispatch" | "observer" | "generated-factory" | "object-manager";
 
+/** A resolved call edge from a fn. */
 export interface Call {
   target: string;
   line: number;
@@ -254,6 +268,7 @@ export interface Call {
   indirect?: true;
 }
 
+/** A type node (interface, type alias, enum…). */
 export interface TypeNode {
   id: string;
   name: string;
@@ -268,6 +283,7 @@ export interface TypeNode {
   doc?: string;
 }
 
+/** Counters the map header and `--stats` report. */
 export interface Stats {
   files: number;
   modules: number;
@@ -287,19 +303,27 @@ export interface Stats {
 /** Words that, under a module, start a declaration rather than a dependency alias. */
 const CONTEXT_ALIAS = new Set(["module", "fn", "type", "event", "calls"]);
 
+/** The synthetic layer of files no layer glob places. */
 export const UNASSIGNED = "unassigned";
 
 const NO_GLOBALS = { values: new Set<string>(), types: new Set<string>() };
 
+/** The language and platform globals of a file's frontend; none for an unknown language. */
 function globalsOf(file: string): Frontend["globals"] {
   return frontendFor(file)?.globals ?? NO_GLOBALS;
 }
 
+/** A file's facts and the module it ended up in. */
 interface FileEntry {
   facts: FileFacts;
   module: Module;
 }
 
+/**
+ * Build the graph from every file's facts, in numbered steps: files → modules,
+ * declarations, imports → dependencies, export tables, calls (with framework
+ * facts), injected hook values, and the final escapes and events.
+ */
 export function buildGraph(config: Config, files: FileFacts[], frameworks: readonly FrameworkInput[] = []): Graph {
   // Resolvers read their config files up front: the snapshot id depends on them even without imports.
   // They see the files of this analysis, unsaved ones included, whatever is on disk now.
@@ -312,6 +336,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files, config));
   }
 
+  // The resolver of a file's frontend, shared by all files of that frontend.
   const resolverFor = (file: string): SourceResolver | null => {
     const frontend = frontendFor(file);
 
@@ -329,6 +354,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
   for (const name of config.layers.keys()) layers.set(name, { name, modules: [] });
 
+  // A layer by name, created on first use (external, unassigned, outside).
   const getLayer = (name: string): Layer => {
     let l = layers.get(name);
 
@@ -354,6 +380,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       return m;
     }
 
+    // A new module: its parent is the ID without the last segment, created as a synthetic directory if missing.
     const dot = id.lastIndexOf(".");
     const name = id.slice(dot + 1);
     m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, class: false, comment: null, doc: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
@@ -367,6 +394,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     return m;
   };
 
+  // Make `f` the file a module stands for (its path, span and doc).
   const representative = (m: Module, f: FileFacts): void => {
     m.path = f.path;
     m.line = 1;
@@ -382,6 +410,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   const stems = new Map<string, { stem: string; file: string; glob: string | null }>();
   const collided = new Set<Module>();
 
+  // Place each file in a layer and derive its module ID from the path; a second file
+  // with the same ID is merged (index files, `dir` mode) or, from another path, a collision.
   for (const f of files) {
     const placed = placeFile(config, f.path);
 
@@ -422,6 +452,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   // name declared by two files is two symbols.
   const moduleFiles = new Map<string, FileEntry[]>();
 
+  // Module → its files, in input order.
   for (const entry of byFile.values()) moduleFiles.set(entry.module.id, [...(moduleFiles.get(entry.module.id) ?? []), entry]);
   // Module id → name → the node that keeps the name; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
   const declModule = new Map<string, Map<string, string>>();
@@ -430,12 +461,15 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   const decls: Decls = { ids: new Map(), fns: new Map(), classes: new Map(), types: new Set(), members: new Map() };
   const segments = new Map<DeclFact, string>();
 
+  // ID segments for each top-level declaration, decided per module so names stay unique across its files.
   for (const [id, entries] of moduleFiles) {
     declModule.set(id, new Map());
 
     for (const [d, segment] of topSegments(entries[0]!.module, entries.map((e) => e.facts), warnings)) segments.set(d, segment);
   }
 
+  // Register every declaration as a node, attach the file's unsupported constructs to their
+  // declaration, and mark a module opaque when its file could not be read in full.
   for (const { facts, module } of byFile.values()) {
     const scope = new Map<string, string>();
     fileDecls.set(facts.path, scope);
@@ -498,6 +532,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   /** File → what its glob imports (`use m::*`, `from m import *`) bring into scope. */
   const fileGlobs = new Map<string, GlobSource[]>();
 
+  // Per file: resolve each import, bind its local names to targets, and record a dependency on the target module.
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
@@ -526,6 +561,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
     };
 
+    // Dispatch by resolution kind: assumed, internal (indexed or not, or the module itself),
+    // local, stdlib, generated, external/builtin, unresolved.
     for (const imp of facts.imports) {
       const r = resolve(facts.path, imp.source);
       const star = imp.reexport && imp.bindings.length === 0;
@@ -661,6 +698,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         continue;
       }
 
+      // A new dependency: its alias is the import's local module/default name (or the target's name), made unique below.
       const wanted = imp.bindings.find((b) => b.kind === "module" || b.kind === "default")?.local ?? target.name;
       let alias = layerName(wanted);
       const existing = aliases.get(alias);
@@ -716,6 +754,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   // import names one file, so it reads that file's table (two files may export `default`).
   const exportInputs = new Map<string, ModuleExportsInput>();
 
+  // Build the export-table inputs: per module, and per file in a module of several files.
   for (const [id, entries] of moduleFiles) {
     const module = entries[0]!.module;
     const opaque = module.members === "opaque";
@@ -723,6 +762,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const lastStar = languageOf(entries[0]!.facts.path) === "python" ? { lastStarWins: true } : {};
     const rows: ExportRowInput[] = [];
 
+    // A file's rows: its export rows, or (an extractor that lists names only) each name as a value export, sorted.
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
       const own = listed.flatMap((row) => (row.name === "*" ? [] : [exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!)]));
@@ -734,6 +774,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     exportInputs.set(id, { rows, stars: module.starSources, opaque, ...lastStar });
   }
 
+  // Resolve every table once: aliases, re-exports and `export *` chains end at a declaration or an unknown.
   const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
   const exportTables = resolveExports(exportInputs, symbolKind, (unit, name) => (unit.startsWith(FILE_UNIT) ? fileDecls.get(unit.slice(FILE_UNIT.length)) : declModule.get(unit))?.get(layerName(name)) ?? null);
   /** A module ID for an export-table key: the module of a file's own table. */
@@ -772,6 +813,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const same = (a: string, b: string): boolean => (caseless ? asciiLowerCase(a) === asciiLowerCase(b) : a === b);
     const seen = new Set<string>();
 
+    // Look in the class itself, then its traits (minus `insteadof` exclusions), then trait aliases.
     const inClass = (id: string, name = member, visited = seen): string | null => {
       if (visited.has(id)) return null;
       visited.add(id);
@@ -810,6 +852,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
     let last: BaseLink | null = null;
 
+    // Then walk up the bases keylang has read; `last` remembers where the chain stopped.
     for (let at: string | null = start; at !== null && !seen.has(at); ) {
       const hit = inClass(at);
 
@@ -838,6 +881,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     return null;
   };
 
+  // Hook parameter → values resolved callers pass for it (step 5).
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
   /** Per export table of a language whose names compare without case: name in ASCII lower case → the names of its declarations; null for any other table. */
   const caselessTables = new Map<string, Map<string, string[]> | null>();
@@ -985,6 +1029,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const resolveCallees = (callee: string, cls: Module | null, isStatic: boolean): string[] => {
       const parts = callee.split(".");
       // Python `import a.b` binds the path `a.b`: in `a.b.f()` the head is that module, not `a`.
+      // The longest prefix of the callee that the file imports as a dotted module path.
       const cut = Math.max(1, ...parts.map((_, k) => (k > 1 && locals.has(parts.slice(0, k).join(".")) ? k : 0)));
       const head = parts.slice(0, cut).join(".");
       const rest = parts.slice(cut);
@@ -1002,6 +1047,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         return id ? [id] : [];
       }
 
+      // A bare name `f()`: a local declaration, an imported callable, or a glob-imported one; several stay ambiguous.
       if (rest.length === 0) {
         const local = localDecls.get(head);
 
@@ -1018,6 +1064,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         return [...found];
       }
 
+      // `X.m()`: an export of a namespace import, a static member of an imported or local class,
+      // a member of a re-exported namespace, or of CommonJS `module.exports`.
       if (rest.length === 1) {
         const member = rest[0]!;
         // `X.m()` on a class names its static member, its own or a base's.
@@ -1069,6 +1117,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         return [...found];
       }
 
+      // Deeper paths (`a.b.c()`) name nothing keylang resolves.
       return [];
     };
 
@@ -1110,6 +1159,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   const phpTypes = new Map<string, Ty>();
   const outsideByName = new Map<string, OutsideEntry>();
 
+  // Files by path, so the first declaration of a qualified name wins deterministically.
   for (const { facts, module } of [...byFile.values()].sort((a, b) => compareText(a.facts.path, b.facts.path))) {
     if (languageOf(facts.path) !== "php") continue;
 
@@ -1133,6 +1183,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     }
   }
 
+  // One name scope per file, built once and shared by every later step.
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
 
   for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
@@ -1143,6 +1194,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
     const visit = (factDecls: readonly DeclFact[]): void => {
       for (const d of factDecls) {
+        // Record, per class or interface: the interfaces it implements (resolved), its supertypes as written
+        // (qualified, for PHP), its traits and trait rules, and its base link.
         if (d.implements && d.kind !== "fn") {
           const owner = decls.ids.get(d);
           const { typeNamed } = scopes.get(facts.path)!;
@@ -1174,6 +1227,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
         }
 
         if (!d.base) continue;
+        // The base: a single class keylang resolves, else an unread base (a package's, a global, or `outside`).
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
         // Whether an unread base is a package's or the language's is known in the class's own file.
         // A base in a file `outside` the architecture: keylang reads its declarations, not its code.
@@ -1209,6 +1263,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
   /** fn and type IDs → the declaration and its file. */
   const declById = new Map<string, { decl: DeclFact; file: string }>();
 
+  // Index every fn and type declaration (members included) by its node ID; the first declaration wins.
   for (const { facts } of byFile.values()) {
     const visitDecl = (list: readonly DeclFact[]): void => {
       for (const d of list) {
@@ -1222,6 +1277,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     visitDecl(facts.decls);
   }
 
+  // The naming conventions of classes frameworks generate (Magento's `XFactory`).
   const generated = frameworks.flatMap((f) => f.generated ?? []);
 
   /** A PHP class or interface by its qualified name: the graph's, one `outside` the architecture, or one a framework generates. */
@@ -1291,6 +1347,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     return null;
   };
 
+  // A method signature that declares a result type.
   const hasResult = (sig: MethodSigFact): boolean => sig.result !== undefined;
 
   /** What an interface of the graph declares a member to return: its own signature, else an interface it extends. */
@@ -1425,6 +1482,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const seen = new Set<string>();
     let at: string | null = ty.id;
 
+    // Walk the bases: every trait resolved, and the chain ends at no base or at an `outside` chain that is read in full.
     while (at !== null && !seen.has(at)) {
       seen.add(at);
 
@@ -1486,6 +1544,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const seen = new Set<string>();
     let at: string | null = classId;
 
+    // Walk the graph's bases first, then continue through `outside` bases by name.
     while (at !== null && !seen.has(at)) {
       seen.add(at);
       const own = declById.get(at);
@@ -1524,6 +1583,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
    * base (`parent::m()`), or a class named statically (`X::m()`).
    */
   const receiverTy = (c: Pick<ResultCallFact, "callee" | "receiver" | "on" | "bound" | "docblock" | "opaque">, ctx: CallCtx, depth: number): Typed | null => {
+    // Bounded: a chain of returned values (`a()->b()->c()…`) deeper than this is not followed.
     if (depth > 16) return null;
 
     if (c.on) return valueTy(c.on, ctx, depth + 1);
@@ -1537,6 +1597,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     if (c.opaque || languageOf(ctx.facts.path) !== "php") return null;
     const parts = c.callee.split(".");
 
+    // `$this->m()` is the class itself; `$this->x->m()` is the declared class of property `x`.
     if (parts[0] === "this" && ctx.cls) {
       if (parts.length === 2) return { ty: { kind: "class", id: ctx.cls.id } };
 
@@ -1597,6 +1658,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     if (ty.kind !== "outside") return seen;
     const queue = [ty.entry.decl.name];
 
+    // Walk an `outside` class's bases and interfaces by name.
     while (queue.length > 0) {
       const name = asciiLowerCase(queue.shift()!.replace(/^\\+/, ""));
 
@@ -1610,6 +1672,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     return seen;
   };
 
+  // The service locators the active frameworks declare.
   const locators = frameworks.flatMap((f) => f.locators ?? []);
 
   /**
@@ -1697,6 +1760,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           name = ref.name;
         }
 
+        // Follow re-exports a bounded number of hops to the module that declares the name.
         for (let hop = 0; hop < 8; hop++) {
           const row = exportTables.lookup(unit, name);
 
@@ -1719,6 +1783,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     const qualified = new Map<string, string>();
     const names = new Map<string, string>();
 
+    // Files by path, so the first declaration of a qualified name wins deterministically.
     for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
       for (const symbol of f.symbols ?? []) {
         if (symbol.table !== "class") continue;
@@ -1760,6 +1825,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       const out = new Set<string>();
       const stack = [id];
 
+      // Depth-first over bases, implemented interfaces and traits; the class itself is included.
       while (stack.length > 0) {
         const at = stack.pop()!;
 
@@ -1812,6 +1878,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       return name === constructorName(fn.file) ? null : name;
     };
 
+    // Rewrite each fn's calls: plugin `before`/`around` edges ahead of each wrapped call, `after` edges behind it.
     for (const fn of decls.fns.values()) {
       if (fn.calls.length === 0) continue;
       const out: Call[] = [];
@@ -1843,6 +1910,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       fn.calls = out;
     }
 
+    // And record on each wrapped method which plugins intercept it.
     for (const [classId, cls] of decls.classes) {
       for (const fn of cls.fns) {
         const member = memberName(fn.id);
@@ -1891,10 +1959,12 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
   for (const hole of called?.holes ?? []) gaps.push({ kind: "unresolved-binding", file: hole.file, line: hole.line, col: hole.col, endLine: hole.line, endCol: hole.col + 1, text: hole.text, reason: hole.reason, source: hole.source });
   /** Qualified names (lower case) of the types whose `dispatch(name)` publishes an event. */
+  // From here on, step 4 proper: every fn's calls become edges, config edges, dispatches or gaps.
   const dispatchers = new Set(frameworks.flatMap((f) => f.dispatchers ?? []).map(asciiLowerCase));
   /** Calls that dispatch an event by a literal: their target is the event's ID, set once every name is known. */
   const dispatches: { call: Call; name: string; file: string }[] = [];
 
+  // Per file, walk its declarations: classes descend into their members, fns get their calls attached.
   for (const { facts, module } of byFile.values()) {
     const { locals, localDecls, importedSymbol, classNamed, typeNamed, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
 
@@ -1921,6 +1991,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
         if (initializer) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "a static initializer runs when the module loads" };
 
+        // Record one resolved call edge (deduplicated by `addCall`); config edges are not counted as resolved code calls.
         const push = (target: string, c: CallFact, extra: Partial<Call> = {}, receiver: string | null = null): void => {
           // A self-call stays an edge: recursion is a static path from a function to itself.
           // A call in a closure passed as an argument is a plain call of the code (counted as resolved) that the callee of the enclosing call may run.
@@ -2028,6 +2099,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           }
         };
 
+        // A call keylang cannot follow: counted as dynamic and recorded as a gap of the fn.
         const dynamic = (c: CallFact, reason: string): void => {
           stats.callsDynamic++;
           const gap: Gap = { kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id };
@@ -2087,6 +2159,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
           else if (hit.outside) pushOutside(hit.outside, c, extra);
         };
 
+        // Each call, in order of the cases below: dispatches, opaque expressions, `super`,
+        // passed values and hooks, locator calls, then ordinary resolution.
         for (const c of d.calls) {
           // Whatever the call itself resolves to, the callables it passes are edges of their own.
           passCallables(c);
@@ -2100,6 +2174,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
 
             if (recv.indirect) recvExtra.indirect = true;
           } else if (c.docblock) recvExtra.docblock = `${facts.path}:${c.docblock.line}:${c.docblock.col}`;
+          // A dispatcher call with a literal event name becomes an edge to the event (its ID is set later); a computed name is a gap.
           const dispatcher = c.nameArg && dispatchers.size > 0 && (c.receiver ? dispatching(c.receiver) || (recv !== null && dispatchingTy(recv.ty)) : recv !== null && dispatchingTy(recv.ty));
 
           if (c.nameArg && dispatcher) {
@@ -2198,6 +2273,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             }
           }
 
+          // Ordinary resolution: a typed receiver's member first, with any config edges beside it; else config alone.
           const recvClass = recv?.ty.kind === "class" ? recv.ty.id : null;
           const typed = recv ? (recvClass ? findMember(recvClass, member, false, staticThroughInstance(facts.path)).target : null) : receiverTarget(c.callee, c.receiver);
           const typedClass = recv ? (typed ? recvClass : null) : typed && c.receiver ? classNamed(c.receiver) : null;
@@ -2216,6 +2292,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             continue;
           }
 
+          // A receiver typed from declarations that the graph cannot resolve directly: `outside` members,
+          // `__call`, generated factories, preferences of `outside` interfaces, or a hole through an interface.
           if (recv) {
             // A member of a class outside the architecture (a base's, or the receiver's own class there).
             const hit = recv.ty.kind === "class" || recv.ty.kind === "outside" ? memberHit(recv.ty, member) : null;
@@ -2311,9 +2389,11 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             continue;
           }
 
+          // `eval` is an unsupported construct recorded by the extractor, not a call edge.
           if (head === "eval") continue;
           const targets = resolveCallees(c.callee, cls, isStatic);
 
+          // Several candidates: an ambiguous open edge, never a confirmed call.
           if (targets.length > 1) {
             openEdges.push({ kind: "call", source: fn.id, target: null, candidates: targets.sort(), file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, resolution: "ambiguous" });
             continue;
@@ -2345,6 +2425,8 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
             }
           }
 
+          // No target: external (package, global, unread package base), a dynamic call (unknown or glob name),
+          // or an unresolved call of a name the file binds.
           if (!target) {
             const imported = (locals.get(head) ?? [])[0];
 
@@ -2403,6 +2485,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       if (IDENTIFIER.test(member) && !calledNames.has(key)) calledNames.set(key, escape);
     }
 
+    // Names read as values: a property read marks any member of that name, a plain read the fn or class it resolves to.
     for (const ref of facts.valueRefs ?? []) {
       const escape = { file: facts.path, line: ref.line, col: ref.col, reason: `\`${ref.name}\` is read as a value` };
 
@@ -2432,6 +2515,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       }
     }
 
+    // A type reference → the declarations it may name (local, imported, or a member of a namespace or class).
     const resolveType = (ref: TypeRefFact): string[] => {
       const segments = ref.name.split(".");
       const head = segments[0] ?? "";
@@ -2472,6 +2556,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
       return [...narrowed];
     };
 
+    // Type references become type edges: resolved, ambiguous, or unresolved (language globals excepted).
     const noteTypes = (factDecls: DeclFact[], owner: Module): void => {
       for (const d of factDecls) {
         const source = decls.ids.get(d) ?? owner.id;
@@ -2552,6 +2637,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
     }
   }
 
+  // Final step: mark escaping fns, build event nodes from dispatches and observers, and assemble the graph.
   markEscapes(modules, readIds, readMembers, calledNames, decls.members);
   const events = eventNodes(dispatches, called?.observers ?? [], called?.events ?? []);
 
@@ -2597,6 +2683,7 @@ export function buildGraph(config: Config, files: FileFacts[], frameworks: reado
  * its first observer declaration.
  */
 function eventNodes(dispatches: readonly { call: Call; name: string; file: string }[], observers: readonly ObserverEdge[], declared: readonly { name: string; file: string; line: number; col: number }[]): EventNode[] {
+  // Assign every event name an ID; each dispatch call gets its event's ID as target.
   const ids = eventIds([...dispatches.map((d) => d.name), ...declared.map((d) => d.name)]);
   const nodes = new Map<string, EventNode>();
 
@@ -2608,6 +2695,7 @@ function eventNodes(dispatches: readonly { call: Call; name: string; file: strin
     places.push({ id: d.call.target, code: true, file: d.file, line: d.call.line, col: d.call.col });
   }
 
+  // Observers in file/line order become the event's outgoing calls.
   for (const o of [...observers].sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col)) {
     const id = ids.get(o.event)!;
     const call: Call & { file: string } = { target: o.target, line: o.line, col: o.col, endLine: o.line, endCol: o.col + 1, text: o.text, via: "observer", site: o.site, scope: o.scope, binding: o.binding, file: o.file };
@@ -2618,6 +2706,7 @@ function eventNodes(dispatches: readonly { call: Call; name: string; file: strin
 
   // An event no code keylang read dispatches stands at its first observer declaration.
   for (const d of declared) places.push({ id: ids.get(d.name)!, code: false, file: d.file, line: d.line, col: d.col });
+  // A code dispatch beats a config declaration; then by position, so the place is stable.
   places.sort((a, b) => Number(b.code) - Number(a.code) || compareText(a.file, b.file) || a.line - b.line || a.col - b.col);
 
   for (const p of places) {
@@ -2647,6 +2736,7 @@ function qualifiedIn(facts: FileFacts, written: string): string {
     return written;
   }
 
+  // PHP: a leading `\` is already qualified; else the first segment may be a `use` alias.
   if (written.startsWith("\\")) return written.replace(/^\\+/, "");
   const [head, ...rest] = written.split("\\");
 
@@ -2667,6 +2757,7 @@ export function directoryModule(config: Config, dir: string, graph: Pick<Graph, 
   return directoryModuleIn(config, dir, graph.modules, new Map(graph.layers.map((l) => [l.name, l])));
 }
 
+/** `directoryModule` over raw maps: place a probe file in `dir` and take its module (or the layer itself). */
 function directoryModuleIn(config: Config, dir: string, modules: ReadonlyMap<string, Module>, layers: ReadonlyMap<string, Layer>): string | null {
   const place = placeFile(config, dir === "" ? DIRECTORY_PROBE : `${dir}/${DIRECTORY_PROBE}`);
 
@@ -2679,6 +2770,7 @@ function directoryModuleIn(config: Config, dir: string, modules: ReadonlyMap<str
   return segments.length === 0 && (layers.get(place.layer)?.modules.length ?? 0) > 0 ? place.layer : null;
 }
 
+/** A plain identifier, as a member name read from module-level code must be to mark an escape. */
 const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
 
 /**
@@ -2877,6 +2969,7 @@ function notIndexed(config: Config, file: string): string | null {
   return config.languages.includes(language) ? `\`${file}\` is not indexed` : `\`${file}\` is ${language}, which \`languages\` does not list`;
 }
 
+/** Whether a file is its directory's index file in its language (`index.ts`, `mod.rs`, `__init__.py`). */
 function isIndexFile(file: string): boolean {
   const language = languageOf(file);
   const base = posix.basename(file).replace(/\.[^.]+$/, "");
@@ -2904,6 +2997,7 @@ function addCall(fn: Fn, call: Call): boolean {
   return true;
 }
 
+/** The reason text of a dynamic call: through a hook, through `this` of a function value, or through a local value. */
 function holeReason(c: CallFact): string {
   if (c.hook) return `call through the hook \`${c.hook.name}\` (default \`${c.hook.fallback}\`)`;
 
@@ -2923,6 +3017,7 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
   const caselessReads = foldCase(readMembers);
   const caselessCalls = foldCase(calledNames);
 
+  // Walk modules and their class children; the first matching read, call or implicit name gives the escape.
   const visit = (m: Module, isClass: boolean): void => {
     for (const fn of m.fns) {
       if (fn.escapes) continue;
@@ -2953,6 +3048,7 @@ function foldCase(names: ReadonlyMap<string, Escape>): Map<string, Escape> {
   return out;
 }
 
+/** Mark a module and everything under it as opaque: its member list is not known to be complete. */
 function markOpaque(m: Module): void {
   m.members = "opaque";
 
@@ -3012,6 +3108,7 @@ function memberSegments(members: readonly DeclFact[], caseless: boolean): Map<De
   const byKey = new Map<string, string>();
   const used = new Set<string>();
 
+  // Members in priority order, so the plain name goes to the instance member and suffixes to the rest.
   for (const m of [...members].sort((a, b) => rank(a) - rank(b))) {
     const key = memberKey(`${m.hash ? "#" : ""}${m.name}`, m.static === true, caseless);
     let segment = byKey.get(key);
@@ -3079,6 +3176,10 @@ function topSegments(module: Module, files: readonly FileFacts[], warnings: stri
 /** The key the last declaration of each scope (`names`) went under: overloads follow one another. */
 const lastKeys = new WeakMap<Map<string, string>, string>();
 
+/**
+ * Add one declaration to a module as a node (class, fn or type), merging
+ * overloads and TS interface/class pairs into one node; a class recurses into its members.
+ */
 function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }): void {
   const name = member?.segment ?? layerName(d.name);
   const key = member?.key ?? name;
@@ -3200,6 +3301,7 @@ export function placeFile(config: Config, file: string): { layer: string; segmen
     return { layer: OUTSIDE_LAYER, segments: stem.split("/").map(layerName), stem, glob: null };
   }
 
+  // The first layer (in config order) whose glob matches places the file; segments come from the path after the glob's fixed prefix.
   for (const [layer, globs] of config.layers) {
     for (const g of globs) {
       if (!matchesGlob(file, g)) continue;

@@ -2,6 +2,12 @@
 // assertion form (a layer order, a wiring condition). Checks that need the
 // snapshot still run later. This module stays in `lang` and must not import
 // check, map, or extract.
+//
+// The middle of Markdown → IR → resolve/rules: it turns parsed documents
+// (Text IR) into rules, flows, `planned` items and wiring that the rule and
+// flow checks then judge against the snapshot. Entry points: `compileSpec`
+// and `walkFlow`. Every assertion keeps its file, span, source node and a
+// canonical `text`, which is hashed into the verdict's specHash.
 
 import { SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
@@ -14,6 +20,7 @@ export function syntheticLayer(name: string): boolean {
   return SYNTHETIC_LAYERS.some((layer) => layer === name);
 }
 
+/** A read-only list with at least one element. */
 export type NonEmpty<T> = readonly [T, ...T[]];
 
 interface Located {
@@ -24,6 +31,7 @@ interface Located {
   readonly source: Node;
 }
 
+/** `layers a < b < c`: an accepted layer order. */
 export interface LayerOrder extends Located {
   kind: "layers";
   /** Lowest first. Each name is a layer, none is repeated, and the line agrees with earlier orders. */
@@ -42,6 +50,7 @@ export interface RejectedLayers {
   readonly source: Node;
 }
 
+/** `allow`/`deny <from> -> <to>[, <to>…]`: a dependency rule between areas. */
 export interface DependencyRule extends Located {
   kind: "dependency";
   effect: "allow" | "deny";
@@ -51,23 +60,27 @@ export interface DependencyRule extends Located {
   generated: boolean;
 }
 
+/** `entry <id>[, <id>…]`: the declared entry points. */
 export interface Entry extends Located {
   kind: "entry";
   entries: NonEmpty<Ref>;
 }
 
+/** `no-cycles <area>` (or `*`): no import cycle inside the area. */
 export interface NoCycles extends Located {
   kind: "no-cycles";
   /** Null is the whole repository (`no-cycles *`). */
   under: Ref | null;
 }
 
+/** `exports <name>…` under `module x`: the module's public names. */
 export interface ExportsRule extends Located {
   kind: "exports";
   module: Ref;
   names: NonEmpty<Ref>;
 }
 
+/** Every assertion a rules or map section can make. */
 export type RuleAssertion = LayerOrder | DependencyRule | Entry | NoCycles | ExportsRule;
 
 /** A `module x` line. It scopes nested rules and is not itself an assertion, so nothing hashes it. */
@@ -78,12 +91,14 @@ export interface SpecModule {
   readonly source: Node;
 }
 
+/** A step of a flow: the fn that runs, with nested items about it. */
 export interface FlowStep extends Located {
   kind: "step";
   target: Ref;
   children: readonly FlowItem[];
 }
 
+/** `trigger [<kind>|event] <id>`: where a flow starts. */
 export interface Trigger extends Located {
   kind: "trigger";
   target: Ref;
@@ -118,14 +133,17 @@ export interface TimerItem extends Located {
   children: readonly FlowItem[];
 }
 
+/** `when <condition>`: a branch of a flow, in prose. */
 export interface WhenItem extends Located {
   kind: "when";
   condition: string;
   children: readonly FlowItem[];
 }
 
+/** `then <id>` (a reference) or `then <text>` (prose): an outcome of a flow. */
 export type ThenItem = Located & { kind: "then"; children: readonly FlowItem[] } & ({ form: "ref"; target: Ref } | { form: "text"; prose: string });
 
+/** `invariant`, `reads` or `emits`: a claim about the step it stands under. */
 export interface ClaimItem extends Located {
   kind: "invariant" | "reads" | "emits";
   /** Prose of an invariant or emit, or the ID a `reads` names. */
@@ -150,6 +168,7 @@ export interface QuestionItem extends Located {
   children: readonly FlowItem[];
 }
 
+/** `test <file> ["<name>"]`: the test that is evidence for the item above it. */
 export interface TestItem extends Located {
   kind: "test";
   /** The test file, as written. */
@@ -157,8 +176,10 @@ export interface TestItem extends Located {
   name: string | null;
 }
 
+/** Every item that may appear inside a flow. */
 export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem | QuestionItem | ParallelItem | ContinuesItem | TimerItem;
 
+/** One `# flow <name>` section, compiled. */
 export interface Flow {
   file: string;
   span: Span;
@@ -171,6 +192,7 @@ export interface Flow {
   top: readonly (Trigger | FlowItem)[];
 }
 
+/** `planned fn|module|type|event <id>`: an intention, declared before its code exists. */
 export interface Planned extends Located {
   kind: "planned";
   decl: "fn" | "module" | "type" | "event";
@@ -185,10 +207,12 @@ export interface WireWhen extends Located {
   target: Ref;
 }
 
+/** `compose <id>` under a wiring dependency: a decorator wrapped around it. */
 export interface WireCompose extends Located {
   target: Ref;
 }
 
+/** One dependency of a wired target: its implementation, conditional overrides and decorators. */
 export interface WireDep extends Located {
   name: string;
   target: Ref;
@@ -196,11 +220,13 @@ export interface WireDep extends Located {
   compose: readonly WireCompose[];
 }
 
+/** One target of a `# wiring` section with its dependencies. */
 export interface Wire extends Located {
   target: Ref;
   deps: readonly WireDep[];
 }
 
+/** Everything the specs assert, compiled from all documents. */
 export interface SpecIR {
   rules: readonly RuleAssertion[];
   /** `layers` lines that did not become an order. Not assertions. */
@@ -216,6 +242,7 @@ export interface SpecIR {
 
 /** Triggers and top-level items, then nested items, in source order. */
 export function walkFlow(flow: Flow, visit: (item: Trigger | FlowItem) => void): void {
+  // Pre-order, depth first; a `test` has no children to descend into.
   const walk = (item: Trigger | FlowItem): void => {
     visit(item);
 
@@ -227,8 +254,10 @@ export function walkFlow(flow: Flow, visit: (item: Trigger | FlowItem) => void):
   for (const item of flow.top) walk(item);
 }
 
+// A wiring `when` condition: `env.NAME = value`, capturing the variable and the value.
 const WIRE_CONDITION = /^env\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\S+)$/;
 
+/** A `layers` line before the orders of all documents are settled against each other. */
 interface LayerCandidate {
   seq: number;
   file: string;
@@ -240,6 +269,7 @@ interface LayerCandidate {
   valid: boolean;
 }
 
+/** A rule with its encounter number, so rules keep source order after layer orders are settled apart. */
 interface PlacedRule {
   seq: number;
   rule: RuleAssertion;
@@ -247,6 +277,7 @@ interface PlacedRule {
 
 type CompiledSpec = { spec: SpecIR; diagnostics: Diagnostic[] };
 
+/** Compiles every document's rules, map, flow and wiring sections; form errors become diagnostics. */
 export function compileSpec(docs: readonly Document[]): CompiledSpec {
   const placed: PlacedRule[] = [];
   const candidates: LayerCandidate[] = [];
@@ -255,6 +286,8 @@ export function compileSpec(docs: readonly Document[]): CompiledSpec {
   const planned: Planned[] = [];
   const wires: Wire[] = [];
   const diagnostics: Diagnostic[] = [];
+  // One counter across all documents gives every rule and layer line its
+  // place in source order.
   let seq = 0;
   const nextSeq = (): number => seq++;
 
@@ -266,6 +299,8 @@ export function compileSpec(docs: readonly Document[]): CompiledSpec {
     }
   }
 
+  // Layer orders are settled across all files first, then merged back with
+  // the other rules in source order.
   const { orders, rejectedLayers } = settleLayers(candidates, diagnostics);
   const merged = [...placed, ...orders].sort((a, b) => a.seq - b.seq);
   const rules = merged.map((item) => item.rule);
@@ -274,6 +309,7 @@ export function compileSpec(docs: readonly Document[]): CompiledSpec {
   return { spec: { rules, rejectedLayers, hasRules, modules, flows, planned, wires }, diagnostics };
 }
 
+/** One rules or map section: rule lines become placed assertions, `layers` lines candidates, `module` lines scopes. */
 function compileRules(
   file: string,
   generated: boolean,
@@ -327,6 +363,7 @@ function considerLayers(file: string, node: Node, diagnostics: Diagnostic[]): Om
   if (node.refs.length === 0 && nested.length === 0) return null;
   const text = node.refs.length > 0 ? `layers ${node.refs.map((ref) => ref.target).join(" < ")}` : "layers";
   const seen = new Set<string>();
+  // Only an inline order can be valid; a line with nested names alone is not an order.
   let valid = node.refs.length > 0;
 
   for (const ref of node.refs) {
@@ -356,6 +393,8 @@ type SettledLayers = { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] };
  * is also ordered is K005; the line itself may still be an order.
  */
 function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]): SettledLayers {
+  // `direct`: layer → the layers right above it, from accepted chains.
+  // `above`: its transitive closure, rebuilt after each accepted chain.
   const direct = new Map<string, Set<string>>();
   let above = new Map<string, Set<string>>();
   const surviving: LayerCandidate[] = [];
@@ -365,6 +404,8 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
     const names = chain.order.map((ref) => ref.target);
     let conflict: [string, string] | null = null;
 
+    // Every pair the chain orders (lower before upper) must not already be
+    // ordered the other way by earlier chains.
     for (let i = 0; i < names.length && !conflict; i++) {
       for (let j = i + 1; j < names.length && !conflict; j++) {
         const lower = names[i]!;
@@ -383,6 +424,7 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
 
     surviving.push(chain);
 
+    // Record the chain's adjacent pairs and recompute the closure.
     for (let i = 0; i + 1 < names.length; i++) {
       const lower = names[i]!;
       const set = direct.get(lower) ?? new Set<string>();
@@ -395,6 +437,7 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
 
   const ordered = new Set(surviving.flatMap((chain) => chain.order.map((ref) => ref.target)));
 
+  // A layer cannot be both ordered (by any accepted chain) and listed as unordered.
   for (const candidate of candidates) {
     for (const ref of candidate.nested) {
       if (ref.target.includes(".")) continue;
@@ -418,6 +461,7 @@ function settleLayers(candidates: readonly LayerCandidate[], diagnostics: Diagno
   return { orders, rejectedLayers };
 }
 
+/** Transitive closure of `direct`: every layer above each layer, by depth-first search from it. */
 function layersAbove(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
 
@@ -439,6 +483,7 @@ function layersAbove(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<stri
   return out;
 }
 
+/** An `allow`/`deny` line: the first reference is the source area, the rest the targets; null without both. */
 function dependency(file: string, node: Node, effect: "allow" | "deny", generated: boolean): DependencyRule | null {
   const [from, ...rest] = node.refs;
   const to = nonEmpty(rest);
@@ -448,12 +493,14 @@ function dependency(file: string, node: Node, effect: "allow" | "deny", generate
   return { kind: "dependency", effect, from, to, generated, ...at(file, node, `${effect} ${from.target} ${rest.map((ref) => ref.target).join(" ")}`) };
 }
 
+/** `refs` as a `NonEmpty`, or null when there are none. */
 function nonEmpty(refs: readonly Ref[]): NonEmpty<Ref> | null {
   const [first, ...rest] = refs;
 
   return first === undefined ? null : [first, ...rest];
 }
 
+/** An `entry` line: its entry points are the references of its nested items. */
 function entryLine(file: string, node: Node): Entry | null {
   const entries = node.children.flatMap((child) => child.refs);
   const [first, ...rest] = entries;
@@ -463,6 +510,7 @@ function entryLine(file: string, node: Node): Entry | null {
   return { kind: "entry", entries: [first, ...rest], ...at(file, node, `entry ${entries.map((ref) => ref.target).join(" ")}`) };
 }
 
+/** A `no-cycles` assertion; `under` is the enclosing `module`, or null for the whole repository. */
 function noCycles(file: string, node: Node, under: Ref | null): NoCycles {
   return { kind: "no-cycles", under, ...at(file, node, `no-cycles ${under?.target ?? "*"}`) };
 }
@@ -471,11 +519,13 @@ function exportsRule(file: string, node: Node, module: Ref): ExportsRule | null 
   const [first, ...rest] = node.refs;
 
   if (!first) return null;
+  // Names sorted in the canonical text, so reordering them does not change the spec hash.
   const names = node.refs.map((ref) => ref.text).sort().join(", ");
 
   return { kind: "exports", module, names: [first, ...rest], ...at(file, node, `exports ${module.target}: ${names}`) };
 }
 
+/** One `# flow` section: triggers, items, its `kind`, and `planned` lines collected into `planned`. */
 function compileFlow(file: string, section: Section, planned: Planned[], diagnostics: Diagnostic[]): Flow {
   const name = section.name!.value;
   const triggers: Trigger[] = [];
@@ -483,6 +533,8 @@ function compileFlow(file: string, section: Section, planned: Planned[], diagnos
   const top: (Trigger | FlowItem)[] = [];
   let kind: Flow["kind"] = null;
 
+  // Top-level items only: `planned` and `kind` are metadata of the flow, not
+  // items; the first valid `kind` wins.
   for (const node of sectionNodes(section)) {
     if (node.kind === "planned") {
       const item = plannedDecl(file, node);
@@ -501,6 +553,8 @@ function compileFlow(file: string, section: Section, planned: Planned[], diagnos
     if (node.kind === "trigger") {
       const trigger = triggerItem(file, name, node);
 
+      // A trigger without a target is not a trigger, but its children still
+      // count: they are hoisted to the top level.
       if (trigger) {
         triggers.push(trigger);
         top.push(trigger);
@@ -532,6 +586,11 @@ function emptyParallel(file: string, node: Node, diagnostics: Diagnostic[]): voi
   for (const child of node.children) emptyParallel(file, child, diagnostics);
 }
 
+/**
+ * One flow item and its children. An item missing what it needs (a step
+ * without a target, a `when` without a condition…) is dropped but its children
+ * are kept in its place, so one bad line does not hide the claims under it.
+ */
 function flowNode(file: string, flow: string, node: Node): FlowItem[] {
   if (node.kind === "step") {
     const target = node.refs[0];
@@ -553,6 +612,7 @@ function flowNode(file: string, flow: string, node: Node): FlowItem[] {
     return [{ kind: "continues", flow: text.value, flowSpan: text.span, children: [], ...flowAt(file, flow, node) }];
   }
 
+  // `every` canonicalizes its schedule words; `after` keeps the duration as written.
   if (node.kind === "after" || node.kind === "every") {
     const words = node.tokens.slice(1).map((token) => token.text);
     const value = node.text === null ? null : node.kind === "after" ? node.text.value : scheduleText(words);
@@ -615,15 +675,18 @@ function flowNode(file: string, flow: string, node: Node): FlowItem[] {
     return [{ kind: "test", path, name: node.label?.value ?? null, ...flowAt(file, flow, node) }];
   }
 
+  // A nested `planned` is not an item; anything else unknown passes its children through.
   if (node.kind === "planned") return [];
 
   return flowItems(file, flow, node.children);
 }
 
+/** The compiled items of a list of nodes, flattened. */
 function flowItems(file: string, flow: string, nodes: readonly Node[]): FlowItem[] {
   return nodes.flatMap((node) => flowNode(file, flow, node));
 }
 
+/** A `trigger` line; its label is an entry-point kind (`trigger http x`) or `event`. Null without a target. */
 function triggerItem(file: string, flow: string, node: Node): Trigger | null {
   const target = node.refs[0];
 
@@ -635,12 +698,14 @@ function triggerItem(file: string, flow: string, node: Node): Trigger | null {
   return { kind: "trigger", target, entry, event, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) };
 }
 
+/** The `planned` label as a declaration kind, or null for any other word. */
 function plannedDeclKind(value: string): Planned["decl"] | null {
   if (value === "fn" || value === "module" || value === "type" || value === "event") return value;
 
   return null;
 }
 
+/** A `planned` line with a known kind and an ID, or null. */
 function plannedDecl(file: string, node: Node): Planned | null {
   const decl = node.label ? plannedDeclKind(node.label.value) : null;
 
@@ -649,6 +714,7 @@ function plannedDecl(file: string, node: Node): Planned | null {
   return { kind: "planned", decl, id: node.id, signature: node.text?.value ?? null, ...at(file, node, renderMeaning(node)) };
 }
 
+/** A `# wiring` section: wire targets → named dependencies → `compose` and `when` options; incomplete lines are skipped. */
 function compileWires(file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]): void {
   for (const node of sectionNodes(section)) {
     const target = node.kind === "wire" ? node.refs[0] : undefined;
@@ -712,6 +778,7 @@ function wireConditionText(node: Node): string {
   let out = "";
   let previous: (typeof tokens)[number] | undefined;
 
+  // Skip the keyword; insert a space only where the source had a gap.
   for (const token of tokens.slice(1, arrow === -1 ? tokens.length : arrow)) {
     if (previous !== undefined && previous.span.end.offset !== token.span.start.offset) out += " ";
     out += token.text;
@@ -721,10 +788,12 @@ function wireConditionText(node: Node): string {
   return out;
 }
 
+/** The location fields of an assertion with its canonical text. */
 function at(file: string, node: Node, text: string): Located {
   return { file, span: node.span, text, source: node };
 }
 
+/** The location of a flow item: its text is prefixed by the flow name and kind, NUL-separated, so equal lines of two flows hash apart. */
 function flowAt(file: string, flow: string, node: Node): Located {
   return at(file, node, `${flow}\0${node.kind} ${renderMeaning(node)}`);
 }
@@ -747,6 +816,7 @@ export interface PlannedDeclaration {
  * valid ones of flows.
  */
 export function plannedDeclaration(docs: readonly Document[], id: string): PlannedDeclaration | null {
+  // Depth-first, document order: the first match wins.
   const find = (node: Node): Node | null => {
     if (node.kind === "planned" && node.id === id) return node;
 

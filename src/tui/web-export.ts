@@ -6,6 +6,9 @@
 // (`data/<shard>.js`) the page loads with `<script>`: that works from
 // `file://` too, where `fetch` does not. `app.html` beside it is the analysis
 // in the browser (a folder the person opens), which needs http(s).
+//
+// Layer: TUI/web. The CLI's `web --export` calls `exportSite`; the page shell
+// and the built client come from `web.ts`.
 
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -25,6 +28,7 @@ const SITE_MANIFEST = "site.json";
 /** About this many bytes of answers per data shard. */
 const SHARD_BYTES = 256 * 1024;
 
+/** What an export wrote: the directory, the number of answers, data shards and files. */
 export interface ExportResult {
   out: string;
   answers: number;
@@ -34,6 +38,8 @@ export interface ExportResult {
 
 /** Why `out` may not take an export of `root`, or null. */
 export function exportTargetProblem(root: string, out: string): string | null {
+  // The repository must not lie inside `out` (or be `out`): replacing an
+  // earlier export there would touch the repository. `out` below the repository is fine.
   const rel = relative(out, root);
   const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 
@@ -41,6 +47,7 @@ export function exportTargetProblem(root: string, out: string): string | null {
 
   if (!existsSync(out)) return null;
 
+  // An existing `out` is written over only when empty or marked as an earlier export.
   if (!statSync(out).isDirectory()) return "not a directory";
 
   if (readdirSync(out).length > 0 && !existsSync(join(out, EXPORT_MARKER))) return `not empty and no keylang export (no ${EXPORT_MARKER}): nothing is written over`;
@@ -56,6 +63,7 @@ export function exportTargetProblem(root: string, out: string): string | null {
 async function requests(done: Analysis, answer: (path: string, query: URLSearchParams) => Promise<ReadAnswer>): Promise<{ key: string; answer: ReadAnswer }[]> {
   const out: { key: string; answer: ReadAnswer }[] = [];
 
+  // Each answer is recorded under the same key the page looks it up by.
   const ask = async (path: string, query: Record<string, string> = {}): Promise<ReadAnswer> => {
     const params = new URLSearchParams(query);
     const got = await answer(path, params);
@@ -91,6 +99,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
 
   for (const file of docs.files) await ask("/api/doc", { path: file.path });
 
+  // One diagram query per view the page offers.
   const queries: Record<string, string>[] = [
     ...views.flows.map((name) => ({ view: "flow", name })),
     ...(views.discovered ?? []).map((flow) => ({ view: "discovered", name: flow.name })),
@@ -99,6 +108,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
     ...(views.domains ?? []).map((domain) => ({ view: "process", domain })),
   ];
 
+  // Every snapshot ID gets its calls and usages; IDs that only appear in a diagram are added below.
   const ids = new Set(Object.keys(done.snapshot?.nodes ?? {}));
 
   for (const query of queries) {
@@ -119,6 +129,7 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
     for (const seq of system.sequences) await ask("/api/diagram", { view: "sequence", name: system.name, seq });
   }
 
+  // Sorted, so the order of requests (and the shards) is the same on every run.
   for (const id of [...ids].sort(compareText)) {
     await ask("/api/calls", { id });
     await ask("/api/usages", { id });
@@ -129,6 +140,8 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
 
 /** The answers in shards of about `SHARD_BYTES`, each a script that hands its answers to the page. */
 function shardTexts(answers: readonly { key: string; answer: ReadAnswer }[]): string[] {
+  // Shard count grows with the total size (capped at 4096); a key goes to the
+  // shard its hash names, the same function the page uses to find it.
   const total = answers.reduce((sum, item) => sum + item.key.length + item.answer.body.length, 0);
   const count = Math.min(4096, Math.max(1, Math.ceil(total / SHARD_BYTES)));
   const shards: Record<string, ReadAnswer>[] = Array.from({ length: count }, () => ({}));
@@ -143,6 +156,8 @@ function siteAssets(): string[] {
   const manifest = join(BUILT_DIR, SITE_MANIFEST);
 
   if (!existsSync(manifest)) throw new Error(`the diagram client is not built (no ${manifest}): run \`npm run web:build\``);
+  // Validate the manifest: a JSON list of plain relative file names, no `..`,
+  // since the names become paths under the export directory.
   const files = parseJson(readFileSync(manifest, "utf8"));
   const names = Array.isArray(files) ? files.filter(isJsonString) : [];
 
@@ -157,6 +172,7 @@ function siteAssets(): string[] {
  * written into the repository.
  */
 export async function exportSite(options: { root: string; out: string; analysis: Analysis }): Promise<ExportResult> {
+  // Refuse a bad target before computing anything.
   const root = resolve(options.root);
   const out = resolve(options.out);
   const problem = exportTargetProblem(root, out);
@@ -165,10 +181,12 @@ export async function exportSite(options: { root: string; out: string; analysis:
   await ensureClient();
   const assets = siteAssets();
   const done = options.analysis;
+  // Answer every request through the same read API the server uses, against the one analysis.
   const read = createReadApi({ root, analysis: async () => done, analyze: async () => done, showRoot: false });
   const answers = await requests(done, read.answer);
   const shards = shardTexts(answers);
 
+  // Replace only what an export owns; anything else in `out` is left alone.
   mkdirSync(out, { recursive: true });
 
   for (const name of ["data", "assets", "index.html", "app.html"]) rmSync(join(out, name), { recursive: true, force: true });
@@ -181,6 +199,7 @@ export async function exportSite(options: { root: string; out: string; analysis:
     cpSync(join(BUILT_DIR, file), join(out, "assets", file));
   }
 
+  // Two pages: the static diagrams page reading the shards, and the local-folder app; then the marker.
   const name = basename(root);
   writeFileSync(join(out, "index.html"), diagramsPage({ source: "static", assets: "assets/", title: `keylang · ${name}`, shards: shards.length }));
   writeFileSync(join(out, "app.html"), diagramsPage({ source: "local", assets: "assets/", title: "keylang · відкрити репозиторій" }));

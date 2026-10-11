@@ -67,6 +67,7 @@ export interface CallHole {
   candidates?: string[];
 }
 
+/** The answer for one opened row of the explorer: the node, its callees, holes, callers and entry points above it. */
 export interface Calls {
   id: string;
   node: { kind: string; file: string | null; line: number | null; layer: string | null; doc: string | null } | null;
@@ -106,6 +107,7 @@ interface Index {
 
 const indexes = new WeakMap<AnalysisSnapshot, Index>();
 
+/** The snapshot's call index, built on first use and cached: every opened row asks again. */
 function indexOf(snapshot: AnalysisSnapshot): Index {
   const known = indexes.get(snapshot);
 
@@ -120,6 +122,8 @@ function indexOf(snapshot: AnalysisSnapshot): Index {
 
   const index: Index = { out: new Map(), in: new Map(), open: new Map(), coverage: new Map(), entries: new Map() };
 
+  // Call edges only: resolved ones go both ways (out by source, in by
+  // target); unresolved and ambiguous ones are holes of their source.
   for (const edge of snapshot.edges) {
     if (edge.kind !== "call") continue;
 
@@ -129,6 +133,8 @@ function indexOf(snapshot: AnalysisSnapshot): Index {
     } else if (edge.resolution !== "resolved") push(index.open, edge.source, edge);
   }
 
+  // Coverage items become holes of their node, except the file-level ones
+  // that say the architecture leaves a file unread on purpose.
   for (const item of snapshot.coverage) {
     if (item.source === null || item.kind === "outside-file" || item.kind === "assumed-import" || item.kind === "skipped-file") continue;
     const list = index.coverage.get(item.source);
@@ -148,6 +154,7 @@ function indexOf(snapshot: AnalysisSnapshot): Index {
   return index;
 }
 
+/** Order by file, line, column: the order the code writes things in. */
 const byPosition = (a: CallSite, b: CallSite): number => compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col;
 
 /**
@@ -162,6 +169,8 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
 
   if (!code) return { ...base, reason: `no fn \`${id}\` in the snapshot` };
 
+  // One row per other end: the earliest edge gives the position and marks,
+  // and the counts tell the page whether the row can open further.
   const ref = (other: string, edges: readonly SnapshotEdge[]): CallRef => {
     const node = snapshot.nodes[other];
     const first = [...edges].sort((a, b) => byPosition(a, b))[0]!;
@@ -196,6 +205,8 @@ export function callsOf(snapshot: AnalysisSnapshot, id: string): Calls {
     };
   };
 
+  // Group edges by their other end, then order the rows by where the first
+  // edge is written, with the ID as a tiebreak for stable output.
   const group = (edges: readonly SnapshotEdge[], end: (edge: SnapshotEdge) => string): CallRef[] => {
     const by = new Map<string, SnapshotEdge[]>();
 
@@ -224,6 +235,8 @@ function holesOf(index: Index, id: string): CallHole[] {
   const out: CallHole[] = [];
   const seen = new Set<string>();
 
+  // Unresolved and ambiguous calls, one per source position (several edges
+  // can share one call site).
   for (const edge of index.open.get(id) ?? []) {
     const key = `${edge.file}:${edge.line}:${edge.col}`;
 
@@ -250,6 +263,8 @@ function holesOf(index: Index, id: string): CallHole[] {
 
 /** Breadth first up the resolved edges: the entry points that reach `id`, nearest first, then by kind and label. */
 function reachedFrom(snapshot: AnalysisSnapshot, index: Index, id: string): Calls["reachedFrom"] {
+  // Level-by-level BFS over incoming edges records each ID's shortest
+  // distance; the walk stops early on a huge graph (MAX_UPWARD).
   const steps = new Map<string, number>([[id, 0]]);
   let frontier = [id];
 
@@ -267,6 +282,7 @@ function reachedFrom(snapshot: AnalysisSnapshot, index: Index, id: string): Call
     frontier = next;
   }
 
+  // Keep the entry points the walk reached, nearest first.
   const out: Calls["reachedFrom"] = [];
 
   for (const entry of snapshot.entries) {
@@ -316,6 +332,7 @@ export interface ExplorerStep {
   steps?: ExplorerStep[];
 }
 
+/** A validated flow proposal from the explorer: the flow name, its trigger and the ticked steps. */
 export interface ExplorerFlowRequest {
   name: string;
   trigger: string;
@@ -331,6 +348,7 @@ const FLOW_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/;
 /** At most this many steps, this deep: a ticked tree, not a dump of the graph. */
 const MAX_STEPS = 500;
 
+/** The deepest nesting of steps a request may have. */
 const MAX_LEVEL = 30;
 
 /**
@@ -338,6 +356,7 @@ const MAX_LEVEL = 30;
  * `{name, trigger, steps}`, where a step is an ID or `{id, steps?}`.
  */
 export function parseExplorerFlow(body: JsonValue): ExplorerFlowRequest | string {
+  // Validate the top-level shape first; each error names the field.
   if (!isJsonObject(body)) return "the body must be a JSON object {name, trigger, steps}";
   const { name, trigger, steps } = body;
 
@@ -346,6 +365,9 @@ export function parseExplorerFlow(body: JsonValue): ExplorerFlowRequest | string
   if (!isJsonString(trigger) || trigger === "") return "trigger: the ID of a fn";
   let count = 0;
 
+  // Recursive step parser: a step is a non-empty ID string or `{id, steps?}`.
+  // `count` is shared across levels so the total is capped, not each list,
+  // and `where` builds a JSON path for the error message.
   const parse = (value: JsonValue | undefined, level: number, where: string): ExplorerStep[] | string => {
     if (value === undefined) return [];
 
@@ -403,6 +425,8 @@ export function explorerFlow(snapshot: AnalysisSnapshot, request: ExplorerFlowRe
   const lines = [`# flow ${request.name}`, "", EXPLORER_MARK, ""];
   const steps: string[] = [];
 
+  // The trailing comments of a step line: how the parent reaches it (when
+  // not a plain call) and which of its own calls keylang did not resolve.
   const comment = (id: string, parent: string | null): string => {
     let out = "";
 
@@ -422,6 +446,8 @@ export function explorerFlow(snapshot: AnalysisSnapshot, request: ExplorerFlowRe
     return out;
   };
 
+  // Depth-first over the ticked tree, writing one indented `- step` line per
+  // node; the first step the edges do not support aborts the draft.
   const walk = (list: readonly ExplorerStep[], parent: string, level: number): string | null => {
     for (const step of list) {
       if (!isFn(step.id)) return `step \`${step.id}\` is not a fn of the repository`;

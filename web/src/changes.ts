@@ -1,3 +1,4 @@
+// Web page (web/src), the «Зміни» (changes) mode; entry points `Changes` and `changeItems`.
 // «Зміни» of the diagram page (.scratch/web-git): what the working tree
 // changed since a base and the findings of `check --changed` over it —
 // `GET /api/git` names HEAD and the base of a feature, `GET /api/changes`
@@ -11,6 +12,7 @@ import { VERDICT_GLYPH } from "./canvas.ts";
 import { button, codeLink, make } from "./dom.ts";
 import type { ListItem } from "./list.ts";
 
+/** What the changes view needs from the page: the repository root, the status line and navigation. */
 export interface ChangesHost {
   root(): string | undefined;
   status(text: string): void;
@@ -21,12 +23,15 @@ export interface ChangesHost {
   pick(since: string): void;
 }
 
+// The list group of each changed-file kind; `satisfies` makes a new kind a compile error here.
 const KIND_GROUP = { spec: "Змінені специфікації", code: "Змінений код", other: "Інші файли" } satisfies Record<ChangesAnswer["files"][number]["kind"], string>;
 
 /** The list of the «Зміни» mode: the changed files by kind, then the deleted ones. */
 export function changeItems(changes: ChangesAnswer, since: string): ListItem[] {
+  // Specs first, then code, then other files; the sort is stable, so the server's path order holds within a kind.
   const rank = (kind: string): number => ["spec", "code", "other"].indexOf(kind);
 
+  // A click opens the spec in «Карта», a code file's first module in the explorer, else stays on the changes view.
   const items: ListItem[] = [...changes.files].sort((a, b) => rank(a.kind) - rank(b.kind)).map((file) => ({
     key: `change:${file.path}`,
     label: file.path,
@@ -42,6 +47,7 @@ export function changeItems(changes: ChangesAnswer, since: string): ListItem[] {
   return items;
 }
 
+/** The «Зміни» panel: asks git for the base, then the changes since it, and draws the files and findings. */
 export class Changes {
   private readonly container: HTMLElement;
   private readonly api: Api;
@@ -62,6 +68,7 @@ export class Changes {
     return this.shown;
   }
 
+  /** Loads and draws the changes since `since` ("" is the feature's base); returns the answer, or null when git is missing, it failed, or a newer request superseded it. */
   async show(since: string): Promise<ChangesAnswer | null> {
     const request = ++this.request;
     this.host.status(`changes: reading git${since ? ` since ${since}` : ""}…`);
@@ -69,6 +76,7 @@ export class Changes {
     if (this.container.childElementCount === 0) this.container.replaceChildren(make("p", { className: "empty", text: "loading…" }));
 
     try {
+      // HEAD and the suggested bases are asked once per page; only the changes depend on the base.
       this.git ??= await this.api.git();
 
       if (!this.git.available) {
@@ -80,6 +88,7 @@ export class Changes {
 
       const answer = await this.api.changes(since);
 
+      // A newer `show` started meanwhile: its answer wins, this one is dropped.
       if (request !== this.request) return null;
       this.shown = { since, answer };
       this.render(this.git, answer, since);
@@ -89,6 +98,7 @@ export class Changes {
       return answer;
     } catch (error) {
       if (request !== this.request) return null;
+      // A static export holds only the precomputed bases, so a 404 there gets an explanation instead of the raw error.
       const text = error instanceof ApiError && error.status === 404 && transport().kind === "static" ? `this export holds the changes since the base of a feature and since HEAD only (${error.message})` : error instanceof Error ? error.message : String(error);
       this.container.replaceChildren(make("h2", { text: "Зміни" }), this.picker(this.git, since), make("p", { className: "error", text }));
       this.host.status(text);
@@ -101,10 +111,12 @@ export class Changes {
   private picker(git: GitAnswer | null, since: string): HTMLElement {
     const box = make("div", { className: "changes-base" });
 
+    // Without git there is no base to choose.
     if (git === null || !git.available) return box;
     const select = make("select");
     select.id = "changes-base";
     select.setAttribute("aria-label", "База");
+    // The feature's base comes first as ""; the other suggestions follow, without a duplicate of it.
     const options = [{ ref: "", label: `база фічі: ${git.base.label}` }, ...git.bases.filter((base) => base.ref !== git.base.ref)];
 
     for (const option of options) {
@@ -117,6 +129,7 @@ export class Changes {
     select.addEventListener("change", () => this.host.pick(select.value));
     box.append(make("label", { text: "від " }, select));
 
+    // A free ref is offered only where the server can answer any ref; a static export cannot.
     if (transport().kind !== "static") {
       const input = make("input");
       input.id = "changes-ref";
@@ -132,12 +145,14 @@ export class Changes {
     return box;
   }
 
+  /** Draws the header (HEAD, origin, base), the base picker, the changed and deleted files, and the findings that touch them. */
   private render(git: GitAnswer & { available: true }, answer: ChangesAnswer, since: string): void {
     const head = git.head.commit === null ? "HEAD без коміту" : `${git.head.branch ?? "detached"} @ ${git.head.short}`;
     const body: Node[] = [make("h2", { text: "Зміни" }), make("p", { className: "note", text: `${head}${git.origin ? ` · ${git.origin}` : ""} · від ${answer.base.label}${answer.unborn ? " (до першого коміту: усі файли нові)" : ""}` }), this.picker(git, since)];
     const counts = answer.check?.counts;
     body.push(make("p", { className: "changes-summary", text: `${answer.files.length} змінено · ${answer.deleted.length} видалено${counts ? ` · ✗ ${counts.fail} fail · ◌ ${counts.unverified} unverified` : ""}` }));
 
+    // Changed files: a spec opens in «Карта», code links into the editor, and each module it belongs to opens in the explorer.
     const files = make("ul", { className: "changes-files" });
 
     for (const file of answer.files) {
@@ -155,6 +170,7 @@ export class Changes {
 
     body.push(make("h3", { text: "Знахідки, що зачіпають зміни" }));
 
+    // Findings: only the non-ok results of `check --changed`; the ones outside the change are counted, not listed.
     if (answer.check === null) body.push(make("p", { className: "empty", text: answer.checkReason ?? "перевірки немає" }));
     else {
       const findings = answer.check.results.filter((result) => result.verdict !== "ok");
