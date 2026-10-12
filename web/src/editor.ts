@@ -606,6 +606,10 @@ export interface EditorHost {
   views(): Views | null;
   /** Draws a view again from the specs as they are now (`openDiagram(key, …, true)`). */
   reload?(key: string): Promise<void>;
+  /** The canvas changed (an edit, an undo, a view drawn): the studio projects it again. */
+  changed?(): void;
+  /** The selection changed: the keylang IDs of the selected shapes. */
+  selected?(ids: string[]): void;
 }
 
 /**
@@ -775,7 +779,10 @@ export class Editor {
     this.canvas.addEventListener("pointermove", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
     this.canvas.addEventListener("pointerdown", (event) => (this.pointer = { x: event.clientX, y: event.clientY }), true);
     // The panel follows the selection, and the model under it (an undo, a move into another lane).
-    graph.getSelectionModel().addListener(InternalEvent.CHANGE, () => this.properties.show(graph.getSelectionCount() === 1 ? graph.getSelectionCell() : null));
+    graph.getSelectionModel().addListener(InternalEvent.CHANGE, () => {
+      this.properties.show(graph.getSelectionCount() === 1 ? graph.getSelectionCell() : null);
+      this.host.selected?.(this.selectedIds());
+    });
     graph.getDataModel().addListener(InternalEvent.CHANGE, () => {
       const shown = this.properties.current();
 
@@ -797,8 +804,11 @@ export class Editor {
       },
       { passive: false },
     );
-    // Any change of the model schedules a save of the layout and the draft.
-    graph.getDataModel().addListener(InternalEvent.CHANGE, () => this.changed());
+    // Any change of the model schedules a save of the layout and the draft, and tells the host.
+    graph.getDataModel().addListener(InternalEvent.CHANGE, () => {
+      this.changed();
+      this.host.changed?.();
+    });
 
     // Every change of the model and the view is a step of undo.
     const undoable = (_sender: EventSource, event: EventObject): void => {
@@ -1976,6 +1986,19 @@ export class Editor {
   /** The view open in the editor (`flow:checkout`, or "" for an empty canvas). */
   view(): string {
     return this.viewKey;
+  }
+
+  /** The specs the open view was drawn from (`specHash` of `/api/diagram`), or null for an empty canvas. */
+  specHash(): string | null {
+    return this.source.specHash ?? null;
+  }
+
+  /** The keylang IDs of the selected shapes, in selection order, without the empty ones (notes, groups). */
+  selectedIds(): string[] {
+    return this.graph
+      .getSelectionCells()
+      .map((cell) => shapeOf(cell)?.id ?? "")
+      .filter((id) => id !== "");
   }
 
   /**

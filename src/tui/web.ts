@@ -19,7 +19,8 @@
 // calls `serveWeb`; the hub (`hub.ts`) mounts `createWebApp` per repository;
 // `web-export.ts` reuses `diagramsPage`, `BUILT_DIR` and `ensureClient`. The
 // diagram page's JSON API is answered by `read-api.ts` plus the write
-// endpoints below (proposals, layouts, bundles, greenfield).
+// endpoints below (proposals, layouts, bundles, greenfield, and the studio:
+// projection, chat, accept/reject — `src/operations/studio.ts`).
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -38,6 +39,7 @@ import { explorerFlow, parseExplorerFlow } from "../explorer.ts";
 import { runGraphDiff } from "../graph-diff-run.ts";
 import { sourceInputs } from "../map.ts";
 import { runDiagramPropose } from "../operations/diagram-propose.ts";
+import { decideProposal, parseHistory, runStudioChat, studioProjection } from "../operations/studio.ts";
 import { greenfieldAvailability, runGreenfield } from "../operations/greenfield.ts";
 import { GREENFIELD_LANGUAGES } from "../greenfield.ts";
 import { exportBundle, exportFlows, gitOf, runFlowImport } from "../operations/flow-bundle.ts";
@@ -96,6 +98,8 @@ type AssetName = keyof typeof ASSETS;
 const BUILT = {
   "diagrams.js": "text/javascript",
   "diagrams.css": "text/css",
+  "studio.js": "text/javascript",
+  "studio.css": "text/css",
 } as const;
 
 /** The name of a built diagram-client file under `/assets/`. */
@@ -136,7 +140,7 @@ function newestUnder(dir: string): number {
 function clientStale(): boolean {
   // A published package has no sources, so its built files are never stale.
   if (!existsSync(CLIENT_SOURCES)) return false;
-  const built = ["diagrams.js", "analysis.js", "site.json"].map((name) => join(BUILT_DIR, name));
+  const built = ["diagrams.js", "studio.js", "analysis.js", "site.json"].map((name) => join(BUILT_DIR, name));
 
   if (built.some((file) => !existsSync(file))) return true;
   const script = join(PACKAGE_ROOT, "scripts", "build-web.mjs");
@@ -736,6 +740,93 @@ export function createWebApp(options: WebOptions): WebApp {
     });
   };
 
+  /**
+   * `POST /api/projection` (.scratch/studio): `{model, specHash, format}` — the studio's
+   * canvas as the specs it would propose (`keylang`) or as TypeScript (`ts`). Nothing is
+   * written; the statuses map as for `/api/diagram-proposal`.
+   */
+  const projectionRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "projection", "POST", MAX_MODEL_BODY);
+
+    if (body === NO_BODY) return;
+
+    if (!isJsonObject(body)) return json(400, { error: "the body: {model, specHash, format}" });
+    const { model, specHash: hash, format } = body;
+
+    if (format !== "keylang" && format !== "ts") return json(400, { error: "format: keylang or ts" });
+
+    if (hash !== undefined && hash !== null && !isJsonString(hash)) return json(400, { error: "specHash: the string /api/diagram answered" });
+    const done = await studioProjection({ root: options.root, model, specHash: hash ?? null, format }, { analyze: () => analysis() });
+    // Map the operation's status to HTTP: invalid 400, conflict or refused 409, failed 500.
+    const status = done.status === "invalid" ? 400 : done.status === "conflict" || done.status === "refused" ? 409 : done.status === "failed" ? 500 : 200;
+
+    return json(status, done);
+  };
+
+  /**
+   * `POST /api/chat` (.scratch/studio): `{history, view, selection, model?, specHash?}` — one
+   * answer of the configured model with the studio's context; its spec block becomes a
+   * proposal. No model is 409 with what to set up. The page closing the request cancels
+   * the call to the model.
+   */
+  const chatRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "chat", "POST", MAX_MODEL_BODY);
+
+    if (body === NO_BODY) return;
+
+    if (!isJsonObject(body)) return json(400, { error: "the body: {history, view, selection, model?, specHash?}" });
+    // Validate each field before the model is asked.
+    const history = parseHistory(body.history);
+
+    if (isRefusal(history)) return json(400, { error: history });
+    const view = body.view ?? "";
+
+    if (!isJsonString(view)) return json(400, { error: "view: a view key such as `flow:checkout`, or an empty string" });
+    const selection = body.selection ?? [];
+
+    if (!Array.isArray(selection) || !selection.every(isJsonString)) return json(400, { error: "selection: an array of IDs" });
+    const hash = body.specHash ?? null;
+
+    if (hash !== null && !isJsonString(hash)) return json(400, { error: "specHash: the string /api/diagram answered" });
+    // A request the page gave up on («Скасувати», a closed tab) cancels the call to the model.
+    const cancel = new AbortController();
+    response.on("close", () => {
+      if (!response.writableEnded) cancel.abort();
+    });
+    const done = await runStudioChat({ root: options.root, history, view, selection: selection.filter(isJsonString), model: body.model ?? null, specHash: hash }, { analyze: () => analysis(), signal: cancel.signal });
+
+    // Nobody waits for a cancelled answer; a socket still open gets 499, as proxies name a request the client closed.
+    if (done.status === "cancelled") {
+      if (!response.destroyed) json(499, done);
+
+      return;
+    }
+
+    // No model is the page's to fix (409); a provider's failure is a bad gateway, not this server's error.
+    const status = done.status === "no-model" ? 409 : done.status === "invalid" ? 400 : done.status === "failed" ? 502 : 200;
+
+    return json(status, done);
+  };
+
+  /** `POST /api/proposal` (.scratch/studio): `{target, action: "accept"|"reject"}` — a proposal merged whole, or removed. */
+  const proposalRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const json = <Body>(status: number, body: Body): void => reply(response, status, "application/json", `${JSON.stringify(body)}\n`);
+    const body = await jsonBody(request, response, "proposal", "POST", MAX_BODY);
+
+    if (body === NO_BODY) return;
+
+    if (!isJsonObject(body) || !isJsonString(body.target) || body.target === "") return json(400, { error: "the body: {target, action: accept or reject}" });
+    const { target, action } = body;
+
+    if (action !== "accept" && action !== "reject") return json(400, { error: "action: accept or reject" });
+    const done = decideProposal(options.root, target, action);
+    const status = done.status === "none" ? 404 : done.status === "refused" ? 409 : 200;
+
+    return json(status, { target, action, ...done });
+  };
+
   /** `GET /api/views`, `/api/diagram?view=…`, `/api/usages?id=…`, `/api/calls?id=…`, `/api/ids?prefix=…`, `/api/coverage`, `/api/tour`; `POST /api/flow-proposal`: JSON for the diagram client (`GET /api/export?format=bpmn|drawio&view=…`: the file), with the socket's token as a Bearer. */
   const api = async (request: IncomingMessage, response: ServerResponse, path: string, query: URLSearchParams): Promise<void> => {
     // These paths are public (docs/tui.md); any other is the 404 of every unknown path, token or not.
@@ -765,6 +856,12 @@ export function createWebApp(options: WebOptions): WebApp {
     if (path === "/api/layout") return layoutRequest(request, response, query);
 
     if (path === "/api/greenfield") return greenfieldRequest(request, response);
+
+    if (path === "/api/projection") return projectionRequest(request, response);
+
+    if (path === "/api/chat") return chatRequest(request, response);
+
+    if (path === "/api/proposal") return proposalRequest(request, response);
 
     if (request.method !== "GET") return reply(response, 405, "text/plain", "method not allowed\n");
 
@@ -828,6 +925,13 @@ export function createWebApp(options: WebOptions): WebApp {
       response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
 
       return reply(response, 200, "text/html; charset=utf-8", diagramsPage({ readOnly }));
+    }
+
+    // «Студія»: the canvas, its projection and the agent; it writes, so a viewer (`--read-only`) has none.
+    if (path === "/studio" && !readOnly) {
+      response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:");
+
+      return reply(response, 200, "text/html; charset=utf-8", studioPage());
     }
 
     if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
@@ -1111,7 +1215,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
 }
 
 /** The paths of the diagram API; any other under `/api/` is 404. */
-const API_PATHS: ReadonlySet<string> = new Set([...READ_PATHS, "/api/flow-proposal", "/api/diagram-proposal", "/api/greenfield", "/api/bundle", "/api/bundle-import"]);
+const API_PATHS: ReadonlySet<string> = new Set([...READ_PATHS, "/api/flow-proposal", "/api/diagram-proposal", "/api/greenfield", "/api/bundle", "/api/bundle-import", "/api/projection", "/api/chat", "/api/proposal"]);
 
 /** The largest body `POST /api/flow-proposal` reads. */
 const MAX_BODY = 64 * 1024;
@@ -1283,7 +1387,7 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 </head>
 <body data-source="${source}"${readOnly ? ' data-readonly="1"' : ""}${options.shards !== undefined ? ` data-shards="${options.shards}"` : ""}>
 <aside id="list">
-<header><span>Діаграми</span>${source === "server" && !readOnly ? '<a href="./">термінал</a>' : ""}</header>
+<header><span>Діаграми</span>${source === "server" && !readOnly ? '<span class="links"><a id="studio-link" href="studio">студія</a> · <a href="./">термінал</a></span>' : ""}</header>
 <nav id="modes" aria-label="Режим"><button type="button" data-mode="diagrams" aria-pressed="true">Діаграми</button><button type="button" data-mode="docs" aria-pressed="false">Карта</button><button type="button" data-mode="explore" aria-pressed="false">Дослідник</button><button type="button" data-mode="blind" aria-pressed="false">Сліпі зони</button><button type="button" data-mode="changes" aria-pressed="false">Зміни</button>${readOnly ? "" : '<button type="button" data-mode="editor" aria-pressed="false">Редактор</button>'}</nav>
 <div id="find">
 <input id="search" type="search" placeholder="Пошук: флоу, точка входу, ID" aria-label="Пошук">
@@ -1306,6 +1410,52 @@ export function diagramsPage(options: { readOnly?: boolean; source?: "server" | 
 <section id="editor" aria-label="Редактор діаграм"></section>
 </main>
 <aside id="details"></aside>
+</body>
+</html>
+`;
+}
+
+/**
+ * «Студія» (.scratch/studio): markup only; `studio.js` fills it. Three panes —
+ * the diagram editor, the projection (keylang | TypeScript) and the agent's
+ * chat — with splitters between them. Relative asset paths, as `diagramsPage`,
+ * so the hub serves it under `/r/<id>/studio`.
+ */
+export function studioPage(): string {
+  return `<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keylang · студія</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/studio.css">
+<script src="assets/studio.js" defer></script>
+</head>
+<body data-source="server" data-mode="editor" class="studio">
+<header id="studio-bar">
+<strong>Студія</strong>
+<label class="studio-view">Вид <select id="studio-view"></select></label>
+<div id="status" role="status">loading…</div>
+<nav><a href="diagrams">діаграми</a> · <a href="./">термінал</a></nav>
+</header>
+<div id="studio">
+<section id="pane-diagram" class="pane" aria-label="Діаграма"><section id="editor" aria-label="Редактор діаграм"></section></section>
+<div class="splitter" data-split="0" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Межа між діаграмою і проєкцією"></div>
+<section id="pane-projection" class="pane" aria-label="Проєкція">
+<div class="pane-head" role="tablist"><button type="button" role="tab" data-format="keylang" aria-selected="true">keylang</button><button type="button" role="tab" data-format="ts" aria-selected="false">TypeScript</button><span id="projection-state"></span></div>
+<div id="projection" tabindex="0"></div>
+</section>
+<div class="splitter" data-split="1" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Межа між проєкцією і агентом"></div>
+<section id="pane-agent" class="pane" aria-label="Агент">
+<div class="pane-head"><span>Агент</span></div>
+<div id="chat-log" aria-live="polite"></div>
+<form id="chat-form">
+<textarea id="chat-input" rows="3" placeholder="Спитайте про вид чи попросіть змінити специфікацію (Ctrl+Enter — надіслати)" aria-label="Повідомлення"></textarea>
+<div class="chat-actions"><button type="submit" id="chat-send">Надіслати</button><button type="button" id="chat-cancel" disabled>Скасувати</button></div>
+</form>
+</section>
+</div>
 </body>
 </html>
 `;

@@ -32,8 +32,8 @@ export interface Reply {
  */
 export interface Transport {
   readonly kind: "server" | "static" | "local";
-  /** `body` goes as JSON: a request type of this module, or the editor's model. */
-  send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body): Promise<Reply>;
+  /** `body` goes as JSON: a request type of this module, or the editor's model; `signal` drops the request (the studio's «Скасувати»). */
+  send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body, signal?: AbortSignal): Promise<Reply>;
 }
 
 /** The query in one order: a static export files its answers by `path?query`, so the page spells it as `src/tui/read-api.ts` does. */
@@ -68,7 +68,7 @@ class HttpTransport implements Transport {
     this.token = token;
   }
 
-  async send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body): Promise<Reply> {
+  async send<Body>(method: "GET" | "POST" | "PUT", path: string, query: URLSearchParams, body?: Body, signal?: AbortSignal): Promise<Reply> {
     const headers = new Headers({ Authorization: `Bearer ${this.token}` });
 
     if (body !== undefined) headers.set("Content-Type", "application/json");
@@ -78,6 +78,8 @@ class HttpTransport implements Transport {
     const init: RequestInit = { method, headers, cache: "no-store" };
 
     if (body !== undefined) init.body = JSON.stringify(body);
+
+    if (signal) init.signal = signal;
     const response = await fetch(search === "" ? relative : `${relative}?${search}`, init);
     // An attachment (an export, a bundle) names its file in `Content-Disposition: ...; filename="<name>"`.
     const file = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
@@ -385,6 +387,60 @@ export interface DiagramProposal {
   merge: string | null;
 }
 
+/** One spec file of the studio's keylang projection (src/operations/studio.ts). */
+export interface ProjectionFile {
+  path: string;
+  changed: boolean;
+  newFile: boolean;
+  text: string;
+  hunks: { line: number; removed: string[]; added: string[] }[];
+  /** 1-based lines of `text` the drawing adds. */
+  added: number[];
+}
+
+/** One declaration of the studio's TypeScript projection and its lines in the text. */
+export interface ProjectionItem {
+  id: string;
+  name: string;
+  form: "interface" | "alias" | "import";
+  file: string;
+  line: number;
+  text: string;
+  from: number;
+  to: number;
+}
+
+/** The answer of `POST /api/projection`. */
+export type Projection =
+  | { format: "keylang"; status: DiagramProposal["status"]; error: string | null; files: ProjectionFile[]; notes: string[]; weakenings: DiagramProposal["weakenings"] }
+  | { format: "ts"; status: DiagramProposal["status"]; error: string | null; text: string; items: ProjectionItem[]; notes: string[] };
+
+/** One message of the studio's chat. */
+export interface ChatTurn {
+  role: "you" | "clip";
+  text: string;
+}
+
+/** The answer of `POST /api/chat`: the reply and the proposal it wrote, or why not. */
+export interface ChatAnswer {
+  status: "replied" | "no-model" | "invalid" | "failed" | "cancelled";
+  error: string | null;
+  reply: string;
+  agent: string | null;
+  proposal: { target: string; proposal: string; newFile: boolean; diff: string; hunks: { line: number; removed: string[]; added: string[] }[] } | null;
+  refused: string | null;
+  dropped: string[];
+}
+
+/** The answer of `POST /api/proposal`. */
+export interface ProposalDecision {
+  target: string;
+  action: "accept" | "reject";
+  status: "none" | "refused" | "written" | "unchanged" | "removed";
+  error: string | null;
+  kept: string | null;
+}
+
 /** One shape of a copied fragment (src/diagram-clip.ts): a canvas key, the keylang side, a box in model coordinates. */
 export interface ClipShape {
   key: string;
@@ -636,6 +692,31 @@ export class Api {
   /** A pasted bundle: the preview (layer choices for the dialog) or the import (proposals), and the shapes to draw. */
   bundleImport(body: { text: string; layerMap?: Record<string, string>; mode?: "algo" | "hybrid"; output?: "preview" | "proposal" }): Promise<BundleImport> {
     return this.post("/api/bundle-import", body);
+  }
+
+  /** The studio's projection of the canvas: the specs it would propose, or TypeScript; a refusal (409) is an answer too. */
+  async projection(model: EditorModel, specHash: string | null, format: "keylang" | "ts"): Promise<Projection> {
+    const reply = await transport().send("POST", "/api/projection", new URLSearchParams(), { model, specHash, format });
+
+    // 409 is not an error here: the specs moved or a target is refused, and the body says how.
+    if (reply.status === 409) {
+      // SAFETY: a 409 of /api/projection is a Projection with its `status` and `error` (docs/tui.md «Студія»).
+      return JSON.parse(reply.text) as Projection;
+    }
+
+    return replyJson<Projection>(reply);
+  }
+
+  /** One answer of the studio's agent; `signal` cancels it on the server too. */
+  chat(body: { history: ChatTurn[]; view: string; selection: string[]; model: EditorModel | null; specHash: string | null }, signal: AbortSignal): Promise<ChatAnswer> {
+    return transport()
+      .send("POST", "/api/chat", new URLSearchParams(), body, signal)
+      .then((reply) => replyJson<ChatAnswer>(reply));
+  }
+
+  /** «Прийняти» / «Відхилити» of a proposal. */
+  decideProposal(target: string, action: "accept" | "reject"): Promise<ProposalDecision> {
+    return this.post("/api/proposal", { target, action });
   }
 
   private async post<T, Body>(path: string, body: Body): Promise<T> {

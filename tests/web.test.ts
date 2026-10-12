@@ -1189,11 +1189,12 @@ test("web: scripts/build-web.mjs bundles the client offline: the page's script a
       .map((entry) => join(entry.parentPath, entry.name).slice(out.length + 1).split("\\").join("/"))
       .sort();
 
-    assert.deepEqual(built, [...site, "site.json"].sort(), "site.json lists every built file");
+    // The studio (`/studio`) is a page of the server alone: a static site does not carry it.
+    assert.deepEqual(built, [...site, "site.json", "studio.css", "studio.js"].sort(), "site.json lists every built file but the studio's");
 
     for (const file of ["diagrams.js", "diagrams.css", "analysis.js", "wasm/web-tree-sitter.wasm", "wasm/tree-sitter-typescript.wasm", "wasm/grammars.json", "maxgraph-core.LICENSE", "web-tree-sitter.LICENSE", "noble-hashes.LICENSE"]) assert.ok(site.includes(file), file);
 
-    for (const name of ["diagrams.js", "analysis.js"]) {
+    for (const name of ["diagrams.js", "studio.js", "analysis.js"]) {
       const script = readFileSync(join(out, name), "utf8");
       assert.ok(script.length > 10000, name);
       assert.doesNotMatch(script, /(?:\bimport\s*\(?|\bfrom|importScripts\()\s*["'`]https?:\/\//, `${name}: no import from a CDN`);

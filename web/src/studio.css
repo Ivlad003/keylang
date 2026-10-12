@@ -1,0 +1,80 @@
+/* «Студія» of `keylang web`: a bar on top, then three panes — the editor, the projection, the chat — with splitters between them. The editor's own styles come from diagrams.css. */
+body.studio { display: flex; flex-direction: column; }
+
+#studio-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #cfd8dc; background: #f7f9fa; flex: none; }
+#studio-bar strong { font-size: 14px; }
+#studio-bar .studio-view { display: inline-flex; align-items: center; gap: 6px; color: #455a64; }
+#studio-bar select { font: inherit; padding: 3px 6px; border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; max-width: 280px; }
+#studio-bar #status { flex: 1; min-width: 0; color: #455a64; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#studio-bar nav a { color: #1565c0; }
+
+#studio { flex: 1; display: grid; grid-template-columns: 5fr 6px 2fr 6px 2fr; min-height: 0; }
+#studio .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+#studio .splitter { background: #eceff1; cursor: col-resize; border-left: 1px solid #cfd8dc; border-right: 1px solid #cfd8dc; touch-action: none; }
+#studio .splitter:hover, #studio .splitter.dragging, #studio .splitter:focus-visible { background: #90caf9; outline: none; }
+#pane-diagram #editor { flex: 1; }
+
+.pane-head { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid #eceff1; background: #f7f9fa; font-weight: 600; color: #37474f; flex: none; min-height: 26px; }
+.pane-head [role="tab"] { font: inherit; font-weight: 400; border: 1px solid #b0bec5; border-radius: 4px; background: #ffffff; padding: 2px 10px; cursor: pointer; }
+.pane-head [role="tab"][aria-selected="true"] { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+#projection-state { margin-left: auto; font-weight: 400; color: #607d8b; font-size: 12px; }
+
+/* The projection: monospace lines with numbers, added lines green, the selected shape's lines yellow. */
+#projection { flex: 1; overflow: auto; padding: 8px; background: #fbfcfc; outline: none; }
+#projection .file { margin-bottom: 12px; border: 1px solid #e0e6e9; border-radius: 4px; background: #ffffff; }
+#projection .file-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid #eceff1; background: #f7f9fa; position: sticky; top: -8px; z-index: 1; }
+#projection .file-head code { font: 12px ui-monospace, monospace; word-break: break-all; }
+.badge { font-size: 11px; color: #607d8b; border: 1px solid #cfd8dc; border-radius: 8px; padding: 0 6px; white-space: nowrap; }
+.badge.changed { color: #2e7d32; border-color: #a5d6a7; background: #e8f5e9; }
+#projection .code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 0; }
+#projection .line { display: flex; white-space: pre; }
+#projection .line .ln { flex: none; width: 3.5em; padding-right: 8px; text-align: right; color: #90a4ae; user-select: none; }
+#projection .line .tx { flex: 1; padding-right: 8px; white-space: pre-wrap; word-break: break-word; }
+#projection .line.added { background: #e8f5e9; box-shadow: inset 3px 0 0 #43a047; }
+#projection .line.hit { background: #fff8c5; box-shadow: inset 3px 0 0 #f9a825; }
+#projection .line.added.hit { background: #f0f4c3; }
+#projection p { margin: 6px 0; white-space: pre-wrap; }
+#projection .projection-error { color: #b71c1c; background: #fff3e0; border-radius: 4px; padding: 6px 8px; }
+#projection .projection-warning { color: #8d6e00; }
+#projection .projection-note, #projection .projection-empty { color: #607d8b; }
+
+/* The chat: messages, the proposal cards with their hunks, the form at the bottom. */
+#chat-log { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; background: #fbfcfc; }
+#chat-log .msg { border-radius: 6px; padding: 6px 8px; max-width: 100%; }
+#chat-log .msg .who { display: block; font-size: 11px; color: #78909c; margin-bottom: 2px; }
+#chat-log .msg .body { white-space: pre-wrap; word-break: break-word; }
+#chat-log .msg.you { background: #e3f2fd; align-self: flex-end; }
+#chat-log .msg.clip { background: #ffffff; border: 1px solid #e0e6e9; }
+#chat-log .msg.wait { color: #78909c; font-style: italic; }
+#chat-log .msg.error { background: #fff3e0; color: #8d4a00; }
+#chat-log .proposal { border: 1px solid #a5d6a7; border-radius: 6px; background: #ffffff; overflow: hidden; }
+#chat-log .proposal[data-state="rejected"] { border-color: #cfd8dc; opacity: 0.75; }
+#chat-log .proposal-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: #f1f8e9; }
+#chat-log .proposal-head code { font: 12px ui-monospace, monospace; word-break: break-all; }
+#chat-log .hunks { font: 12px/1.45 ui-monospace, monospace; max-height: 320px; overflow: auto; }
+#chat-log .hunk-head { color: #6a1b9a; background: #f3e5f5; padding: 1px 8px; }
+#chat-log .hunk .add, #chat-log .hunk .del { white-space: pre-wrap; word-break: break-word; padding: 0 8px; }
+#chat-log .hunk .add { background: #e8f5e9; color: #1b5e20; }
+#chat-log .hunk .del { background: #ffebee; color: #b71c1c; }
+#chat-log .proposal-actions { display: flex; gap: 6px; padding: 6px 8px; border-top: 1px solid #eceff1; }
+#chat-log .proposal-actions button { font: inherit; border-radius: 4px; padding: 3px 12px; cursor: pointer; border: 1px solid #b0bec5; background: #ffffff; }
+#chat-log .proposal-actions .accept { background: #2e7d32; border-color: #2e7d32; color: #ffffff; }
+#chat-log .proposal-actions button:disabled { opacity: 0.5; cursor: default; }
+#chat-log .proposal-result { margin: 0; padding: 0 8px 6px; color: #455a64; }
+#chat-log .proposal-result:empty { display: none; }
+#chat-form { flex: none; border-top: 1px solid #cfd8dc; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: #f7f9fa; }
+#chat-input { font: inherit; resize: vertical; min-height: 54px; padding: 6px 8px; border: 1px solid #b0bec5; border-radius: 4px; }
+.chat-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.chat-actions button { font: inherit; border-radius: 4px; padding: 4px 12px; cursor: pointer; border: 1px solid #b0bec5; background: #ffffff; }
+.chat-actions #chat-send { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+.chat-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* A narrow window: the panes stack, each a third of the height. */
+@media (max-width: 900px) {
+  #studio { grid-template-columns: 1fr !important; grid-template-rows: 1fr 1fr 1fr; }
+  #studio .splitter { display: none; }
+}
+
+/* The editor in a pane: a narrower palette and properties panel leave the canvas room. */
+body.studio #editor .editor-palette { width: 112px; }
+body.studio #editor .editor-panel { width: 220px; }

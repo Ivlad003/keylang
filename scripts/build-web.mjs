@@ -1,4 +1,5 @@
-// Bundles the diagram client (web/src/diagrams.ts) with esbuild into
+// Bundles the diagram client (web/src/diagrams.ts) and the studio
+// (web/src/studio.ts, studio.js and studio.css) with esbuild into
 // dist/web/diagrams.js and diagrams.css, and the analysis in the browser
 // (web/worker/analysis.ts, `app.html` of `web --export`) into analysis.js
 // with the tree-sitter WASM files beside it in wasm/; copies the license of
@@ -161,7 +162,8 @@ mkdirSync(outdir, { recursive: true });
 
 const common = { absWorkingDir: root, bundle: true, format: "iife", platform: "browser", target: "es2022", minify: true, legalComments: "none", metafile: true, write: false, outdir, logLevel: "warning" };
 
-const page = await build({ ...common, entryPoints: [join(root, "web/src/diagrams.ts")], plugins: [leanOutline] });
+// Two pages, one build: the studio shares the editor and its styles with the diagram page.
+const page = await build({ ...common, entryPoints: [join(root, "web/src/diagrams.ts"), join(root, "web/src/studio.ts")], plugins: [leanOutline] });
 
 const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
