@@ -397,6 +397,10 @@ export function hoverContent(ws: Workspace, path: string, position: LspPosition)
   const title: HoverRun[] = [{ text: info.kind, strong: true }, { text: " " }, { text: info.id, code: true }];
 
   if (info.signature) title.push({ text: " " }, { text: info.signature, code: true });
+  // A `planned type` with fields shows its planned shape after the signature.
+  const fields = plannedDeclaration(ws.analysis.docs, target.id)?.fields;
+
+  if (fields) title.push({ text: " " }, { text: `{ ${fields.map((f) => `${f.name}${f.optional ? "?" : ""}: ${f.type}`).join("; ")} }`, code: true });
   const state = info.state.join(", ");
   const place = info.file ? `${info.file}:${info.line}${state === "" ? "" : ` · ${state}`}` : state === "" ? null : state;
   // Evidence: the verdicts on this very line for this ID, else every

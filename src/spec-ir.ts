@@ -198,6 +198,19 @@ export interface Planned extends Located {
   decl: "fn" | "module" | "type" | "event";
   id: string;
   signature: string | null;
+  /** The fields nested under `planned type`, in source order; null when it has none (or is another kind). */
+  fields: PlannedField[] | null;
+}
+
+/** `- name?: Type` under `planned type`: a field of the planned shape. Names are local to the type. */
+export interface PlannedField {
+  name: string;
+  optional: boolean;
+  /** The type in canonical words, as written. */
+  type: string;
+  /** 1-based line and column (code points) of the field's line. */
+  line: number;
+  col: number;
 }
 
 /** A `when` whose condition is `env.NAME = value` and whose target resolved. */
@@ -711,7 +724,20 @@ function plannedDecl(file: string, node: Node): Planned | null {
 
   if (!node.id || !decl) return null;
 
-  return { kind: "planned", decl, id: node.id, signature: node.text?.value ?? null, ...at(file, node, renderMeaning(node)) };
+  return { kind: "planned", decl, id: node.id, signature: node.text?.value ?? null, fields: plannedFields(node), ...at(file, node, renderMeaning(node)) };
+}
+
+/** The well-formed fields under a `planned type` (name and type present), or null when there are none. */
+export function plannedFields(node: Node): PlannedField[] | null {
+  if (node.label?.value !== "type") return null;
+  const fields: PlannedField[] = [];
+
+  for (const child of node.children) {
+    if (child.kind !== "field" || !child.name || !child.text) continue;
+    fields.push({ name: child.name.value, optional: child.label !== null, type: child.text.value, line: child.span.start.line, col: child.span.start.col });
+  }
+
+  return fields.length > 0 ? fields : null;
 }
 
 /** A `# wiring` section: wire targets → named dependencies → `compose` and `when` options; incomplete lines are skipped. */
@@ -804,6 +830,8 @@ function flowAt(file: string, flow: string, node: Node): Located {
 export interface PlannedDeclaration {
   kind: string;
   signature: string | null;
+  /** The fields of a `planned type`; null without any. */
+  fields: PlannedField[] | null;
   file: string;
   /** 1-based line and column (code points) of the item. */
   line: number;
@@ -834,7 +862,7 @@ export function plannedDeclaration(docs: readonly Document[], id: string): Plann
       for (const top of sectionNodes(section)) {
         const node = find(top);
 
-        if (node) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
+        if (node) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, fields: plannedFields(node), file: doc.path, line: node.span.start.line, col: node.span.start.col };
       }
     }
   }

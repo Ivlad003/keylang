@@ -9,7 +9,7 @@
 // resolvable symbol; a *pass* is a function handed to a call as a value.
 
 import { builtinModules } from "node:module";
-import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, WebCallFact, WebFacts, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import type { CallFact, DeclFact, CodeDecorator, DecoratorArg, EntryFact, WebCallFact, WebFacts, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeFieldFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprintFacts, grammarFor, located, query, startCol, valuesFingerprint, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
@@ -436,7 +436,11 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
         const name = node.childForFieldName("name")?.text;
 
         if (!name) return;
-        facts.decls.push(decl("type", name, node, typeSignature(node), exported, [], collectTypeRefs(node), []));
+        const fact = decl("type", name, node, typeSignature(node), exported, [], collectTypeRefs(node), []);
+        const shape = typeShape(node);
+
+        if (shape !== undefined) fact.shape = shape;
+        facts.decls.push(fact);
         break;
       }
 
@@ -1186,8 +1190,78 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const classDecorators = [...(wrapper?.type === "export_statement" ? decoratorsOf(wrapper) : []), ...decoratorsOf(cls)];
 
   if (classDecorators.length > 0) out.decorators = classDecorators;
+  // The class's shape: its public typed instance fields. Without any (a JavaScript class) it stays unknown.
+  const shape = items.flatMap((m) => classField(m) ?? []);
+
+  if (shape.length > 0) out.shape = shape;
 
   return out;
+}
+
+/**
+ * The shape of an interface (its body) or of a type alias whose value is an
+ * object type literal; undefined for an enum, any other alias and a body
+ * tree-sitter could not read. `planned type` fields are checked against it.
+ */
+function typeShape(node: Node): TypeFieldFact[] | undefined {
+  const body = node.type === "interface_declaration" ? node.childForFieldName("body") : node.type === "type_alias_declaration" ? node.childForFieldName("value") : null;
+
+  if (!body || (body.type !== "interface_body" && body.type !== "object_type")) return undefined;
+
+  return body.namedChildren.flatMap((m) => signatureField(m) ?? []);
+}
+
+/**
+ * One member of an interface or object type: `name?: T` from a property
+ * signature, `name?: (params) => R` from a method signature. Null for an
+ * index, call or construct signature, a quoted or computed name, and a
+ * member without a type annotation (a method without a return type).
+ */
+function signatureField(m: Node): TypeFieldFact | null {
+  const name = m.childForFieldName("name");
+
+  if (!name || name.type !== "property_identifier") return null;
+  const optional = m.children.some((c) => c.type === "?");
+
+  if (m.type === "property_signature") {
+    const type = annotation(m.childForFieldName("type"));
+
+    return type === null ? null : { name: name.text, optional, type };
+  }
+
+  if (m.type !== "method_signature") return null;
+  const params = m.childForFieldName("parameters");
+  const ret = annotation(m.childForFieldName("return_type"));
+
+  return params && ret !== null ? { name: name.text, optional, type: `${collapse(params.text)} => ${ret}` } : null;
+}
+
+/**
+ * A public instance field of a class with a type annotation: not `static`,
+ * `private`, `protected` or `#private`, and not a field whose value is a
+ * function (that one is a method of the map). Null for anything else.
+ */
+function classField(m: Node): TypeFieldFact | null {
+  if (m.type !== "public_field_definition" && m.type !== "field_definition") return null;
+  const name = m.childForFieldName("name") ?? m.childForFieldName("property");
+
+  if (!name || name.type !== "property_identifier") return null;
+
+  if (m.children.some((c) => c.type === "static" || (c.type === "accessibility_modifier" && c.text !== "public"))) return null;
+  const value = m.childForFieldName("value");
+
+  if (value && FUNCTION_VALUES.has(unwrapValue(value).type)) return null;
+  const type = annotation(m.childForFieldName("type"));
+
+  return type === null ? null : { name: name.text, optional: m.children.some((c) => c.type === "?"), type };
+}
+
+/** The type of a `: T` annotation node, whitespace collapsed; null without one. */
+function annotation(node: Node | null): string | null {
+  if (!node) return null;
+  const type = collapse(node.text.replace(/^:\s*/, ""));
+
+  return type === "" ? null : type;
 }
 
 /** The decorators that are children of a node: a class, an `export` statement, a member, a parameter. */

@@ -27,7 +27,7 @@ import { components } from "./scc.ts";
 export const SNAPSHOT_SCHEMA = 9;
 
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.24";
+export const EXTRACTOR_VERSION = "m1.25";
 
 /** How far an edge's target is known: one symbol, several candidates, or none. */
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
@@ -243,6 +243,19 @@ export interface SnapshotNode {
   values?: string;
   /** fn: the plugins the framework's config wraps it in (ADR 0022), in the order they run. */
   interceptedBy?: Interception[];
+  /**
+   * type: the declared shape of a TypeScript interface or object type alias,
+   * members in source order (`planned type` fields are checked against it).
+   * Absent when unknown; the map does not print it.
+   */
+  shape?: TypeField[];
+}
+
+/** One member of a type's shape: `note?: string` is `{ name: "note", optional: true, type: "string" }`. */
+export interface TypeField {
+  name: string;
+  optional: boolean;
+  type: string;
 }
 
 /** A plugin method that wraps a fn, from a framework config. */
@@ -508,6 +521,8 @@ export function buildSnapshot(
       };
 
       if (t.fingerprint !== undefined) typeNode.fingerprint = sha256(t.fingerprint);
+
+      if (t.shape !== undefined) typeNode.shape = t.shape.map((f) => ({ name: f.name, optional: f.optional, type: f.type }));
       nodes[t.id] = typeNode;
     }
 

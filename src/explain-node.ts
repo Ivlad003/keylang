@@ -78,6 +78,8 @@ export interface NodeSummary {
   holes: Record<string, number>;
   fingerprint: { own: string; closure: string; complete: boolean } | null;
   planned: boolean;
+  /** A `planned type` without code: its planned fields as `name?: type`; absent otherwise. */
+  fields?: string[];
 }
 
 /** A summary, or the unknown ID with the nearest declared ID as a suggestion. */
@@ -129,9 +131,12 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   }
 
   // A plan without code: only what the `planned` line and the specs say.
-  return {
-    summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], interceptedBy: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
-  };
+  const summary: NodeSummary = { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], interceptedBy: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true };
+  const fields = plannedDeclaration(analysis.docs, id)?.fields;
+
+  if (fields) summary.fields = fields.map((f) => `${f.name}${f.optional ? "?" : ""}: ${f.type}`);
+
+  return { summary };
 }
 
 /** The observers of an event, in config order: the fn, the observer's name, its config line and area. */
@@ -208,6 +213,9 @@ export function formatSummary(s: NodeSummary): string {
   if (whereText) lines.push(whereText);
 
   if (s.doc) lines.push(`doc: ${s.doc}`);
+
+  // A type's field may hold a comma (`Map<string, number>`): fields are separated by `;`.
+  if (s.fields) lines.push(`fields: ${s.fields.join("; ")}`);
 
   const list = (label: string, items: readonly string[]): void => {
     if (items.length > 0) lines.push(`${label}: ${items.join(", ")}`);

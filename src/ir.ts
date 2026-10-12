@@ -89,6 +89,8 @@ export type NodeKind =
   | "wire"
   /** `planned <kind> <id> <signature>` — an intention, not an implementation. */
   | "planned"
+  /** `<name>[?]: <type>` under `planned type`: `name` the field, `label` `?` when optional, `text` the type. Not an ID. */
+  | "field"
   /** `alias path` under `wire`. */
   | "wire-dep"
   | "compose"

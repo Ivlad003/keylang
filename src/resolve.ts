@@ -213,6 +213,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
           } else if (n.kind === "planned" && n.id !== null) {
             // With or without code: a second declaration of one intention is a duplicate.
             insert(index.planned, { id: n.id, kind: "planned", file: doc.path, span: n.span, hasMembers: false }, "planned", diags);
+            duplicateFields(doc.path, n, diags);
           }
         });
       }
@@ -247,6 +248,19 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
   }
 
   return { index, diagnostics: diags, unverified };
+}
+
+/** K002 for a field name repeated under one `planned type`: field names are local to their type, like columns to their table. */
+function duplicateFields(file: string, planned: Node, diags: Diagnostic[]): void {
+  const seen = new Map<string, Node>();
+
+  for (const field of planned.children) {
+    if (field.kind !== "field" || !field.name) continue;
+    const first = seen.get(field.name.value);
+
+    if (first?.name) diags.push(diagnostic("K002", file, field.name.span, `duplicate field \`${field.name.value}\` of \`${planned.id ?? ""}\` (first declared at ${file}:${first.name.span.start.line}:${first.name.span.start.col})`));
+    else seen.set(field.name.value, field);
+  }
 }
 
 /** Adds `decl`, or reports K002 against the first declaration of the same ID; `what` names the namespace. */

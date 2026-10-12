@@ -16,7 +16,7 @@ import { asciiLowerCase, caselessNames, constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import { scheduleText } from "./parser.ts";
-import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, TimerItem, Trigger, WhenItem } from "./spec-ir.ts";
+import type { ClaimItem, FlowItem, PlannedField, SpecIR, TestItem, ThenItem, TimerItem, Trigger, WhenItem } from "./spec-ir.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
 import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
@@ -65,6 +65,8 @@ interface SnapshotNodeView {
   line: number | null;
   endLine?: number;
   escapes?: { file: string; line: number; col: number; reason: string };
+  /** type: the declared shape (TypeScript), absent when unknown. */
+  shape?: readonly { name: string; optional: boolean; type: string }[];
 }
 
 /** The code side of a flow check: the snapshot's nodes, edges and coverage, plus test and trace evidence. */
@@ -1358,6 +1360,11 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
       diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${where})`));
     } else if (mismatch === "signature") {
       diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${where})`));
+    } else if (mismatch === "fields") {
+      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` differs from the code in its fields (${where}): ${fieldDifferences(item.fields ?? [], code.shape ?? []).join("; ")}`));
+    } else if (item.fields !== null && code.shape === undefined) {
+      // The plan has fields the code's shape cannot confirm (an enum, a union alias, a language without shapes).
+      diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${where}); its fields are not checked, the code's shape is unknown; remove the declaration`));
     } else {
       diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${where}); remove the declaration`));
     }
@@ -1384,13 +1391,53 @@ function codeLocation(id: string, code: SnapshotNodeView, edges: readonly Snapsh
   return first === null ? "in the code" : `imported by ${first.file}:${first.line}`;
 }
 
-/** How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches. */
-export function plannedMismatch(item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }): "kind" | "signature" | null {
+/**
+ * How the code differs from a `planned` declaration of the same id: K201 for
+ * a kind, a signature or the fields of a `planned type`, null (K202) when it
+ * matches. Fields are compared only when the code's shape is known.
+ */
+export function plannedMismatch(
+  item: { decl: string; signature: string | null; fields?: readonly PlannedField[] | null },
+  code: { kind: string; signature?: string | null; file?: string | null; shape?: readonly CodeField[] },
+): "kind" | "signature" | "fields" | null {
   if (code.kind !== item.decl) return "kind";
 
   if (item.signature !== null && code.signature && !sameSignature(item.signature, code.signature, code.file ?? null)) return "signature";
 
+  if (item.fields && code.shape !== undefined && fieldDifferences(item.fields, code.shape).length > 0) return "fields";
+
   return null;
+}
+
+/** A member of a type's shape in the snapshot. */
+type CodeField = { name: string; optional: boolean; type: string };
+
+/** How many field differences a K201 names before `and N more`. */
+const SHOWN_FIELD_DIFFERENCES = 3;
+
+/**
+ * The differences between the planned fields and the code's shape, in plan
+ * order: a missing field, another type (compared like signatures, without
+ * spaces), or another optionality. Extra fields in the code are allowed: the
+ * code grows past the plan. Empty when every planned field matches.
+ */
+export function fieldDifferences(planned: readonly PlannedField[], shape: readonly CodeField[]): string[] {
+  const byName = new Map(shape.map((field) => [field.name, field]));
+  const differences: string[] = [];
+
+  // One line per planned field that the code lacks or declares otherwise.
+  for (const field of planned) {
+    const code = byName.get(field.name);
+
+    if (!code) differences.push(`missing field ${field.name}`);
+    else if (normalizeSignature(field.type) !== normalizeSignature(code.type)) differences.push(`field ${field.name}: ${field.type} ≠ ${code.type}`);
+    else if (field.optional && !code.optional) differences.push(`field ${field.name} is optional in the plan`);
+    else if (!field.optional && code.optional) differences.push(`field ${field.name} is optional in the code`);
+  }
+
+  if (differences.length <= SHOWN_FIELD_DIFFERENCES) return differences;
+
+  return [...differences.slice(0, SHOWN_FIELD_DIFFERENCES), `and ${differences.length - SHOWN_FIELD_DIFFERENCES} more`];
 }
 
 /**

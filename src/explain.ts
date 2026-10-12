@@ -87,12 +87,12 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     fix: "Restore the spec and fix the code. Rules and keylang.json change only as a proposal to a person; a person who accepts the change runs `keylang check --changed --accept-weakening` (never an agent) and commits it.",
   },
   K201: {
-    cause: "A `planned` declaration names a symbol that now exists with another kind or signature.",
-    example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id.",
-    fix: "Change the code or the declaration so kind and signature agree, then remove the `planned` line.",
+    cause: "A `planned` declaration names a symbol that now exists with another kind or signature, or a `planned type` whose fields the code's shape lacks or declares otherwise (another type, another optionality; extra fields in the code are fine).",
+    example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id; `- total: Money` under `planned type app.Order` while `interface Order` has `total: number`.",
+    fix: "Change the code or the declaration so kind, signature and fields agree, then remove the `planned` line.",
   },
   K202: {
-    cause: "A `planned` declaration is implemented: the code has the symbol with the same kind and signature.",
+    cause: "A `planned` declaration is implemented: the code has the symbol with the same kind and signature, and a `planned type` has every field it plans. When the code's shape is unknown (an enum, a union alias, a language other than TypeScript), the fields are not checked and the message says so.",
     example: "`planned fn app.refund (order: Order) → Refund` after `export function refund(order: Order): Refund` was added.",
     fix: "Remove the `planned` line; the step is already checked as implemented code.",
   },
@@ -153,6 +153,7 @@ const K005_REASON_LINES = [
   "- quote: an unclosed quote, such as `test f.ts \"x` → `test f.ts \"x\"`",
   "- layer: `layers a < a`, a dotted name, or two orders that disagree → `layers domain < app`, one order of plain names",
   "- scope: `deny app app.checkout.buy` names a fn instead of its module → `deny app app.checkout`",
+  "- field: a line under `planned type` that is no field, such as `- total Money` or `- 1st: string` → `- total: Money`, `- note?: string`",
 ];
 
 /** Whether `text` is a known diagnostic code; own keys only, so `constructor` is not one. */

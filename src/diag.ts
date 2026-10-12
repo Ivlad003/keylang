@@ -71,7 +71,7 @@ export type Code =
 export type Severity = "error" | "warning";
 
 /** Why a K005 is malformed. Other codes do not carry this. */
-export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope";
+export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope" | "field";
 
 /** The fixed severity of a code: a short list of warnings, everything else an error. */
 export function severityOf(code: Code): Severity {
@@ -108,7 +108,7 @@ export interface Diagnostic {
 }
 
 // The runtime list of K005 reasons, used to check the overloaded `extra` argument.
-const K005_REASONS: readonly K005Reason[] = ["arguments", "id", "link", "quote", "layer", "scope"];
+const K005_REASONS: readonly K005Reason[] = ["arguments", "id", "link", "quote", "layer", "scope", "field"];
 
 /**
  * Build a diagnostic with the code's severity. The last argument is a K005's

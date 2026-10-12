@@ -309,6 +309,7 @@ Alias залежності не збігається з контекстним �
 | під компонентом | `code`, `calls`, `reads`, `writes`, `publishes`, `consumes`, `replicates`, `uses`, `scale`, `table` | K004 |
 | під `table` | `index` | `<name> <type> [прапорці]` — колонка |
 | під `sequence` | — | `<from> → <to> [текст]` — повідомлення |
+| під `planned type` | — | `<name>[?]: <type>` — поле |
 | під `layer` | `module`, `event` (згенерована група `events`, [semantics.md](semantics.md) §6) | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
 | під `fn`, під `event` | `calls` (під `event` — observers, які викликає фреймворк) | K004 |
@@ -402,7 +403,8 @@ keylang/system/shortener.md:21:18: K005 unknown column flag `maybe`; expected on
 | `continues <flow>` | ім'я потоку | `text`; потік, якого немає, — K206 |
 | `after <тривалість>` | число й одиниця `ms`, `s`, `m`, `min`, `h`, `d`, `w` (`30m`) | `text` |
 | `every <розклад>` | тривалість, cron-макрос (`@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@yearly`, `@annually`) або п'ять-шість полів cron, голих чи в лапках | `text`; у SpecIR — без лапок |
-| `planned fn\|module\|type\|event <id> [signature]` | вид, ID, довільний підпис | намір; не оголошення в індексі і не ребро знімка |
+| `planned fn\|module\|type\|event <id> [signature]` | вид, ID, довільний підпис | намір; не оголошення в індексі і не ребро знімка. Під `planned type` — поля |
+| `<name>[?]: <type>` (під `planned type`) | ім'я-ідентифікатор, `?` одразу після нього, `:`, тип до кінця рядка | `field`: `name` — ім'я, `label` — `?` або `null`, `text` — тип канонічними словами; не ID |
 | `emits [event] <name>` | ім'я події | `text`; ID з групи `events` (`events.<назва>`, голе чи лінком) — ще й посилання на подію (невідома — K204), будь-яке інше ім'я — проза, не резолвиться |
 | `invariant <текст>` | довільний текст | `text` |
 | `? <текст>` | довільний текст, обов'язковий | `text`; відкрите питання, не твердження (Р16) |
@@ -444,6 +446,46 @@ keylang/map.md:1:11: K005 unexpected arguments after layer `options` (a dependen
 
 ```diagnostics
 keylang/flows/pay.md:3:8: K005 `planned` is a declaration, not a step modifier: add `- planned fn app.pay.charge` at the top of the flow and keep `- step app.pay.charge`
+```
+
+**Поля `planned type`.** Рядки під `planned type` — поля його форми, як колонки під `table`: `<name>[?]: <type…>`. `name` — ідентифікатор `[A-Za-z_$][A-Za-z0-9_$]*`, `?` одразу після імені — необов'язкове поле, тип — решта рядка, не порожня, вільним текстом (`Map<string, number>`, `(x: T) => R`). У IR це вузол `field`: `name`, `label` `?` або `null`, `text` — тип. `fmt` пише поле як `- name?: type`. Поле не є ID: не індексується й не резолвиться. Некоректний рядок (без `:`, порожній тип, ім'я не ідентифікатор) — K005 з `reason` `field`; поля під псевдонімом (`planned type <id> = …`) — K005 `arguments` на першому полі; повтор імені — K002 (дає `check`). Під `planned fn`, `module` чи `event` рядок `x: T` — K004, як і раніше. `extends …` з полями дозволено. Як поля звіряються з кодом — [semantics.md](semantics.md) §6, `planned`; як стають TypeScript — `keylang types` ([cli.md](cli.md#types)).
+
+```keylang path=keylang/flows/checkout.md
+# flow checkout
+
+- planned type orders.Order
+  - id: string
+  - total :Money
+  - note?: string
+  - id: number
+  - 1st: string
+  - items OrderLine[]
+- planned type orders.Money = { amount: number; currency: string }
+  - amount: number
+- planned type orders.PaidOrder extends Order
+  - paidAt: Date
+```
+```fmt
+# flow checkout
+
+- planned type orders.Order
+  - id: string
+  - total: Money
+  - note?: string
+  - id: number
+  - 1st: string
+  - items OrderLine[]
+- planned type orders.Money = { amount: number; currency: string }
+  - amount: number
+- planned type orders.PaidOrder extends Order
+  - paidAt: Date
+```
+
+```diagnostics
+keylang/flows/checkout.md:7:5: K002 duplicate field `id` of `orders.Order` (first declared at keylang/flows/checkout.md:4:5)
+keylang/flows/checkout.md:8:5: K005 invalid field name `1st`; a field name is an identifier such as `total` or `_id`
+keylang/flows/checkout.md:9:3: K005 expected a field `<name>[?]: <type>`, such as `- total: Money` or `- note?: string`
+keylang/flows/checkout.md:11:3: K005 a type alias has no fields: `planned type orders.Money = { amount: number; currency: string }` already gives its shape; remove the fields or the `= …`
 ```
 
 **Р10. `then` вгадує форму**: `then application.purchase.OutOfStock` — посилання, `then retry ≤ 3, backoff …` — текст. Критерій — рівно один токен, який є ID (голим чи текстом лінка) і містить крапку. Якщо той токен крапки не має, а його текст точно (з урахуванням регістру) дорівнює останньому сегменту оголошеного ID карти або `planned` — K008 (warning) на цьому слові, а для лінка — на ID усередині `[…]`. Підказка перелічує всіх кандидатів у стабільному порядку: `did you mean then <повний id>`. Шар (ID з одного сегмента) кандидатом не є. Багатослівний `then`, ID з крапкою і слово без кандидата мовчать; нечіткого пошуку немає. K008 не валить `check`, `--strict`, `feature` і Stop. `fmt` рядок не переписує: заміна тексту посиланням змінила б семантику. `parse` K008 не друкує, бо без індексу резолвера кандидатів немає.
@@ -748,6 +790,7 @@ under-zone = "client" -> component | "cdn" -> component | "dns" -> component | "
 under-component = "code" | "calls" -> relation | "reads" -> relation | "writes" -> relation | "publishes" -> relation | "consumes" -> relation | "replicates" -> relation | "uses" -> relation | "scale" | "table" ;
 under-table = "index" ; (* інше — колонка, column-args *)
 under-sequence = (* повідомлення message-args, без ключових слів *) ;
+under-planned-type = (* поле field-args, без ключових слів; під іншим planned — under-other *) ;
 under-other = (* K004: батько не може мати вкладених елементів *) ;
 
 (* Форми аргументів, §5. *)
@@ -791,6 +834,7 @@ table-args = ( "table" | "sequence" ) segment ;
 column-args = segment word { "pk" | "unique" | "null" | "fk" segment "." segment } ;
 index-args = "index" text ;
 message-args = segment ( "→" | "->" | "⇢" | "-->" ) segment [ text ] ;
+field-args = field-name [ "?" ] ":" text ; (* field-name — [A-Za-z_$][A-Za-z0-9_$]* *)
 interview-args = ( "requirement" | "nfr" | "estimate" | "tradeoff" | "scale" ) text ;
 ```
 

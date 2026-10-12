@@ -59,7 +59,9 @@ export function formatDocument(doc: Document): string {
 /** Append one item and its subtree to `out`: two spaces of indent per depth level, descriptions one step deeper. */
 function renderNode(out: string, n: Node, depth: number): string {
   const indent = "  ".repeat(depth);
-  out += `${indent}- ${renderTokens(n.tokens)}`;
+  // A field of `planned type` has one canonical spelling, `name?: type`, whatever spaces were written around the colon.
+  const head = n.kind === "field" && n.name && n.text ? `${n.name.value}${n.label ? "?" : ""}: ${n.text.value}` : renderTokens(n.tokens);
+  out += `${indent}- ${head}`;
 
   if (n.comment) out += `${n.tokens.length > 0 ? " " : ""}${n.comment.value}`;
   out += "\n";

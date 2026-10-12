@@ -373,6 +373,23 @@ export interface DeclFact {
   methods?: MethodSigFact[];
   /** PHP classes: the properties whose class the class body names (typed, from the constructor, or by `@var`): a subclass's `$this->x` reads them. */
   fields?: FieldFact[];
+  /**
+   * TypeScript types and classes: the declared shape, in source order — an
+   * interface's or an object type literal's property and method signatures,
+   * a class's public instance fields. A member without a type annotation and
+   * an index signature are left out. Absent when the shape is unknown (an
+   * enum, a union alias, another language); `planned type` fields are
+   * compared with it.
+   */
+  shape?: TypeFieldFact[];
+}
+
+/** One member of a type's shape: `note?: string` is `{ name: "note", optional: true, type: "string" }`; a method's type is `(x: T) => R`. */
+export interface TypeFieldFact {
+  name: string;
+  optional: boolean;
+  /** The annotation as written, whitespace collapsed. */
+  type: string;
 }
 
 /**

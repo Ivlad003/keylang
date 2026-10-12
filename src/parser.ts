@@ -111,6 +111,8 @@ type Ctx =
   | "timer"
   | "wire"
   | "wire-dep"
+  /** Under `planned type`: every line is a field `<name>[?]: <type>`. */
+  | "planned-type"
   | "unknown"
   | `leaf:${NodeKind}`;
 
@@ -161,6 +163,9 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
       return `leaf:${parent}`;
   }
 }
+
+/** A field name under `planned type`: a TypeScript identifier. */
+const FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /** The declaration kinds `planned` may name. */
 const PLANNED_KINDS: ReadonlySet<string> = new Set(["fn", "module", "type", "event"]);
@@ -882,7 +887,8 @@ class Parser {
       span: l.span(wsLen, l.text.trimEnd().length),
     };
 
-    const ctx = ctxOf(this.sectionKind(), parent?.kind);
+    // Under `planned type` the lines are fields; under any other `planned` they stay K004 (a leaf).
+    const ctx = parent?.kind === "planned" && parent.label === "type" ? "planned-type" : ctxOf(this.sectionKind(), parent?.kind);
     this.interpret(node, l, ctx, parent);
     this.stack.push(node);
   }
@@ -900,7 +906,7 @@ class Parser {
     const isKw = first.kind === "word" && keywordsOf(ctx).includes(first.text);
 
     if (!isKw) {
-      this.bare(n, ctx, parent);
+      this.bare(n, l, ctx, parent);
 
       return;
     }
@@ -1182,7 +1188,7 @@ class Parser {
   }
 
   /** Item whose first word is not a keyword of its context. */
-  private bare(n: Node, ctx: Ctx, parent: Parent | undefined): void {
+  private bare(n: Node, l: Line, ctx: Ctx, parent: Parent | undefined): void {
     const tokens = n.tokens;
     const parentId = parent?.id ?? null;
     // A keyword of another position says where it goes when the line here is wrong.
@@ -1236,6 +1242,10 @@ class Parser {
       case "sequence":
         n.kind = "message";
         this.message(n, tokens, hint);
+        break;
+      case "planned-type":
+        n.kind = "field";
+        this.field(n, l);
         break;
       case "unknown":
         break;
@@ -1480,6 +1490,73 @@ class Parser {
       if (!target || !/^[^.\s]+\.[^.\s]+$/.test(target.text) || !isId(target.text)) this.err("K005", target?.span ?? flag.span, "expected `fk <table>.<column>`", "arguments");
 
       if (target) i++;
+    }
+  }
+
+  /**
+   * `<name>[?]: <type…>` under `planned type`: `name` the field, `label` `?`
+   * when it is optional, `text` the type in canonical words. The name and
+   * the colon may touch the type (`id:string`): the line is matched as
+   * written and the type is the tokens from the first character after the
+   * colon. A field of a type alias (`planned type x.T = …`) is K005
+   * `arguments`, reported once on its first field; a malformed line is K005
+   * `field`. Repeated names are K002 of resolution (`resolve.ts`).
+   */
+  private field(n: Node, l: Line): void {
+    const first = n.tokens[0]!;
+    const last = n.tokens.at(-1)!;
+    const startIndex = first.span.start.offset - l.start;
+    const head = l.text.slice(startIndex, last.span.end.offset - l.start);
+    const match = /^([^\s:?]+)(\?)?\s*:\s*/.exec(head);
+
+    if (!match) {
+      this.err("K005", n.span, "expected a field `<name>[?]: <type>`, such as `- total: Money` or `- note?: string`", "field");
+      n.kind = "unknown";
+
+      return;
+    }
+
+    const name = match[1]!;
+
+    if (!FIELD_NAME.test(name)) {
+      this.err("K005", l.span(startIndex, startIndex + name.length), `invalid field name \`${name}\`; a field name is an identifier such as \`total\` or \`_id\``, "field");
+      n.kind = "unknown";
+
+      return;
+    }
+
+    // The type: the tokens from the first character after the colon and its
+    // spaces; a token the colon splits keeps only its part after it.
+    const typeStart = l.start + startIndex + match[0].length;
+
+    const typeTokens = n.tokens.flatMap((t): Token[] => {
+      if (t.span.end.offset <= typeStart) return [];
+
+      if (t.span.start.offset >= typeStart) return [t];
+      const cut = typeStart - l.start;
+
+      return [{ kind: t.kind, text: t.text.slice(typeStart - t.span.start.offset), span: l.span(cut, t.span.end.offset - l.start) }];
+    });
+
+    const typeFirst = typeTokens[0];
+    const typeLast = typeTokens.at(-1);
+
+    n.name = { value: nfc(name), span: l.span(startIndex, startIndex + name.length) };
+
+    if (match[2] !== undefined) n.label = { value: "?", span: l.span(startIndex + name.length, startIndex + name.length + 1) };
+
+    if (!typeFirst || !typeLast) {
+      this.err("K005", n.span, `field \`${name}\` needs a type, such as \`- ${name}: string\``, "field");
+
+      return;
+    }
+
+    n.text = { value: renderTokens(typeTokens), span: { start: typeFirst.span.start, end: typeLast.span.end } };
+    // A type alias has its shape after `=`: fields would be a second one.
+    const owner = this.stack.at(-1);
+
+    if (owner?.text?.value.startsWith("=") && !owner.children.some((c) => c.kind === "field")) {
+      this.err("K005", n.span, `a type alias has no fields: \`planned type ${owner.id ?? ""} ${owner.text.value}\` already gives its shape; remove the fields or the \`= …\``, "arguments");
     }
   }
 

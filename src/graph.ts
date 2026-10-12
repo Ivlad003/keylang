@@ -11,7 +11,7 @@ import { posix } from "node:path";
 import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
-import type { ArgFact, CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, MethodSigFact, OutsideDeclFact, ResultCallFact, ResultTypeFact, TypeRefFact, ValueOfFact } from "./extract/facts.ts";
+import type { ArgFact, CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, MethodSigFact, OutsideDeclFact, ResultCallFact, ResultTypeFact, TypeFieldFact, TypeRefFact, ValueOfFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
@@ -281,6 +281,8 @@ export interface TypeNode {
   exported: boolean;
   fingerprint?: string;
   doc?: string;
+  /** The declared shape (TypeScript interfaces and object type aliases); absent when unknown. */
+  shape?: TypeFieldFact[];
 }
 
 /** Counters the map header and `--stats` report. */
@@ -3279,6 +3281,8 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
     if (d.fingerprint !== undefined) type.fingerprint = d.fingerprint;
 
     if (d.doc !== undefined) type.doc = d.doc;
+
+    if (d.shape !== undefined) type.shape = d.shape;
     module.types.push(type);
     decls.types.add(id);
     stats.types++;
