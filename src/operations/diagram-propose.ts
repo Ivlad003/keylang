@@ -222,7 +222,8 @@ export async function runDiagramPropose(request: DiagramProposeRequest, context:
     const problem = proposalProblem(root, specDir, target.target, generated);
     const store = `${PROPOSALS_DIR}/${target.target}`;
     const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
-    const refusal = proposalRefusal(root, { target: target.target, problem, pending }, "refuse", "diagram propose");
+    // `print` writes nothing, so a proposal already waiting does not stop it (the studio projects a canvas while one waits).
+    const refusal = proposalRefusal(root, { target: target.target, problem, pending }, request.print === true ? "replace" : "refuse", "diagram propose");
 
     if (refusal !== null) return { ...out, status: "refused", exitCode: refusal.exitCode, error: refusal.error };
     candidates.push({ ...target, pending });
