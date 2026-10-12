@@ -13,7 +13,8 @@
 // Sits at the I/O edge of the CLI/web: it narrows what `check`, `feature` and
 // `code-to-spec` look at; it never builds IR or a graph itself. Entry points:
 // `gitChangedFiles`, `gitChangedLines`, `gitFileAt`, `gitSpecFilesAt`,
-// `readFeatureBase`, `featureBaseOrigin`, `gitSummary`.
+// `readFeatureBase`, `featureBaseOrigin`, `gitSummary`; `gitIn` and
+// `assertRef` for the other git readers (revision-tree.ts).
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -36,13 +37,13 @@ export interface ChangedFiles {
 }
 
 /** Git in one root: `run` returns what git did, `git` its stdout or throws. */
-interface GitRunner {
+export interface GitRunner {
   run: (args: string[]) => SpawnSyncReturns<string>;
   git: (args: string[]) => string;
 }
 
 /** A git runner for `root`; `label` names the caller in its errors (`check --changed`). */
-function gitIn(root: string, label: string): GitRunner {
+export function gitIn(root: string, label: string): GitRunner {
   // Paths as they are, not C-quoted octal escapes, whatever the user's `core.quotePath`.
   // stdin is the null device, never a pipe: the Codex sandbox (seccomp) forbids
   // the `shutdown` that closes a piped stdin, so spawnSync failed with EPERM and
@@ -71,7 +72,7 @@ export function gitUnavailable(label: string, error: Error & { code?: string }):
 }
 
 /** A ref git would read as an option (`--output=…`) is refused: it is never passed on. */
-function assertRef(ref: string, label: string): void {
+export function assertRef(ref: string, label: string): void {
   if (ref.startsWith("-")) throw new Error(`${label}: \`${ref}\` is not a git ref`);
 }
 

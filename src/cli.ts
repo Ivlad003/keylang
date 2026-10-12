@@ -374,6 +374,20 @@ Commands:
                             statement or obsolete entry is listed. Writes nothing;
                             --accept writes the current fingerprints of the checked
                             specs after review
+  diff [<base>[..<head>]] [--format text|md|mermaid|json] [--level module|fn]
+                            What a change does to the architecture: modules (--level
+                            fn: also functions) added, removed or changed (signature,
+                            body, deps, layer, file — not lines), dependency edges
+                            (and calls) that appeared or went, flow steps, new and
+                            fixed findings, spec weakened (K108). Default <base>: the
+                            base of a feature (as feature); default <head>: the
+                            working tree; <base>..<head>: two commits. A commit is
+                            analysed in a temporary directory (git ls-tree and
+                            cat-file; .git is not written, the fact cache only read).
+                            --format md: a PR comment with a mermaid picture;
+                            mermaid: the picture only; json: the GraphDiff model.
+                            0 nothing new fails, 1 a new fail or K108, 2 bad ref,
+                            no git or bad invocation; writes nothing
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only);
                             a file it cannot read or write is named and the rest are done (exit 2)
@@ -545,6 +559,8 @@ async function run(argv: readonly string[]): Promise<number> {
         accept: values.accept === true,
         acceptWeakening: values["accept-weakening"] === true,
       });
+    case "diff":
+      return cmdDiff(paths, values.format ?? "text", values.level ?? "module");
     case "explain":
       return cmdExplain(paths[0], {
         llm: values.llm === true,
@@ -2103,6 +2119,31 @@ async function cmdFeature(slug: string | undefined, format: string, since: strin
   process.stderr.write(`${featureSummary(report)}\n`);
 
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang diff [<base>[..<head>]]`: the architecture diff between two
+ * revisions, on stdout in the chosen format. 1 when the change brings a new
+ * fail (a finding or K108), 0 otherwise; a bad ref, no git, a bad format or
+ * level is an error (2). Writes nothing.
+ */
+async function cmdDiff(args: readonly string[], format: string, level: string): Promise<number> {
+  const { DIFF_FORMATS, diffMarkdown, diffMermaid, diffText, isDiffFormat } = await import("./graph-diff-format.ts");
+  const { DIFF_LEVELS, isDiffLevel, newFails } = await import("./graph-diff.ts");
+  const { parseRange, runGraphDiff } = await import("./graph-diff-run.ts");
+
+  // The invocation first: nothing reads git before it is valid.
+  if (args.length > 1) throw new Error(`diff: unexpected argument \`${args[1]}\`; a range is one <base>..<head>`);
+
+  if (!isDiffFormat(format)) throw new Error(`diff: unknown --format \`${format}\`; expected ${DIFF_FORMATS.join(", ")}`);
+
+  if (!isDiffLevel(level)) throw new Error(`diff: unknown --level \`${level}\`; expected ${DIFF_LEVELS.join(", ")}`);
+  const run = await runGraphDiff({ root: findRoot(process.cwd()), range: parseRange(args[0], "diff"), level, label: "diff" });
+  // One format per run; json is the model itself.
+  const text = format === "json" ? `${JSON.stringify(run.diff, null, 2)}\n` : format === "md" ? diffMarkdown(run.diff, run.subgraph) : format === "mermaid" ? diffMermaid(run.subgraph) : diffText(run.diff);
+  process.stdout.write(text);
+
+  return newFails(run.diff) > 0 ? 1 : 0;
 }
 
 /** `hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2). */

@@ -57,6 +57,8 @@ export interface DiagramNode {
   /** The code (`id`, `file`, `line`) and the spec line (`specFile`, `specLine`) the shape stands for. */
   ref?: { id?: string; file?: string; line?: number; specFile?: string; specLine?: number };
   verdict?: DiagramVerdict;
+  /** The picture of a diff (`GET /api/graph-diff`): added, removed or changed since the base; null for context. */
+  diff?: "added" | "removed" | "changed" | null;
   /** A `hole`: why the route is not proven, as `check` says it. */
   reason?: string;
   /** The lane (layer) the shape sits in. */
@@ -76,6 +78,8 @@ export interface DiagramEdge {
   /** A `relation` or `message` that does not wait for an answer (`publishes`, `consumes`, `⇢`). */
   async?: boolean;
   verdict?: DiagramVerdict;
+  /** The picture of a diff: an edge only the head (added) or the base (removed) has; null when both have it. */
+  diff?: "added" | "removed" | null;
 }
 
 /** A lane: one layer, a band across the diagram. */

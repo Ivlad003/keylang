@@ -106,6 +106,8 @@ You can also start a project from a drawing. `keylang web --new <dir>` opens the
 
 The same views also leave the browser as files. `keylang export bpmn <flow>` writes BPMN 2.0, `keylang export drawio <view>` a draw.io file, and `keylang export c4` a C4 diagram for PlantUML or Mermaid. If someone changes a drawing in draw.io, `keylang import drawio <file>` reads it back as one proposal for the flow's spec.
 
+For a review, `keylang diff` shows what a branch does to the architecture rather than which files it touched: modules added, removed or changed, dependency edges that appeared or went, changed flow steps, and new or fixed findings. By default it compares the branch's base (the merge-base with the main branch) with the working tree; `keylang diff main..feature` compares two commits. `--format md` gives a PR comment with tables and a mermaid picture, and exit code 1 means the change brings a new failure, so CI can run it as a step. In the browser, «Зміни» → «Діаграма» draws the same diff on the canvas.
+
 Flows can also move to another codebase, for example when you port a system to a new stack. `keylang flow export <name>` packs flows into one portable Markdown bundle. In the other repository, `keylang flow import` proposes them as a feature on `planned` nodes, plus rows of `keylang/migration.md`. `keylang migration status` then reports, flow by flow, whether the new stack has the counterpart and whether the same tests pass in both.
 
 Outside the browser, `keylang lsp` serves the same diagnostics over stdio. The client in `editors/vscode/` is a thin wrapper around it. It is not published in the Marketplace and is not part of the npm package.
