@@ -66,43 +66,45 @@
       <a id="extract.facts.DeclKind"></a><br>The kinds of declaration the map shows.
     - type [DeclFact](../../src/extract/facts.ts#L298)
       <a id="extract.facts.DeclFact"></a><br>A declaration of the file (or a member of one), with what its body calls and mentions.
-    - type [ResultTypeFact](../../src/extract/facts.ts#L383)
+    - type [TypeFieldFact](../../src/extract/facts.ts#L388)
+      <a id="extract.facts.TypeFieldFact"></a><br>One member of a type's shape: `note?: string` is `{ name: "note", optional: true, type: "string" }`; a method's type is `(x: T) => R`.
+    - type [ResultTypeFact](../../src/extract/facts.ts#L400)
       <a id="extract.facts.ResultTypeFact"></a><br>PHP: the class a function returns, or of the elements of the array it returns, as its declaration writes it. A declared return type is a fact PHP checks; `@return` is a docblock (`docblock`, the tag's position) and is read only where the declared type names no class.
-    - type [MethodSigFact](../../src/extract/facts.ts#L394)
+    - type [MethodSigFact](../../src/extract/facts.ts#L411)
       <a id="extract.facts.MethodSigFact"></a><br>PHP: one method of an interface (or of an `outside` class): its name and result type.
-    - type [FieldFact](../../src/extract/facts.ts#L401)
+    - type [FieldFact](../../src/extract/facts.ts#L418)
       <a id="extract.facts.FieldFact"></a><br>PHP: a property and the qualified class of its value (`element`: an array of them).
-    - type [OutsideDeclFact](../../src/extract/facts.ts#L412)
+    - type [OutsideDeclFact](../../src/extract/facts.ts#L429)
       <a id="extract.facts.OutsideDeclFact"></a><br>PHP: a class, interface or trait of a file `outside` the architecture, as declarations only. Names are qualified, without the leading `\`.
-    - type [ValueOfFact](../../src/extract/facts.ts#L429)
+    - type [ValueOfFact](../../src/extract/facts.ts#L446)
       <a id="extract.facts.ValueOfFact"></a><br>PHP: a value whose class the graph reads from another declaration — the result of a call (its declared result type) or, with `element`, an element of the array it returns.
-    - type [ResultCallFact](../../src/extract/facts.ts#L435)
+    - type [ResultCallFact](../../src/extract/facts.ts#L452)
       <a id="extract.facts.ResultCallFact"></a><br>The call whose result a `ValueOfFact` is, written as `CallFact` writes a call.
-    - type [LiteralFact](../../src/extract/facts.ts#L456)
+    - type [LiteralFact](../../src/extract/facts.ts#L473)
       <a id="extract.facts.LiteralFact"></a><br>A value PHP code writes as a literal, as far as a framework adapter reads it (ADR 0022): a string without interpolation, `X::class` (`self::class` is the enclosing class), a class constant `X::NAME`, `new X(…)`, an array of them, a closure literal at its position; anything else…
-    - type [ArgFact](../../src/extract/facts.ts#L466)
+    - type [ArgFact](../../src/extract/facts.ts#L483)
       <a id="extract.facts.ArgFact"></a><br>One argument of a call or an attribute: named (`methods: ['POST']`) or positional.
-    - type [AttributeFact](../../src/extract/facts.ts#L472)
+    - type [AttributeFact](../../src/extract/facts.ts#L489)
       <a id="extract.facts.AttributeFact"></a><br>`#[Name(args)]` on a declaration; `name` qualified as PHP resolves it.
-    - type [PropertyFact](../../src/extract/facts.ts#L480)
+    - type [PropertyFact](../../src/extract/facts.ts#L497)
       <a id="extract.facts.PropertyFact"></a><br>A class property with a literal default value.
-    - type [ParamFact](../../src/extract/facts.ts#L488)
+    - type [ParamFact](../../src/extract/facts.ts#L505)
       <a id="extract.facts.ParamFact"></a><br>A parameter of a function; `type` is the qualified class when the parameter is typed with one.
-    - type [ChainLinkFact](../../src/extract/facts.ts#L494)
+    - type [ChainLinkFact](../../src/extract/facts.ts#L511)
       <a id="extract.facts.ChainLinkFact"></a><br>One call of a chain `Route::prefix('admin')->name('a.')->group(…)`, root first; the root names its class when it is a static call.
-    - type [CallFact](../../src/extract/facts.ts#L501)
+    - type [CallFact](../../src/extract/facts.ts#L518)
       <a id="extract.facts.CallFact"></a><br>One call written in the code, with its callee as written and its range.
-    - type [HookFact](../../src/extract/facts.ts#L590)
+    - type [HookFact](../../src/extract/facts.ts#L607)
       <a id="extract.facts.HookFact"></a><br>A callable chosen at run time with a default written next to it. `param` and `path` say where a caller injects the value: `analyze({ generate })` is parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
-    - type [PassFact](../../src/extract/facts.ts#L609)
+    - type [PassFact](../../src/extract/facts.ts#L626)
       <a id="extract.facts.PassFact"></a><br>A function value in the arguments of a call: argument index, property path ("" for the argument itself). `callee` names it as a call would (`this.m`, `Cls.m`, `save`); `text` is the argument as written (`[$this, 'm']`), at the position. One passed as the argument itself is a…
-    - type [ValueRefFact](../../src/extract/facts.ts#L625)
+    - type [ValueRefFact](../../src/extract/facts.ts#L642)
       <a id="extract.facts.ValueRefFact"></a><br>A name read as a value rather than called (see `FileFacts.valueRefs`).
-    - type [TypeRefFact](../../src/extract/facts.ts#L635)
+    - type [TypeRefFact](../../src/extract/facts.ts#L652)
       <a id="extract.facts.TypeRefFact"></a><br>A type name in type position. `text` is the source fragment.
-    - type [ExportRow](../../src/extract/facts.ts#L649)
+    - type [ExportRow](../../src/extract/facts.ts#L666)
       <a id="extract.facts.ExportRow"></a><br>One public name of a file, compared with the `exports` rule and followed by the graph to the symbol it stands for.
-    - type [UnsupportedFact](../../src/extract/facts.ts#L680)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L697)
       <a id="extract.facts.UnsupportedFact"></a><br>A construct the extractor does not turn into an edge: a hole, with its source fragment and why.
   - module [grammars](../../src/extract/grammars.ts#L1)
     <a id="extract.grammars"></a><br>The tree-sitter grammars keylang parses with. One list for the runtime (`treesitter.ts` loads them) and for packaging (`scripts/copy-wasm.mjs` copies each into dist/wasm), so a new language cannot be left out of the published package.
@@ -712,241 +714,253 @@
       - calls [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty), [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.lineCommentsBody](extract.md#extract.doc-comments.lineCommentsBody), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody)
     - fn [extractIndexed](../../src/extract/ts.ts#L265) (path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>) → FileFacts <!-- internal -->
       <a id="extract.ts.extractIndexed"></a><br>The facts of a file once the parent index and header are set: the top-level walk, then the whole-tree collectors.
-      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.lineDeeperThan](extract.md#extract.ts.lineDeeperThan), [extract.treesitter.query](extract.md#extract.treesitter.query), [extract.ts.calleeOfCall](extract.md#extract.ts.calleeOfCall), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.templateValue](extract.md#extract.ts.templateValue), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.passesOf](extract.md#extract.ts.passesOf), [extract.ts.markClosure](extract.md#extract.ts.markClosure), [extract.ts.componentOfFactory](extract.md#extract.ts.componentOfFactory), [extract.ts.componentOfTag](extract.md#extract.ts.componentOfTag), [extract.ts.requireSource](extract.md#extract.ts.requireSource), [extract.ts.superModuleSource](extract.md#extract.ts.superModuleSource), [extract.ts.reactWrapperFn](extract.md#extract.ts.reactWrapperFn), [extract.ts.moduleSource](extract.md#extract.ts.moduleSource), [extract.ts.typeSignature](extract.md#extract.ts.typeSignature), [extract.ts.reactBindings](extract.md#extract.ts.reactBindings), [extract.ts.importStatement](extract.md#extract.ts.importStatement), [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.importAt](extract.md#extract.ts.importAt), [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword), [extract.ts.inlineTypesOnly](extract.md#extract.ts.inlineTypesOnly), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs), [extract.ts.classDecl](extract.md#extract.ts.classDecl), [extract.ts.commonJsExports](extract.md#extract.ts.commonJsExports), [extract.ts.collectDynamicImports](extract.md#extract.ts.collectDynamicImports), [extract.ts.collectUnsupported](extract.md#extract.ts.collectUnsupported), [extract.ts.collectValueRefs](extract.md#extract.ts.collectValueRefs), [extract.ts.collectRouteEntries](extract.md#extract.ts.collectRouteEntries), [extract.ts.collectWebFacts](extract.md#extract.ts.collectWebFacts), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
-    - type [ReactBindings](../../src/extract/ts.ts#L652) <!-- internal -->
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.lineDeeperThan](extract.md#extract.ts.lineDeeperThan), [extract.treesitter.query](extract.md#extract.treesitter.query), [extract.ts.calleeOfCall](extract.md#extract.ts.calleeOfCall), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.templateValue](extract.md#extract.ts.templateValue), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.passesOf](extract.md#extract.ts.passesOf), [extract.ts.markClosure](extract.md#extract.ts.markClosure), [extract.ts.componentOfFactory](extract.md#extract.ts.componentOfFactory), [extract.ts.componentOfTag](extract.md#extract.ts.componentOfTag), [extract.ts.requireSource](extract.md#extract.ts.requireSource), [extract.ts.superModuleSource](extract.md#extract.ts.superModuleSource), [extract.ts.reactWrapperFn](extract.md#extract.ts.reactWrapperFn), [extract.ts.moduleSource](extract.md#extract.ts.moduleSource), [extract.ts.typeSignature](extract.md#extract.ts.typeSignature), [extract.ts.typeShape](extract.md#extract.ts.typeShape), [extract.ts.reactBindings](extract.md#extract.ts.reactBindings), [extract.ts.importStatement](extract.md#extract.ts.importStatement), [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.importAt](extract.md#extract.ts.importAt), [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword), [extract.ts.inlineTypesOnly](extract.md#extract.ts.inlineTypesOnly), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs), [extract.ts.classDecl](extract.md#extract.ts.classDecl), [extract.ts.commonJsExports](extract.md#extract.ts.commonJsExports), [extract.ts.collectDynamicImports](extract.md#extract.ts.collectDynamicImports), [extract.ts.collectUnsupported](extract.md#extract.ts.collectUnsupported), [extract.ts.collectValueRefs](extract.md#extract.ts.collectValueRefs), [extract.ts.collectRouteEntries](extract.md#extract.ts.collectRouteEntries), [extract.ts.collectWebFacts](extract.md#extract.ts.collectWebFacts), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
+    - type [ReactBindings](../../src/extract/ts.ts#L656) <!-- internal -->
       <a id="extract.ts.ReactBindings"></a><br>What value imports from React bind in one file.
-    - fn [reactBindings](../../src/extract/ts.ts#L666) (root: Node) → ReactBindings <!-- internal -->
+    - fn [reactBindings](../../src/extract/ts.ts#L670) (root: Node) → ReactBindings <!-- internal -->
       <a id="extract.ts.reactBindings"></a><br>React bindings of one file: the single source for wrappers and factories, so both follow one type-only rule. Imports hoist, so a `const` above its import still counts; `require("react")` binds only below itself and is not read. `import type`, `import type * as React` and…
       - calls [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword), [extract.ts.importStatement](extract.md#extract.ts.importStatement), [extract.ts.typeOnlySpecifier](extract.md#extract.ts.typeOnlySpecifier)
-    - fn [reactExportOf](../../src/extract/ts.ts#L692) (callee: Node, react: ReactBindings) → { name: string; local: string } | null <!-- internal -->
+    - fn [reactExportOf](../../src/extract/ts.ts#L696) (callee: Node, react: ReactBindings) → { name: string; local: string } | null <!-- internal -->
       <a id="extract.ts.reactExportOf"></a><br>The React export a callee names through a binding of the file (`memo`, `h`, `React.memo`), with the local it goes through. Shadowing is the caller's.
-    - fn [typeKeyword](../../src/extract/ts.ts#L709) (node: Node) → boolean <!-- internal -->
+    - fn [typeKeyword](../../src/extract/ts.ts#L713) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.typeKeyword"></a><br>The `type` keyword of `import type` or `import { type name }` — an unnamed child, not an identifier.
-    - fn [inlineTypesOnly](../../src/extract/ts.ts#L719) (list: Node, specifier: "import_specifier" | "export_specifier") → boolean <!-- internal -->
+    - fn [inlineTypesOnly](../../src/extract/ts.ts#L723) (list: Node, specifier: "import_specifier" | "export_specifier") → boolean <!-- internal -->
       <a id="extract.ts.inlineTypesOnly"></a><br>`{ type A, type B as C }` of an import or an `export … from`: at least one name, and every one of them `type`. Whether such a statement runs is the tsconfig's to say (`ImportFact.inlineTypeOnly`), so it stays a fact of the syntax here.
       - calls [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword)
-    - fn [typeOnlySpecifier](../../src/extract/ts.ts#L726) (stmt: Node, local: string) → boolean <!-- internal -->
+    - fn [typeOnlySpecifier](../../src/extract/ts.ts#L730) (stmt: Node, local: string) → boolean <!-- internal -->
       <a id="extract.ts.typeOnlySpecifier"></a><br>`import { type memo as m }`: the specifier that binds `local` is type-only.
       - calls [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword)
-    - fn [decl](../../src/extract/ts.ts#L741) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]) → DeclFact <!-- internal -->
+    - fn [decl](../../src/extract/ts.ts#L745) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]) → DeclFact <!-- internal -->
       <a id="extract.ts.decl"></a><br>A declaration fact at `node`'s span, with its JSDoc and its fingerprint facts.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.docOf](extract.md#extract.ts.docOf), [extract.treesitter.fingerprintFacts](extract.md#extract.treesitter.fingerprintFacts)
-    - fn [boundCall](../../src/extract/ts.ts#L753) (call: CallFact, bound: "parameter" | "local" | null) → CallFact <!-- internal -->
+    - fn [boundCall](../../src/extract/ts.ts#L757) (call: CallFact, bound: "parameter" | "local" | null) → CallFact <!-- internal -->
       <a id="extract.ts.boundCall"></a><br>The call, marked as made through a parameter or local binding when it is one.
-    - fn [callFact](../../src/extract/ts.ts#L758) (callee: string, node: Node) → CallFact <!-- internal -->
+    - fn [callFact](../../src/extract/ts.ts#L762) (callee: string, node: Node) → CallFact <!-- internal -->
       <a id="extract.ts.callFact"></a><br>A call fact named `callee` at `node`'s span.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [opaqueCall](../../src/extract/ts.ts#L765) (node: Node) → CallFact <!-- internal -->
+    - fn [opaqueCall](../../src/extract/ts.ts#L769) (node: Node) → CallFact <!-- internal -->
       <a id="extract.ts.opaqueCall"></a><br>A call through an expression keylang does not name: a hole with the source text.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.callFact](extract.md#extract.ts.callFact)
-    - fn [calleeOfCall](../../src/extract/ts.ts#L779) (node: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [calleeOfCall](../../src/extract/ts.ts#L783) (node: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       <a id="extract.ts.calleeOfCall"></a><br>The fact of one call or `new` from its callee node. Null only for a call keylang records another way: `require()` and `import()` (imports), `import.meta.resolve()` (an import), a function literal called in place (the calls of its body are read where they are), a class…
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.requireKind](extract.md#extract.ts.requireKind), [extract.ts.boundCall](extract.md#extract.ts.boundCall), [extract.ts.callFact](extract.md#extract.ts.callFact), [extract.ts.bindingOf](extract.md#extract.ts.bindingOf), [extract.ts.localHook](extract.md#extract.ts.localHook), [extract.ts.calleeFact](extract.md#extract.ts.calleeFact), [extract.ts.opaqueCall](extract.md#extract.ts.opaqueCall)
-    - fn [componentOfTag](../../src/extract/ts.ts#L832) (name: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [componentOfTag](../../src/extract/ts.ts#L836) (name: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       <a id="extract.ts.componentOfTag"></a><br>The call a JSX tag makes, from its name node: `<Cart />` calls `Cart`, `<Cart.Item />` calls `Cart.Item`, as the call expressions would. Null when the tag is not a component: an intrinsic element (`<div />`, `<my-button />`: a lowercase first letter), a namespace name…
       - calls [extract.ts.calleeFact](extract.md#extract.ts.calleeFact), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.callFact](extract.md#extract.ts.callFact), [extract.ts.opaqueCall](extract.md#extract.ts.opaqueCall)
-    - fn [componentOfFactory](../../src/extract/ts.ts#L867) (call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, react: ReactBindings) → CallFact | null <!-- internal -->
+    - fn [componentOfFactory](../../src/extract/ts.ts#L871) (call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, react: ReactBindings) → CallFact | null <!-- internal -->
       <a id="extract.ts.componentOfFactory"></a><br>The component call hidden in a React factory: `createElement(Cart)`, `jsx(Cart)`, `jsxs(Cart.Item)`, `jsxDEV(Cart)` are the call `<Cart />` would be, when the callee is bound by an import from `react`, `react/jsx-runtime` or `react/jsx-dev-runtime` (`h` for `createElement as…
       - calls [extract.ts.factoryCallee](extract.md#extract.ts.factoryCallee), [extract.ts.componentOfTag](extract.md#extract.ts.componentOfTag), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
-    - fn [factoryCallee](../../src/extract/ts.ts#L875) (node: Node, body: Node, react: ReactBindings) → boolean <!-- internal -->
+    - fn [factoryCallee](../../src/extract/ts.ts#L879) (node: Node, body: Node, react: ReactBindings) → boolean <!-- internal -->
       <a id="extract.ts.factoryCallee"></a><br>The callee node is a React factory binding, and nothing between here and the body shadows it.
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.reactExportOf](extract.md#extract.ts.reactExportOf), [extract.ts.bindingOf](extract.md#extract.ts.bindingOf)
-    - fn [requireKind](../../src/extract/ts.ts#L890) (node: Node) → "global" | "created" | "shadowed" <!-- internal -->
+    - fn [requireKind](../../src/extract/ts.ts#L894) (node: Node) → "global" | "created" | "shadowed" <!-- internal -->
       <a id="extract.ts.requireKind"></a><br>What a `require` identifier is: Node's (`global`), one made by `createRequire(…)` (`created`), which also loads modules, or a parameter or local of another value (`shadowed`), whose call is not an import.
       - calls [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
-    - fn [importAt](../../src/extract/ts.ts#L905) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/ts.ts#L909) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
       <a id="extract.ts.importAt"></a><br>An import fact of `source` at `node`'s span, with the statement's text as written.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [nestedDeclaration](../../src/extract/ts.ts#L919) (node: Node) → boolean <!-- internal -->
+    - fn [nestedDeclaration](../../src/extract/ts.ts#L923) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.nestedDeclaration"></a><br>A declaration of its own below the one whose type names are collected. A method signature is one in a class body (an overload of a member); in an interface or an object type (`{ save(o: Order): void }`) it is part of that type.
-    - fn [lineDeeperThan](../../src/extract/ts.ts#L924) (root: Node, limit: number) → number | null <!-- internal -->
+    - fn [lineDeeperThan](../../src/extract/ts.ts#L928) (root: Node, limit: number) → number | null <!-- internal -->
       <a id="extract.ts.lineDeeperThan"></a><br>1-based line of the first node nested deeper than `limit` below `root`; null when none is.
-    - fn [walkNamed](../../src/extract/ts.ts#L953) (root: Node, enter: (node: Node) => boolean | void) → void <!-- internal -->
+    - fn [walkNamed](../../src/extract/ts.ts#L957) (root: Node, enter: (node: Node) => boolean | void) → void <!-- internal -->
       <a id="extract.ts.walkNamed"></a><br>Pre-order walk over named nodes with an explicit stack: an expression nested thousands deep must not overflow the call stack. `enter` returns false to skip the node's subtree.
-    - fn [collectTypeRefs](../../src/extract/ts.ts#L978) (node: Node, bound: ReadonlySet<string> = NO_NAMES) → TypeRefFact[] <!-- internal -->
+    - fn [collectTypeRefs](../../src/extract/ts.ts#L982) (node: Node, bound: ReadonlySet<string> = NO_NAMES) → TypeRefFact[] <!-- internal -->
       <a id="extract.ts.collectTypeRefs"></a><br>Type names used by `node`, excluding its own declared name, nested declarations and the names a generic binds in its scope: a type parameter (`<T>`), a mapped type's key (`[K in keyof T]`), an `infer U`. `bound`: the type parameters already in scope, a class's for its members.
       - calls [extract.ts.nestedDeclaration](extract.md#extract.ts.nestedDeclaration), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.typeNamesBound](extract.md#extract.ts.typeNamesBound)
-    - fn [typeNamesBound](../../src/extract/ts.ts#L1018) (node: Node, bound: ReadonlySet<string>) → ReadonlySet<string> <!-- internal -->
+    - fn [typeNamesBound](../../src/extract/ts.ts#L1022) (node: Node, bound: ReadonlySet<string>) → ReadonlySet<string> <!-- internal -->
       <a id="extract.ts.typeNamesBound"></a><br>`bound` and the type names `node` binds for its subtree: its type parameters, a mapped type's key, the `infer` names of a conditional type.
       - calls [extract.ts.walkNamed](extract.md#extract.ts.walkNamed)
-    - fn [classDecl](../../src/extract/ts.ts#L1063) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node, scope: ClassScope | null) => CallFact[], facts: FileFacts) → DeclFact <!-- internal -->
+    - fn [classDecl](../../src/extract/ts.ts#L1067) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node, scope: ClassScope | null) => CallFact[], facts: FileFacts) → DeclFact <!-- internal -->
       <a id="extract.ts.classDecl"></a><br>Members of a class. Methods and function-valued fields (`handler = () => …`) are fns with their own calls and types.
-      - calls [extract.ts.classScope](extract.md#extract.ts.classScope), [extract.ts.typeNamesBound](extract.md#extract.ts.typeNamesBound), [extract.ts.decoratorFact](extract.md#extract.ts.decoratorFact), [extract.ts.decoratorsOf](extract.md#extract.ts.decoratorsOf), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs), [extract.ts.unsupported](extract.md#extract.ts.unsupported), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.parameterDecorators](extract.md#extract.ts.parameterDecorators), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.initializer](extract.md#extract.ts.initializer), [extract.ts.heritage](extract.md#extract.ts.heritage), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.ts.baseClass](extract.md#extract.ts.baseClass), [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [decoratorsOf](../../src/extract/ts.ts#L1194) (node: Node) → CodeDecorator[] <!-- internal -->
+      - calls [extract.ts.classScope](extract.md#extract.ts.classScope), [extract.ts.typeNamesBound](extract.md#extract.ts.typeNamesBound), [extract.ts.decoratorFact](extract.md#extract.ts.decoratorFact), [extract.ts.decoratorsOf](extract.md#extract.ts.decoratorsOf), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs), [extract.ts.unsupported](extract.md#extract.ts.unsupported), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.parameterDecorators](extract.md#extract.ts.parameterDecorators), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.initializer](extract.md#extract.ts.initializer), [extract.ts.heritage](extract.md#extract.ts.heritage), [extract.treesitter.valuesFingerprint](extract.md#extract.treesitter.valuesFingerprint), [extract.ts.baseClass](extract.md#extract.ts.baseClass), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.classField](extract.md#extract.ts.classField)
+    - fn [typeShape](../../src/extract/ts.ts#L1206) (node: Node) → TypeFieldFact[] | undefined <!-- internal -->
+      <a id="extract.ts.typeShape"></a><br>The shape of an interface (its body) or of a type alias whose value is an object type literal; undefined for an enum, any other alias and a body tree-sitter could not read. `planned type` fields are checked against it.
+      - calls [extract.ts.signatureField](extract.md#extract.ts.signatureField)
+    - fn [signatureField](../../src/extract/ts.ts#L1220) (m: Node) → TypeFieldFact | null <!-- internal -->
+      <a id="extract.ts.signatureField"></a><br>One member of an interface or object type: `name?: T` from a property signature, `name?: (params) => R` from a method signature. Null for an index, call or construct signature, a quoted or computed name, and a member without a type annotation (a method without a return type).
+      - calls [extract.ts.annotation](extract.md#extract.ts.annotation), [extract.ts.collapse](extract.md#extract.ts.collapse)
+    - fn [classField](../../src/extract/ts.ts#L1244) (m: Node) → TypeFieldFact | null <!-- internal -->
+      <a id="extract.ts.classField"></a><br>A public instance field of a class with a type annotation: not `static`, `private`, `protected` or `#private`, and not a field whose value is a function (that one is a method of the map). Null for anything else.
+      - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.annotation](extract.md#extract.ts.annotation)
+    - fn [annotation](../../src/extract/ts.ts#L1260) (node: Node | null) → string | null <!-- internal -->
+      <a id="extract.ts.annotation"></a><br>The type of a `: T` annotation node, whitespace collapsed; null without one.
+      - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
+    - fn [decoratorsOf](../../src/extract/ts.ts#L1268) (node: Node) → CodeDecorator[] <!-- internal -->
       <a id="extract.ts.decoratorsOf"></a><br>The decorators that are children of a node: a class, an `export` statement, a member, a parameter.
       - calls [extract.ts.decoratorFact](extract.md#extract.ts.decoratorFact)
-    - fn [parameterDecorators](../../src/extract/ts.ts#L1199) (ctor: Node) → CodeDecorator[] <!-- internal -->
+    - fn [parameterDecorators](../../src/extract/ts.ts#L1273) (ctor: Node) → CodeDecorator[] <!-- internal -->
       <a id="extract.ts.parameterDecorators"></a><br>`constructor(@Inject(T) private readonly x: I)`: each parameter's decorators, with its position, name and type.
       - calls [extract.ts.typeName](extract.md#extract.ts.typeName), [extract.ts.decoratorsOf](extract.md#extract.ts.decoratorsOf)
-    - fn [decoratorFact](../../src/extract/ts.ts#L1212) (node: Node) → CodeDecorator | null <!-- internal -->
+    - fn [decoratorFact](../../src/extract/ts.ts#L1286) (node: Node) → CodeDecorator | null <!-- internal -->
       <a id="extract.ts.decoratorFact"></a><br>`@Get(':id')` → `Get` with its arguments; `@Injectable` → no arguments. Null for a decorator that names nothing (`@(x)`).
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.decoratorArg](extract.md#extract.ts.decoratorArg)
-    - fn [decoratorArg](../../src/extract/ts.ts#L1227) (node: Node) → DecoratorArg <!-- internal -->
+    - fn [decoratorArg](../../src/extract/ts.ts#L1301) (node: Node) → DecoratorArg <!-- internal -->
       <a id="extract.ts.decoratorArg"></a><br>A decorator argument as a value keylang reads without running code.
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.templateValue](extract.md#extract.ts.templateValue), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [templateValue](../../src/extract/ts.ts#L1273) (n: Node) → string | null <!-- internal -->
+    - fn [templateValue](../../src/extract/ts.ts#L1347) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.templateValue"></a><br>A template literal without substitutions: its text; null otherwise.
-    - fn [baseClass](../../src/extract/ts.ts#L1280) (heritage: Node) → string | null <!-- internal -->
+    - fn [baseClass](../../src/extract/ts.ts#L1354) (heritage: Node) → string | null <!-- internal -->
       <a id="extract.ts.baseClass"></a><br>The `extends` expression: `(extends_clause value: …)` in TypeScript, the bare expression in JavaScript.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [unwrapValue](../../src/extract/ts.ts#L1288) (node: Node) → Node
+    - fn [unwrapValue](../../src/extract/ts.ts#L1362) (node: Node) → Node
       <a id="extract.ts.unwrapValue"></a><br>`(f)`, `f as T`, `f satisfies T`, `f!`: the expression they wrap.
-    - fn [reactWrapperFn](../../src/extract/ts.ts#L1311) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
+    - fn [reactWrapperFn](../../src/extract/ts.ts#L1385) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
       <a id="extract.ts.reactWrapperFn"></a><br>The function a React wrapper call hides: `memo(() => …)` is the function it wraps when — and only when — the callee is bound by an import from `react` (the `names` / `objects` such an import binds; `React.memo` through a default or namespace import counts). By name alone a…
       - calls [extract.ts.reactExportOf](extract.md#extract.ts.reactExportOf), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
-    - fn [initializer](../../src/extract/ts.ts#L1324) (name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]) → DeclFact <!-- internal -->
+    - fn [initializer](../../src/extract/ts.ts#L1398) (name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]) → DeclFact <!-- internal -->
       <a id="extract.ts.initializer"></a><br>A synthesized member over the initializers it runs, from the first to the last.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.fingerprintFacts](extract.md#extract.treesitter.fingerprintFacts)
-    - fn [memberName](../../src/extract/ts.ts#L1340) (node: Node) → string <!-- internal -->
+    - fn [memberName](../../src/extract/ts.ts#L1414) (node: Node) → string <!-- internal -->
       <a id="extract.ts.memberName"></a><br>A member's name as code calls it: a string key unquoted, a `#private` name without its `#`.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue)
-    - type [ClassScope](../../src/extract/ts.ts#L1347) <!-- internal -->
+    - type [ClassScope](../../src/extract/ts.ts#L1421) <!-- internal -->
       <a id="extract.ts.ClassScope"></a><br>Where `this.<field>` values come from, for `this.decoder.feed()` and `this.run()`.
-    - fn [classScope](../../src/extract/ts.ts#L1357) (items: readonly Node[]) → ClassScope <!-- internal -->
+    - fn [classScope](../../src/extract/ts.ts#L1431) (items: readonly Node[]) → ClassScope <!-- internal -->
       <a id="extract.ts.classScope"></a><br>What the class body says about its fields: their classes, constructor hooks and the parameters that fill them.
       - calls [extract.ts.typeName](extract.md#extract.ts.typeName), [extract.ts.newClass](extract.md#extract.ts.newClass), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee), [extract.ts.fallbackOf](extract.md#extract.ts.fallbackOf)
-    - fn [importStatement](../../src/extract/ts.ts#L1438) (node: Node) → ImportFact[] <!-- internal -->
+    - fn [importStatement](../../src/extract/ts.ts#L1512) (node: Node) → ImportFact[] <!-- internal -->
       <a id="extract.ts.importStatement"></a><br>The import facts of one `import` statement: none when its source is not a plain string.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.importAt](extract.md#extract.ts.importAt), [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword), [extract.ts.inlineTypesOnly](extract.md#extract.ts.inlineTypesOnly)
-    - fn [collectDynamicImports](../../src/extract/ts.ts#L1487) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectDynamicImports](../../src/extract/ts.ts#L1561) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectDynamicImports"></a><br>Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge.
       - calls [extract.ts.importAt](extract.md#extract.ts.importAt), [extract.ts.walkNamed](extract.md#extract.ts.walkNamed), [extract.ts.moduleUrlSpecs](extract.md#extract.ts.moduleUrlSpecs), [extract.ts.unsupported](extract.md#extract.ts.unsupported), [extract.ts.isSuperModule](extract.md#extract.ts.isSuperModule), [extract.ts.requireKind](extract.md#extract.ts.requireKind), [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.inTypePosition](extract.md#extract.ts.inTypePosition)
-    - fn [inTypePosition](../../src/extract/ts.ts#L1553) (node: Node) → boolean <!-- internal -->
+    - fn [inTypePosition](../../src/extract/ts.ts#L1627) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.inTypePosition"></a><br>Whether an `import(…)` call is written where a type goes (`x: import("./a").A`, `typeof import("./a")`, `v as import("./a").T`): a type-only dependency, as `import type` is.
-    - fn [collectUnsupported](../../src/extract/ts.ts#L1568) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectUnsupported](../../src/extract/ts.ts#L1642) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectUnsupported"></a><br>Namespace, `eval`, `new Function`, and a call through `obj[expr]` are coverage, not edges.
       - calls [extract.ts.walkNamed](extract.md#extract.ts.walkNamed), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.unsupported](extract.md#extract.ts.unsupported), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
-    - fn [unsupported](../../src/extract/ts.ts#L1586) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/ts.ts#L1660) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       <a id="extract.ts.unsupported"></a><br>An unsupported-construct fact at `node`'s span, with its text and the reason.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [calleeFact](../../src/extract/ts.ts#L1597) (n: Node, stop: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [calleeFact](../../src/extract/ts.ts#L1671) (n: Node, stop: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       <a id="extract.ts.calleeFact"></a><br>The callee of a call or a function value in an argument: `f`, `a.b`, `this.m`, or `this.field.m` when the field's class is known. Null for any other shape.
       - calls [extract.ts.boundCall](extract.md#extract.ts.boundCall), [extract.ts.callFact](extract.md#extract.ts.callFact), [extract.ts.bindingOf](extract.md#extract.ts.bindingOf), [extract.ts.classThis](extract.md#extract.ts.classThis), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.localClass](extract.md#extract.ts.localClass), [extract.ts.newClass](extract.md#extract.ts.newClass), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [classThis](../../src/extract/ts.ts#L1658) (n: Node) → boolean <!-- internal -->
+    - fn [classThis](../../src/extract/ts.ts#L1732) (n: Node) → boolean <!-- internal -->
       <a id="extract.ts.classThis"></a><br>`this` at `n` is the class instance: the nearest enclosing non-arrow function is a class member, or a field initializer or `static {}` holds it.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [passesOf](../../src/extract/ts.ts#L1675) (call: Node, stop: Node, cls: ClassScope | null) → PassFact[] <!-- internal -->
+    - fn [passesOf](../../src/extract/ts.ts#L1749) (call: Node, stop: Node, cls: ClassScope | null) → PassFact[] <!-- internal -->
       <a id="extract.ts.passesOf"></a><br>Function values in the arguments: the argument itself (`run(save)`, `run(this.m)`, `run(obj.m)` with the class of `obj` known, `run(this.m.bind(this))`) or a property of an object literal. A closure literal is not a pass: its calls carry `closureArg`.
       - calls [extract.ts.calleeFact](extract.md#extract.ts.calleeFact), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.memberName](extract.md#extract.ts.memberName)
-    - fn [markClosure](../../src/extract/ts.ts#L1730) (fact: CallFact, n: Node, stop: Node) → void <!-- internal -->
+    - fn [markClosure](../../src/extract/ts.ts#L1804) (fact: CallFact, n: Node, stop: Node) → void <!-- internal -->
       <a id="extract.ts.markClosure"></a><br>A call inside a function nested in the declaration `stop` gets `closure`; when every such function is a closure literal written as an argument of a call (`items.map(() => hit())`, `new Promise((ok) => hit())`), also `closureArg` at the outermost one. A closure stored in a…
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
-    - fn [typeName](../../src/extract/ts.ts#L1749) (annotation: Node | null) → string | null <!-- internal -->
+    - fn [typeName](../../src/extract/ts.ts#L1823) (annotation: Node | null) → string | null <!-- internal -->
       <a id="extract.ts.typeName"></a><br>`: X` → `X`; generics, unions and qualified names are not a class the graph can resolve.
-    - fn [newClass](../../src/extract/ts.ts#L1756) (value: Node | null) → string | null <!-- internal -->
+    - fn [newClass](../../src/extract/ts.ts#L1830) (value: Node | null) → string | null <!-- internal -->
       <a id="extract.ts.newClass"></a><br>`new X(…)` → `X`.
-    - type [Declaration](../../src/extract/ts.ts#L1763) <!-- internal -->
+    - type [Declaration](../../src/extract/ts.ts#L1837) <!-- internal -->
       <a id="extract.ts.Declaration"></a><br>What binds a name in scope: a declarator, a parameter (with its function and position), or another kind of binding.
-    - fn [declarationOf](../../src/extract/ts.ts#L1770) (from: Node, name: string, stop: Node) → Declaration | null <!-- internal -->
+    - fn [declarationOf](../../src/extract/ts.ts#L1844) (from: Node, name: string, stop: Node) → Declaration | null <!-- internal -->
       <a id="extract.ts.declarationOf"></a><br>The nearest binding of `name` between `from` and `stop`, in the scopes `bindingOf` walks: a declarator or a parameter; `other` for a loop or `catch` variable, a nested function or class name. Null when nothing binds it.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.patternNames](extract.md#extract.ts.patternNames), [extract.ts.blockStatements](extract.md#extract.ts.blockStatements), [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
-    - fn [localClass](../../src/extract/ts.ts#L1834) (from: Node, name: string, stop: Node) → string | null <!-- internal -->
+    - fn [localClass](../../src/extract/ts.ts#L1908) (from: Node, name: string, stop: Node) → string | null <!-- internal -->
       <a id="extract.ts.localClass"></a><br>Class of a local or parameter: `const w = new X()`, `const w: X = …`, `(w: X) =>`. Null when a nearer binding (a loop variable) hides the declaration, or when `X` itself is rebound between the declaration and `stop` (`const X = Ctor`).
       - calls [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.typeName](extract.md#extract.ts.typeName), [extract.ts.newClass](extract.md#extract.ts.newClass), [extract.ts.bindingOf](extract.md#extract.ts.bindingOf)
-    - fn [fallbackOf](../../src/extract/ts.ts#L1849) (expr: Node, stop: Node) → { source: Node; fallback: string } | null <!-- internal -->
+    - fn [fallbackOf](../../src/extract/ts.ts#L1923) (expr: Node, stop: Node) → { source: Node; fallback: string } | null <!-- internal -->
       <a id="extract.ts.fallbackOf"></a><br>`x ?? f` / `x || f` with a callee `f`: the value `x` and the default.
       - calls [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee)
-    - fn [fallbackCallee](../../src/extract/ts.ts#L1862) (node: Node, stop: Node) → string | null <!-- internal -->
+    - fn [fallbackCallee](../../src/extract/ts.ts#L1936) (node: Node, stop: Node) → string | null <!-- internal -->
       <a id="extract.ts.fallbackCallee"></a><br>A default that names a declaration: an unbound `f`, `mod.f`, or `this.m`.
       - calls [extract.ts.bindingOf](extract.md#extract.ts.bindingOf)
-    - fn [localHook](../../src/extract/ts.ts#L1882) (from: Node, name: string, stop: Node) → HookFact | null <!-- internal -->
+    - fn [localHook](../../src/extract/ts.ts#L1956) (from: Node, name: string, stop: Node) → HookFact | null <!-- internal -->
       <a id="extract.ts.localHook"></a><br>The hook behind a call of a local or parameter `name`: `const g = request.generate ?? generateMap`, `const { g = f } = request`, `function run(g = f)`, `function run({ g = f })`. Injection is known only for a parameter of the declaration itself.
       - calls [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.defaultIn](extract.md#extract.ts.defaultIn), [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee), [extract.ts.fallbackOf](extract.md#extract.ts.fallbackOf), [extract.ts.plainParameter](extract.md#extract.ts.plainParameter)
-    - fn [plainParameter](../../src/extract/ts.ts#L1935) (node: Node) → boolean <!-- internal -->
+    - fn [plainParameter](../../src/extract/ts.ts#L2009) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.plainParameter"></a><br>The parameter is a plain name (`p`, `p: T`, `p = d`), not a destructuring pattern.
-    - fn [defaultIn](../../src/extract/ts.ts#L1944) (node: Node, name: string, path: string) → { value: Node; path: string } | null <!-- internal -->
+    - fn [defaultIn](../../src/extract/ts.ts#L2018) (node: Node, name: string, path: string) → { value: Node; path: string } | null <!-- internal -->
       <a id="extract.ts.defaultIn"></a><br>The default value of `name` in a parameter or pattern, with its property path.
       - calls [extract.ts.memberName](extract.md#extract.ts.memberName)
-    - fn [collectValueRefs](../../src/extract/ts.ts#L1996) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectValueRefs](../../src/extract/ts.ts#L2070) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectValueRefs"></a><br>Names read as values: identifiers outside callee and binding positions, shorthand properties, and member names read without a call. The first position of each name in the file.
       - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol), [extract.ts.walkNamed](extract.md#extract.ts.walkNamed), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.bindsOrCalls](extract.md#extract.ts.bindsOrCalls), [extract.ts.exportedValue](extract.md#extract.ts.exportedValue), [extract.ts.memberObject](extract.md#extract.ts.memberObject), [extract.ts.bindingOf](extract.md#extract.ts.bindingOf), [extract.ts.calledMember](extract.md#extract.ts.calledMember), [extract.ts.moduleSource](extract.md#extract.ts.moduleSource), [extract.ts.memberName](extract.md#extract.ts.memberName)
-    - fn [memberObject](../../src/extract/ts.ts#L2045) (node: Node, parent: Node | null, facts: FileFacts) → boolean <!-- internal -->
+    - fn [memberObject](../../src/extract/ts.ts#L2119) (node: Node, parent: Node | null, facts: FileFacts) → boolean <!-- internal -->
       <a id="extract.ts.memberObject"></a><br>The identifier is the object of a member access that uses only a member of it: `ns.helper()`, `new ns.X()`, and any `mod.x` of a module binding (the read is `mod.x`, noted on its own). `.call`, `.apply` and `.bind` use the function itself, so they read it.
       - calls [extract.ts.calledMember](extract.md#extract.ts.calledMember), [extract.ts.moduleSource](extract.md#extract.ts.moduleSource)
-    - fn [calledMember](../../src/extract/ts.ts#L2055) (member: Node) → boolean <!-- internal -->
+    - fn [calledMember](../../src/extract/ts.ts#L2129) (member: Node) → boolean <!-- internal -->
       <a id="extract.ts.calledMember"></a><br>The member expression is what a call or `new` runs: `a.b()`, `new a.B()`.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [exportedValue](../../src/extract/ts.ts#L2066) (node: Node) → boolean <!-- internal -->
+    - fn [exportedValue](../../src/extract/ts.ts#L2140) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.exportedValue"></a><br>A name the module exports as a value: `export default handler`, `export = handler`, `module.exports = handler` or `= { handler }`, `exports.run = run`. Importers that call it are resolved callers, as for `export { handler }`.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [bindsOrCalls](../../src/extract/ts.ts#L2097) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [bindsOrCalls](../../src/extract/ts.ts#L2171) (node: Node, parent: Node) → boolean <!-- internal -->
       <a id="extract.ts.bindsOrCalls"></a><br>The identifier is a callee, a declared name, or a binding — not a value read.
-    - fn [stringsOf](../../src/extract/ts.ts#L2124) (node: Node) → string[] | null <!-- internal -->
+    - fn [stringsOf](../../src/extract/ts.ts#L2198) (node: Node) → string[] | null <!-- internal -->
       <a id="extract.ts.stringsOf"></a><br>Strings an expression can evaluate to: a literal, a ternary of literals, a `const` bound to one.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [isImportMetaUrl](../../src/extract/ts.ts#L2155) (node: Node | undefined) → boolean <!-- internal -->
+    - fn [isImportMetaUrl](../../src/extract/ts.ts#L2229) (node: Node | undefined) → boolean <!-- internal -->
       <a id="extract.ts.isImportMetaUrl"></a><br>The node is `import.meta.url`, whatever the spacing.
-    - fn [moduleUrlSpecs](../../src/extract/ts.ts#L2168) (node: Node) → { spec: string; optional: boolean }[] | null <!-- internal -->
+    - fn [moduleUrlSpecs](../../src/extract/ts.ts#L2242) (node: Node) → { spec: string; optional: boolean }[] | null <!-- internal -->
       <a id="extract.ts.moduleUrlSpecs"></a><br>Module files named relative to this module: `new URL("./worker.ts", import.meta.url)` (a `Worker`, a loader) and `register(spec, import.meta.url | { parentURL: import.meta.url })`. Null when the specifier is not a string the syntax fixes: a module edge may be hidden there.
       - calls [extract.ts.isImportMetaUrl](extract.md#extract.ts.isImportMetaUrl), [extract.ts.stringsOf](extract.md#extract.ts.stringsOf), [extract.ts.staticSuffix](extract.md#extract.ts.staticSuffix), [extract.ts.extensionless](extract.md#extract.ts.extensionless)
-    - fn [extensionless](../../src/extract/ts.ts#L2193) (spec: string) → boolean <!-- internal -->
+    - fn [extensionless](../../src/extract/ts.ts#L2267) (spec: string) → boolean <!-- internal -->
       <a id="extract.ts.extensionless"></a><br>`./worker`, `../lib/job`: a path whose last segment has no extension (not a directory `./dir/`, not `.` or `..`).
-    - fn [staticSuffix](../../src/extract/ts.ts#L2203) (node: Node) → string <!-- internal -->
+    - fn [staticSuffix](../../src/extract/ts.ts#L2277) (node: Node) → string <!-- internal -->
       <a id="extract.ts.staticSuffix"></a><br>The literal end of a computed string: the tail of a template, the last operand of `+`.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue)
-    - fn [bindingOf](../../src/extract/ts.ts#L2235) (call: Node, name: string, stop: Node) → "parameter" | "local" | null <!-- internal -->
+    - fn [bindingOf](../../src/extract/ts.ts#L2309) (call: Node, name: string, stop: Node) → "parameter" | "local" | null <!-- internal -->
       <a id="extract.ts.bindingOf"></a><br>Where the head identifier of a call is bound between the call and `stop` (the declaration being extracted): a parameter, a local, a destructured name, a nested function or class, a loop or catch variable. Such a call does not name the module-level symbol of the same name.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.patternNames](extract.md#extract.ts.patternNames), [extract.ts.blockDeclares](extract.md#extract.ts.blockDeclares), [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
-    - fn [blockStatements](../../src/extract/ts.ts#L2280) (block: Node) → Node[] <!-- internal -->
+    - fn [blockStatements](../../src/extract/ts.ts#L2354) (block: Node) → Node[] <!-- internal -->
       <a id="extract.ts.blockStatements"></a><br>The statements of a block. A `switch` is one block: a `const` or `function` of one case is in scope in every case.
-    - fn [blockDeclares](../../src/extract/ts.ts#L2287) (block: Node, name: string) → boolean <!-- internal -->
+    - fn [blockDeclares](../../src/extract/ts.ts#L2361) (block: Node, name: string) → boolean <!-- internal -->
       <a id="extract.ts.blockDeclares"></a><br>Some statement of the block (or an `export` of one) declares `name`.
       - calls [extract.ts.blockStatements](extract.md#extract.ts.blockStatements), [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
-    - fn [declaredNames](../../src/extract/ts.ts#L2300) (stmt: Node) → string[] <!-- internal -->
+    - fn [declaredNames](../../src/extract/ts.ts#L2374) (stmt: Node) → string[] <!-- internal -->
       <a id="extract.ts.declaredNames"></a><br>Names a statement declares: every name of its declarators, or a function's or class's name.
       - calls [extract.ts.patternNames](extract.md#extract.ts.patternNames)
-    - fn [patternNames](../../src/extract/ts.ts#L2319) (node: Node) → string[] <!-- internal -->
+    - fn [patternNames](../../src/extract/ts.ts#L2393) (node: Node) → string[] <!-- internal -->
       <a id="extract.ts.patternNames"></a><br>Every identifier bound by a parameter list or a destructuring pattern.
       - calls [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
-    - fn [moduleSource](../../src/extract/ts.ts#L2360) (facts: FileFacts, local: string, orDefault = false) → string | null <!-- internal -->
+    - fn [moduleSource](../../src/extract/ts.ts#L2434) (facts: FileFacts, local: string, orDefault = false) → string | null <!-- internal -->
       <a id="extract.ts.moduleSource"></a><br>Source of the import that bound `local` as a whole module (a namespace or `require`), if any; with `orDefault`, also as a default import, whose members the graph resolves on the default export.
-    - fn [requireSource](../../src/extract/ts.ts#L2370) (value: Node, requires: ReturnType<typeof query>) → { source: string; namespace: boolean } | null <!-- internal -->
+    - fn [requireSource](../../src/extract/ts.ts#L2444) (value: Node, requires: ReturnType<typeof query>) → { source: string; namespace: boolean } | null <!-- internal -->
       <a id="extract.ts.requireSource"></a><br>`require("./x")`, `import("./x")`, `await import("./x")` as the whole value: the module a declarator binds. A `require` parameter or local is not Node's. `namespace`: `import()` gives the module's namespace object, `require()` its `module.exports`.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.requireKind](extract.md#extract.ts.requireKind)
-    - fn [isSuperModule](../../src/extract/ts.ts#L2400) (node: Node) → boolean <!-- internal -->
+    - fn [isSuperModule](../../src/extract/ts.ts#L2474) (node: Node) → boolean <!-- internal -->
       <a id="extract.ts.isSuperModule"></a><br>The node is `module.superModule`, whatever the spacing.
-    - fn [superModuleSource](../../src/extract/ts.ts#L2405) (value: Node) → { source: string; namespace: boolean } | null <!-- internal -->
+    - fn [superModuleSource](../../src/extract/ts.ts#L2479) (value: Node) → { source: string; namespace: boolean } | null <!-- internal -->
       <a id="extract.ts.superModuleSource"></a><br>`const base = module.superModule`: the whole module of the next cartridge, as `require` binds one.
       - calls [extract.ts.isSuperModule](extract.md#extract.ts.isSuperModule)
-    - fn [commonJsExports](../../src/extract/ts.ts#L2415) (stmt: Node, facts: FileFacts, declCalls: (n: Node) => CallFact[]) → void <!-- internal -->
+    - fn [commonJsExports](../../src/extract/ts.ts#L2489) (stmt: Node, facts: FileFacts, declCalls: (n: Node) => CallFact[]) → void <!-- internal -->
       <a id="extract.ts.commonJsExports"></a><br>`module.exports = {…}`, `module.exports = f`, `exports.x = …`. A function value assigned there is a fn of the module, like `export const x = () => …`: `exports.run = function () {}` and `module.exports = { go() {} }` declare `run` and `go`; `module.exports = function () {}`…
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs)
-    - fn [stringValue](../../src/extract/ts.ts#L2486) (n: Node) → string | null <!-- internal -->
+    - fn [stringValue](../../src/extract/ts.ts#L2560) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.stringValue"></a><br>The text of a string literal without its quotes: its first fragment only, so an escape sequence ends it. `""` for an empty string, null for any other node.
-    - fn [collectRouteEntries](../../src/extract/ts.ts#L2507) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectRouteEntries](../../src/extract/ts.ts#L2581) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectRouteEntries"></a><br>`app.get('/x', h)`, `router.post('/x', auth, h)`: a handler registered on a literal path — a `route` entry labelled `GET /x` whose callee is the last argument when it is a name (`h`, `handlers.save`). A computed path, or a handler written in place, is not recorded: nothing in…
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.pageOf](extract.md#extract.ts.pageOf), [extract.ts.lazyImports](extract.md#extract.ts.lazyImports)
-    - fn [collectWebFacts](../../src/extract/ts.ts#L2570) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectWebFacts](../../src/extract/ts.ts#L2644) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectWebFacts"></a><br>What the web adapters (Express, Fastify, Next.js) read (`FileFacts.web`): registration calls on a named receiver with their arguments, the values the top level creates by a call, `'use server'` directives and an exported `config`. Nothing is resolved here: the adapter follows…
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decoratorArg](extract.md#extract.ts.decoratorArg), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.directives](extract.md#extract.ts.directives), [extract.ts.walkNamed](extract.md#extract.ts.walkNamed), [extract.ts.functionName](extract.md#extract.ts.functionName), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.firstParameter](extract.md#extract.ts.firstParameter)
-    - fn [directives](../../src/extract/ts.ts#L2687) (block: Node) → string[] <!-- internal -->
+    - fn [directives](../../src/extract/ts.ts#L2761) (block: Node) → string[] <!-- internal -->
       <a id="extract.ts.directives"></a><br>The string directives (`'use server'`, `'use strict'`) at the start of a program or a function body.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue)
-    - fn [firstParameter](../../src/extract/ts.ts#L2704) (fn: Node) → string | null <!-- internal -->
+    - fn [firstParameter](../../src/extract/ts.ts#L2778) (fn: Node) → string | null <!-- internal -->
       <a id="extract.ts.firstParameter"></a><br>A function's first parameter when it is a plain name.
-    - type [FunctionName](../../src/extract/ts.ts#L2719) <!-- internal -->
+    - type [FunctionName](../../src/extract/ts.ts#L2793) <!-- internal -->
       <a id="extract.ts.FunctionName"></a><br>A function's name, if any, and whether it is declared at the top level of the module.
-    - fn [functionName](../../src/extract/ts.ts#L2725) (fn: Node) → FunctionName <!-- internal -->
+    - fn [functionName](../../src/extract/ts.ts#L2799) (fn: Node) → FunctionName <!-- internal -->
       <a id="extract.ts.functionName"></a><br>A function's name — its own, its declarator's, `default` for an anonymous default export — and whether it is a top-level declaration.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf)
-    - fn [lazyImports](../../src/extract/ts.ts#L2754) (root: Node) → Map<string, string> <!-- internal -->
+    - fn [lazyImports](../../src/extract/ts.ts#L2828) (root: Node) → Map<string, string> <!-- internal -->
       <a id="extract.ts.lazyImports"></a><br>`const Cart = loadable(() => import('./pages/cart'))` (or `lazy`, `React.lazy`) at the top level: name → specifier.
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.stringValue](extract.md#extract.ts.stringValue)
-    - fn [pageOf](../../src/extract/ts.ts#L2785) (node: Node, lazy: ReadonlyMap<string, string>) → EntryFact | null <!-- internal -->
+    - fn [pageOf](../../src/extract/ts.ts#L2859) (node: Node, lazy: ReadonlyMap<string, string>) → EntryFact | null <!-- internal -->
       <a id="extract.ts.pageOf"></a><br>A route object with a literal `path` and a named `component`; null for any other object.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.templateValue](extract.md#extract.ts.templateValue), [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [signature](../../src/extract/ts.ts#L2814) (fn: Node) → string <!-- internal -->
+    - fn [signature](../../src/extract/ts.ts#L2888) (fn: Node) → string <!-- internal -->
       <a id="extract.ts.signature"></a><br>A function's signature as written: its parameters (parenthesized for `x =>`), then `→` and the return type.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.withoutParamDecorators](extract.md#extract.ts.withoutParamDecorators)
-    - fn [withoutParamDecorators](../../src/extract/ts.ts#L2827) (params: Node) → string <!-- internal -->
+    - fn [withoutParamDecorators](../../src/extract/ts.ts#L2901) (params: Node) → string <!-- internal -->
       <a id="extract.ts.withoutParamDecorators"></a><br>`(@Body() body: Dto)` is `(body: Dto)`: a parameter decorator is framework wiring, not the signature a `planned fn` declares.
-    - fn [typeSignature](../../src/extract/ts.ts#L2837) (n: Node) → string | null <!-- internal -->
+    - fn [typeSignature](../../src/extract/ts.ts#L2911) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.typeSignature"></a><br>A type's signature: `= <type>` for a short alias (60 characters at most), else its heritage.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.heritage](extract.md#extract.ts.heritage)
-    - fn [heritage](../../src/extract/ts.ts#L2850) (n: Node) → string | null <!-- internal -->
+    - fn [heritage](../../src/extract/ts.ts#L2924) (n: Node) → string | null <!-- internal -->
       <a id="extract.ts.heritage"></a><br>A class or interface's `extends`/`implements` clause, whitespace collapsed.
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
-    - fn [collapse](../../src/extract/ts.ts#L2857) (s: string) → string <!-- internal -->
+    - fn [collapse](../../src/extract/ts.ts#L2931) (s: string) → string <!-- internal -->
       <a id="extract.ts.collapse"></a><br>Whitespace runs collapsed to one space, trimmed.
-    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2862) (spec: string) → boolean
+    - fn [isNodeBuiltin](../../src/extract/ts.ts#L2936) (spec: string) → boolean
       <a id="extract.ts.isNodeBuiltin"></a><br>Is this specifier a Node built-in (`fs`, `node:fs`)?

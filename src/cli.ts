@@ -217,7 +217,13 @@ Commands:
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
                             (--check: fail if the file is stale; writes nothing)
-  trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
+  types [<flow|feature>…] [--out f] [--check]
+                            Print the planned declarations as TypeScript: a planned type
+                            with fields is an interface, planned fns are methods of their
+                            module's interface, an ID the code has is an import type;
+                            names limit it to those flows or features. --out writes f
+                            (relative to the root); --check: 1 if f differs, writes nothing
+  trace-plan <flow>        Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
   trace-plan --entry <id>   The same JSON for the fns an entry point reaches, to trace a
                             scenario before its flow exists (--name n: the runs' flow)
@@ -575,6 +581,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdCodeToSpec(paths[0], { into: values.into, print: values.print === true, mode: values.mode ?? "hybrid", since: values.since });
     case "wire":
       return cmdWire(values.out ?? "keylang.gen.ts", values.check === true);
+    case "types":
+      return cmdTypes(paths, values.out, values.check === true);
     case "trace-plan":
       return cmdTracePlan(paths[0], values.entry, values.name);
     case "entries":
@@ -1548,6 +1556,79 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   for (const message of result.messages) (message.level === "info" && payload.refused.length === 0 ? process.stdout : process.stderr).write(`${message.text}\n`);
 
   return result.exitCode ?? 2;
+}
+
+/**
+ * `keylang types [<flow|feature>…] [--out f] [--check]`: the planned
+ * declarations as TypeScript (`ts-projection.ts`). Without `--out` the text
+ * goes to stdout. `--out` writes `f` (relative to the root) unless a person
+ * wrote it (no generated header: 1, nothing written); with `--check` it only
+ * compares, 1 when `f` is missing or differs. An unknown flow or feature, or
+ * `--check` without `--out`, is 2.
+ */
+async function cmdTypes(names: readonly string[], out: string | undefined, checkOnly: boolean): Promise<number> {
+  const { PROJECTION_HEADER, plannedIdsOf, projectTypes } = await import("./ts-projection.ts");
+  const { targetProblem } = await import("./safe-write.ts");
+
+  if (checkOnly && out === undefined) throw new Error("types --check: --out <file> names the file to compare");
+  const root = findRoot(process.cwd());
+  const target = out === undefined ? undefined : toPosix(out);
+  const problem = target === undefined ? null : targetProblem(root, target);
+
+  if (target !== undefined && problem !== null) throw new Error(`types: ${target}: ${problem}`);
+  // Read only: the code and the specs, no fact cache and no evidence.
+  const analysis = await analyze({ root, withoutEvidence: true, persistFacts: false, saveFacts: false });
+  const request: Parameters<typeof projectTypes>[0] = { spec: analysis.spec, snapshot: analysis.snapshot };
+
+  // Names narrow the projection to the planned IDs of those flows or features.
+  if (names.length > 0) {
+    const { ids, unknown } = plannedIdsOf(analysis.spec, names, analysis.config.dir);
+
+    if (unknown.length > 0) throw new Error(`types: no flow or feature named ${unknown.map((n) => `\`${n}\``).join(", ")}`);
+    request.ids = ids;
+  }
+
+  // `import type` paths are relative to the directory of `--out` (the root without it).
+  if (target !== undefined) request.outDir = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+  const { text } = projectTypes(request);
+
+  if (target === undefined) {
+    process.stdout.write(text);
+
+    return 0;
+  }
+
+  // Compare with the file as it is (line endings aside): `--check` stops here.
+  let current: string | null = null;
+
+  try {
+    current = readFileSync(join(root, target), "utf8").replace(/\r\n/g, "\n");
+  } catch {
+    current = null;
+  }
+
+  if (current === text) {
+    process.stderr.write(`keylang: ${target} is current\n`);
+
+    return 0;
+  }
+
+  if (checkOnly) {
+    process.stderr.write(`keylang: ${target} is ${current === null ? "missing" : "stale"}; run \`keylang types${names.length > 0 ? ` ${names.join(" ")}` : ""} --out ${target}\`\n`);
+
+    return 1;
+  }
+
+  if (current !== null && !current.startsWith(PROJECTION_HEADER)) {
+    process.stderr.write(`keylang: ${target}: a file without the keylang:generated header; nothing written\n`);
+
+    return 1;
+  }
+
+  safeWrite(root, target, text);
+  process.stderr.write(`keylang: ${target}: written\n`);
+
+  return 0;
 }
 
 /** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0. The CLI is a printer over the shared doctor operation. */

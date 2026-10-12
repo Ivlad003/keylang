@@ -171,7 +171,7 @@
       <a id="base.diag.Code"></a><br>Every diagnostic code keylang emits; a code's meaning never changes once published.
     - type [Severity](../../src/diag.ts#L71) = "error" | "warning"
       <a id="base.diag.Severity"></a><br>An error fails `keylang check`; a warning is reported but does not.
-    - type [K005Reason](../../src/diag.ts#L74) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - type [K005Reason](../../src/diag.ts#L74)
       <a id="base.diag.K005Reason"></a><br>Why a K005 is malformed. Other codes do not carry this.
     - fn [severityOf](../../src/diag.ts#L77) (code: Code) → Severity
       <a id="base.diag.severityOf"></a><br>The fixed severity of a code: a short list of warnings, everything else an error.

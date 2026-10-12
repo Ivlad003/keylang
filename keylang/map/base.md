@@ -104,7 +104,7 @@
     - span base.span
     - type [Code](../../src/diag.ts#L10)
     - type [Severity](../../src/diag.ts#L71) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L74) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - type [K005Reason](../../src/diag.ts#L74)
     - fn [severityOf](../../src/diag.ts#L77) (code: Code) → Severity
     - type [Diagnostic](../../src/diag.ts#L82)
     - fn [diagnostic](../../src/diag.ts#L117) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic

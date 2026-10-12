@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [system-proposal](#features.system-proposal) · [tour](#features.tour) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [system-proposal](#features.system-proposal) · [tour](#features.tour) · [ts-projection](#features.ts-projection) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -1020,19 +1020,19 @@
       - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
     - type [NodeSummary](../../src/explain-node.ts#L56)
       <a id="features.explain-node.NodeSummary"></a><br>Everything `explain <id>` reports about a node: what it is, its neighbours, flows, rules, holes and fingerprint.
-    - type [ExplainResult](../../src/explain-node.ts#L84)
+    - type [ExplainResult](../../src/explain-node.ts#L86)
       <a id="features.explain-node.ExplainResult"></a><br>A summary, or the unknown ID with the nearest declared ID as a suggestion.
-    - fn [summarizeNode](../../src/explain-node.ts#L87) (analysis: Analysis, id: string) → ExplainResult
+    - fn [summarizeNode](../../src/explain-node.ts#L89) (analysis: Analysis, id: string) → ExplainResult
       <a id="features.explain-node.summarizeNode"></a><br>The offline summary of `id`: from the snapshot when the code has it, else from its `planned` line.
-      - calls [features.explain-node.nodeFacts](features.md#features.explain-node.nodeFacts), [features.explain-node.rulesNaming](features.md#features.explain-node.rulesNaming), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved), [features.explain-node.observersOf](features.md#features.explain-node.observersOf)
-    - fn [observersOf](../../src/explain-node.ts#L138) (analysis: Analysis, id: string) → string[] <!-- internal -->
+      - calls [features.explain-node.nodeFacts](features.md#features.explain-node.nodeFacts), [features.explain-node.rulesNaming](features.md#features.explain-node.rulesNaming), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved), [features.explain-node.observersOf](features.md#features.explain-node.observersOf), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
+    - fn [observersOf](../../src/explain-node.ts#L143) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.explain-node.observersOf"></a><br>The observers of an event, in config order: the fn, the observer's name, its config line and area.
-    - fn [rulesNaming](../../src/explain-node.ts#L147) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [rulesNaming](../../src/explain-node.ts#L152) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.explain-node.rulesNaming"></a><br>`file:line: rule text` of the rule and module lines that name `id` or a scope around it, sorted; the generated map's are left out.
       - calls [features.explain-node.nodeHolding](features.md#features.explain-node.nodeHolding)
-    - fn [nodeHolding](../../src/explain-node.ts#L188) (root: Node, ref: Ref) → Node | null <!-- internal -->
+    - fn [nodeHolding](../../src/explain-node.ts#L193) (root: Node, ref: Ref) → Node | null <!-- internal -->
       <a id="features.explain-node.nodeHolding"></a><br>The allow, deny, entry item, nested layer, or module line that holds `ref`.
-    - fn [formatSummary](../../src/explain-node.ts#L202) (s: NodeSummary) → string
+    - fn [formatSummary](../../src/explain-node.ts#L207) (s: NodeSummary) → string
       <a id="features.explain-node.formatSummary"></a><br>The summary as text: one line per fact, empty facts left out.
   - module [explain-offline](../../src/explain-offline.ts#L1)
     <a id="features.explain-offline"></a><br>`keylang explain <code|id>` without a model: the help of a diagnostic code, or what the snapshot and the specs say about a node with the explanations saved for it. One result for the CLI, the TUI palette and `e`: the doc comment of the code (in the summary), the saved…
@@ -1081,9 +1081,9 @@
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes, printed by `keylang explain <code>` (CLI). Every code in `diag.ts` has an entry: the `Record<Code, …>` type makes a missing one a type error.
     - diag [base.diag](base.md#base.diag)
-    - fn [isCode](../../src/explain.ts#L159) (text: string) → text is Code <!-- internal -->
+    - fn [isCode](../../src/explain.ts#L160) (text: string) → text is Code <!-- internal -->
       <a id="features.explain.isCode"></a><br>Whether `text` is a known diagnostic code; own keys only, so `constructor` is not one.
-    - fn [explainCode](../../src/explain.ts#L164) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L165) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>The explanation of a code as printed lines (case-insensitive code), or null for an unknown code.
       - calls [features.explain.isCode](features.md#features.explain.isCode)
   - module [explorer](../../src/explorer.ts#L1)
@@ -1812,66 +1812,66 @@
       - calls [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns)
     - fn [hoverContent](../../src/lsp-features.ts#L388) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null
       <a id="features.lsp-features.hoverContent"></a><br>What hover says at a position: the ID under it (kind, signature, place, evidence, flows), else the role of the line.
-      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [roleHover](../../src/lsp-features.ts#L421) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null <!-- internal -->
+      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - fn [roleHover](../../src/lsp-features.ts#L425) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null <!-- internal -->
       <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (grammar.md §5), then the diagnostics and verdicts of that line.
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [definition](../../src/lsp-features.ts#L463) (ws: Workspace, path: string, position: LspPosition) → Location | null
+    - fn [definition](../../src/lsp-features.ts#L467) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a><br>Go to definition: a code link opens its file at its line; an ID opens its declaration (code, or a spec for a planned one).
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
-    - type [SignatureInformation](../../src/lsp-features.ts#L485)
+    - type [SignatureInformation](../../src/lsp-features.ts#L489)
       <a id="features.lsp-features.SignatureInformation"></a><br>One signature in a signature-help answer.
-    - type [SignatureHelp](../../src/lsp-features.ts#L491)
+    - type [SignatureHelp](../../src/lsp-features.ts#L495)
       <a id="features.lsp-features.SignatureHelp"></a><br>A signature-help answer: always one signature, nothing active to track.
-    - fn [signatureHelp](../../src/lsp-features.ts#L498) (ws: Workspace, path: string, position: LspPosition) → SignatureHelp | null
+    - fn [signatureHelp](../../src/lsp-features.ts#L502) (ws: Workspace, path: string, position: LspPosition) → SignatureHelp | null
       <a id="features.lsp-features.signatureHelp"></a><br>The signature of the last dotted ID before the cursor on its line, with its place.
       - calls [features.lsp-features.describe](features.md#features.lsp-features.describe)
-    - fn [references](../../src/lsp-features.ts#L521) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L525) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       <a id="features.lsp-features.references"></a><br>Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [SymbolInformation](../../src/lsp-features.ts#L544)
+    - type [SymbolInformation](../../src/lsp-features.ts#L548)
       <a id="features.lsp-features.SymbolInformation"></a><br>A symbol in a `workspace/symbol` answer.
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L564) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L568) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
-    - fn [symbolKind](../../src/lsp-features.ts#L587) (kind: string) → number <!-- internal -->
+    - fn [symbolKind](../../src/lsp-features.ts#L591) (kind: string) → number <!-- internal -->
       <a id="features.lsp-features.symbolKind"></a><br>The LSP SymbolKind of a node kind (`planned` ignored).
-    - fn [symbolLocation](../../src/lsp-features.ts#L602) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+    - fn [symbolLocation](../../src/lsp-features.ts#L606) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       <a id="features.lsp-features.symbolLocation"></a><br>Where a symbol points: a layer at its key in keylang.json, any other node at its code or spec line; null when it has no place.
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - type [DocumentSymbol](../../src/lsp-features.ts#L627)
+    - type [DocumentSymbol](../../src/lsp-features.ts#L631)
       <a id="features.lsp-features.DocumentSymbol"></a><br>An outline entry for `textDocument/documentSymbol`, with its children.
-    - fn [statusOf](../../src/lsp-features.ts#L640) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [statusOf](../../src/lsp-features.ts#L644) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
       <a id="features.lsp-features.statusOf"></a><br>Worst verdict on a line of this document: `fail` > `unverified` > `ok`.
-    - fn [flowPhrases](../../src/lsp-features.ts#L654) (spec: SpecIR) → Map<Node, string> <!-- internal -->
+    - fn [flowPhrases](../../src/lsp-features.ts#L658) (spec: SpecIR) → Map<Node, string> <!-- internal -->
       <a id="features.lsp-features.flowPhrases"></a><br>Written phrase of a trigger, step, when, or then, keyed by its text-IR node.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.lsp-features.itemPhrase](features.md#features.lsp-features.itemPhrase)
-    - fn [itemPhrase](../../src/lsp-features.ts#L671) (item: Trigger | FlowItem) → string | null <!-- internal -->
+    - fn [itemPhrase](../../src/lsp-features.ts#L675) (item: Trigger | FlowItem) → string | null <!-- internal -->
       <a id="features.lsp-features.itemPhrase"></a><br>The phrase an outline shows for a flow item: its target, condition or prose; null for other items.
-    - fn [documentSymbols](../../src/lsp-features.ts#L682) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [documentSymbols](../../src/lsp-features.ts#L686) (ws: Workspace, path: string) → DocumentSymbol[]
       <a id="features.lsp-features.documentSymbols"></a><br>The outline of a document: flows and rules as groups, every other node at the top; each entry with the worst status of its lines.
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.flowPhrases](features.md#features.lsp-features.flowPhrases), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [CompletionItem](../../src/lsp-features.ts#L789)
+    - type [CompletionItem](../../src/lsp-features.ts#L793)
       <a id="features.lsp-features.CompletionItem"></a><br>A completion item as LSP takes it; the label replaces the whole typed word.
-    - fn [completions](../../src/lsp-features.ts#L817) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - fn [completions](../../src/lsp-features.ts#L821) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.eventCompletions](features.md#features.lsp-features.eventCompletions), [lang.parser.isTriggerKind](lang.md#lang.parser.isTriggerKind), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
-    - fn [eventCompletions](../../src/lsp-features.ts#L936) (ws: Workspace, replacing: (label: string) => Pick<CompletionItem, "filterText" | "textEdit">) → CompletionItem[] <!-- internal -->
+    - fn [eventCompletions](../../src/lsp-features.ts#L940) (ws: Workspace, replacing: (label: string) => Pick<CompletionItem, "filterText" | "textEdit">) → CompletionItem[] <!-- internal -->
       <a id="features.lsp-features.eventCompletions"></a><br>The events of the snapshot, then events the map or `planned` declares, as completions of an event ID.
-    - fn [sectionAt](../../src/lsp-features.ts#L961) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L965) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a><br>The section a 1-based line belongs to: the last one whose heading is at or above it.
-    - fn [enclosing](../../src/lsp-features.ts#L974) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L978) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L987) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L991) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a><br>The node and its ancestors, innermost first.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L1002) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L1006) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L1023) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L1027) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a><br>A code lens: where it sits and the editor command it runs.
-    - fn [codeLenses](../../src/lsp-features.ts#L1029) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L1033) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [migration-stack](../../src/migration-stack.ts#L1)
@@ -2357,6 +2357,58 @@
     - fn [tourMarkdown](../../src/tour.ts#L488) (tour: Tour) → string
       <a id="features.tour.tourMarkdown"></a><br>The tour as one Markdown page, the seven sections in order. Ends with a newline.
       - calls [features.discover.proseLine](features.md#features.discover.proseLine), [features.tour.code](features.md#features.tour.code), [features.tour.cell](features.md#features.tour.cell), [features.tour.percent](features.md#features.tour.percent)
+  - module [ts-projection](../../src/ts-projection.ts#L1)
+    <a id="features.ts-projection"></a><br>TypeScript projection of the planned declarations (`keylang types`, .scratch/type-fields §6): how the intentions of the specs read as TypeScript interfaces before any of them is written.
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - type [ProjectionInput](../../src/ts-projection.ts#L24)
+      <a id="features.ts-projection.ProjectionInput"></a><br>What to project: the specs, the code (null without one), which IDs and where the text will live.
+    - type [ProjectedItem](../../src/ts-projection.ts#L34)
+      <a id="features.ts-projection.ProjectedItem"></a><br>One declaration of the projection, in output order.
+    - type [Projection](../../src/ts-projection.ts#L49)
+      <a id="features.ts-projection.Projection"></a><br>The whole projection: the file text and its items.
+    - type [PlannedSelection](../../src/ts-projection.ts#L55)
+      <a id="features.ts-projection.PlannedSelection"></a><br>The planned IDs of named flows or features, and the names that are neither.
+    - fn [projectTypes](../../src/ts-projection.ts#L70) (input: ProjectionInput) → Projection
+      <a id="features.ts-projection.projectTypes"></a><br>The projection of the selected planned declarations, imports first, then declarations by ID.
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.ts-projection.importItem](features.md#features.ts-projection.importItem), [features.ts-projection.typeItem](features.md#features.ts-projection.typeItem), [features.ts-projection.addToGroup](features.md#features.ts-projection.addToGroup), [features.ts-projection.parentOf](features.md#features.ts-projection.parentOf), [features.ts-projection.moduleItem](features.md#features.ts-projection.moduleItem), [features.ts-projection.projectionText](features.md#features.ts-projection.projectionText)
+    - fn [plannedIdsOf](../../src/ts-projection.ts#L121) (spec: Pick<SpecIR, "planned" | "flows">, names: readonly string[], specDir: string) → PlannedSelection
+      <a id="features.ts-projection.plannedIdsOf"></a><br>The planned IDs of named flows or features, in spec order: a flow's are the `planned` lines of its section, a feature's those of `<dir>/features/<name>.md`. `unknown` lists the names that are neither.
+      - calls [base.config.specPath](base.md#base.config.specPath)
+    - fn [addToGroup](../../src/ts-projection.ts#L141) (groups: Map<string, Planned[]>, module: string, fn: Planned | null) → void <!-- internal -->
+      <a id="features.ts-projection.addToGroup"></a><br>Adds a planned fn (or only the group, for a planned module) to the group of `module`.
+    - fn [importItem](../../src/ts-projection.ts#L149) (id: string, code: AnalysisSnapshot["nodes"][string], outDir: string) → { item: ProjectedItem; path: string } | null <!-- internal -->
+      <a id="features.ts-projection.importItem"></a><br>`import type { X } from "<path>"` for a code type or class in a TypeScript file, with that path; null for any other node.
+      - calls [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment)
+    - fn [typeItem](../../src/ts-projection.ts#L161) (item: Planned) → ProjectedItem <!-- internal -->
+      <a id="features.ts-projection.typeItem"></a><br>A planned type: an interface with its fields (and `extends`), an alias for `= X`, or `unknown` with a TODO.
+      - calls [features.ts-projection.pascalCase](features.md#features.ts-projection.pascalCase), [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment), [features.ts-projection.docComment](features.md#features.ts-projection.docComment), [features.ts-projection.withoutSemicolon](features.md#features.ts-projection.withoutSemicolon), [features.ts-projection.memberName](features.md#features.ts-projection.memberName)
+    - fn [moduleItem](../../src/ts-projection.ts#L187) (id: string, module: Planned | null, fns: readonly Planned[]) → ProjectedItem <!-- internal -->
+      <a id="features.ts-projection.moduleItem"></a><br>The interface of a module: its planned fns as methods, by ID; placed at the planned module, else at its first fn.
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.ts-projection.pascalCase](features.md#features.ts-projection.pascalCase), [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment), [features.ts-projection.method](features.md#features.ts-projection.method), [features.ts-projection.docComment](features.md#features.ts-projection.docComment)
+    - fn [method](../../src/ts-projection.ts#L202) (fn: Planned) → string <!-- internal -->
+      <a id="features.ts-projection.method"></a><br>A planned fn as a method: `(x: T) → R` is `f(x: T): R;`, a parameter list alone returns `unknown`, no signature takes any arguments. A signature of another shape is kept as a comment beside the open form.
+      - calls [features.ts-projection.memberName](features.md#features.ts-projection.memberName), [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment), [features.ts-projection.closingParen](features.md#features.ts-projection.closingParen), [features.ts-projection.withoutSemicolon](features.md#features.ts-projection.withoutSemicolon)
+    - fn [closingParen](../../src/ts-projection.ts#L224) (text: string) → number | null <!-- internal -->
+      <a id="features.ts-projection.closingParen"></a><br>The index of the `)` that closes the `(` at index 0, or null when it does not close.
+    - fn [projectionText](../../src/ts-projection.ts#L236) (imports: readonly { item: ProjectedItem; path: string }[], declarations: readonly ProjectedItem[]) → string <!-- internal -->
+      <a id="features.ts-projection.projectionText"></a><br>The file: the header, the imports, then the declarations, blank lines between, one final newline.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [docComment](../../src/ts-projection.ts#L251) (id: string, file: string, line: number) → string <!-- internal -->
+      <a id="features.ts-projection.docComment"></a><br>`/** <id> — <spec file>:<line> *\/` above a declaration.
+    - fn [memberName](../../src/ts-projection.ts#L256) (name: string) → string <!-- internal -->
+      <a id="features.ts-projection.memberName"></a><br>A member name as TypeScript accepts it: bare when an identifier, else quoted.
+    - fn [pascalCase](../../src/ts-projection.ts#L261) (segment: string) → string <!-- internal -->
+      <a id="features.ts-projection.pascalCase"></a><br>`order-line` → `OrderLine`, `orders` → `Orders`; a leading digit gets `_`.
+    - fn [withoutSemicolon](../../src/ts-projection.ts#L272) (type: string) → string <!-- internal -->
+      <a id="features.ts-projection.withoutSemicolon"></a><br>A type without the `;` a plan may end it with.
+    - fn [lastSegment](../../src/ts-projection.ts#L277) (id: string) → string <!-- internal -->
+      <a id="features.ts-projection.lastSegment"></a><br>The last dotted segment of an ID.
+    - fn [parentOf](../../src/ts-projection.ts#L282) (id: string) → string <!-- internal -->
+      <a id="features.ts-projection.parentOf"></a><br>The ID without its last segment.
   - module [voice-local](../../src/voice-local.ts#L1)
     <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are optional peer dependencies: npm installs them only when the user adds them next to keylang, and…
     - node [external.node](external.md#external.node)
