@@ -102,6 +102,8 @@ In the editor, a view taken from the code (з коду) lets you change only its
 
 Nothing on the page writes a spec directly. «Запропонувати зміни» (propose changes) turns the drawing into proposals for the specs it changes, as `keylang diagram propose` does.
 
+The studio (Студія, `/studio`, linked from the top of the diagram page) puts three things side by side: the same editor, a projection of the canvas, and a chat with the model from `agent` in keylang.json. A moment after each change the projection shows what the drawing would make of the specs, the added lines marked, or, on its TypeScript tab, the interfaces `keylang types` would print, including a type you have just drawn. The lines of the selected shape are highlighted. When the agent changes a spec, its answer arrives as a proposal, shown hunk by hunk with «Прийняти» (accept) and «Відхилити» (reject). `keylang web --read-only` has no studio.
+
 You can also start a project from a drawing. `keylang web --new <dir>` opens the editor on an empty canvas with a template of lanes. The button «Створити специфікацію» writes `keylang.json`, `rules.md`, the features and the layout, but only the files that do not exist yet. The [from-scratch track](from-scratch/README.md) walks through it.
 
 The same views also leave the browser as files. `keylang export bpmn <flow>` writes BPMN 2.0, `keylang export drawio <view>` a draw.io file, and `keylang export c4` a C4 diagram for PlantUML or Mermaid. If someone changes a drawing in draw.io, `keylang import drawio <file>` reads it back as one proposal for the flow's spec.

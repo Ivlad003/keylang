@@ -567,6 +567,53 @@
       - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, base.diag.errorText, map.explanations.isStoredExplanation, lang.parser.parse, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
     - fn [runTracePlan](../../src/operations/spec.ts#L518) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
       - calls operations.shared.empty, map.trace-plan.tracePlan, base.config.loadConfig, map.trace-plan.entryTracePlan, base.diag.errorText, map.trace-plan.tracePlanText
+  - module [studio](../../src/operations/studio.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - diagram-proposal features.diagram-proposal
+    - files lang.files
+    - json base.json
+    - line-diff base.line-diff
+    - parser lang.parser
+    - proposals features.proposals
+    - spec-ir lang.spec-ir
+    - ts-projection features.ts-projection
+    - assistant operations.assistant
+    - diagram-propose operations.diagram-propose
+    - shared operations.shared
+    - types operations.types
+    - llm features.llm
+    - type [StudioContext](../../src/operations/studio.ts#L40)
+    - type [ProjectionFormat](../../src/operations/studio.ts#L46) = "keylang" | "ts"
+    - type [ProjectionFile](../../src/operations/studio.ts#L49)
+    - type [ProjectionItem](../../src/operations/studio.ts#L61) extends ProjectedItem
+    - type [StudioProjection](../../src/operations/studio.ts#L67)
+    - type [ProjectionRequest](../../src/operations/studio.ts#L72)
+    - fn [studioProjection](../../src/operations/studio.ts#L84) (request: ProjectionRequest, context: StudioContext) → Promise<StudioProjection>
+      - calls features.diagram-proposal.parseEditorModel, operations.studio.isProblem, operations.diagram-propose.runDiagramPropose, operations.studio.keylangFiles, lang.parser.parse, lang.spec-ir.compileSpec, features.ts-projection.plannedIdsOf, operations.shared.rootRelative, features.ts-projection.projectTypes, operations.studio.placeItems
+    - fn [isProblem](../../src/operations/studio.ts#L115) (value: EditorModel | string) → value is string <!-- internal -->
+    - fn [keylangFiles](../../src/operations/studio.ts#L120) (root: string, analysis: Analysis, view: string, proposed: DiagramProposeResult) → ProjectionFile[] <!-- internal -->
+      - calls operations.studio.addedLines, lang.files.existingText
+    - fn [addedLines](../../src/operations/studio.ts#L140) (hunks: readonly ProposedHunk[]) → number[]
+    - fn [placeItems](../../src/operations/studio.ts#L155) (text: string, items: readonly ProjectedItem[]) → ProjectionItem[] <!-- internal -->
+    - type [StudioChatRequest](../../src/operations/studio.ts#L174)
+    - type [StudioChatProposal](../../src/operations/studio.ts#L185)
+    - type [StudioChatResult](../../src/operations/studio.ts#L194)
+    - fn [chatResult](../../src/operations/studio.ts#L209) (status: StudioChatResult["status"], error: string | null) → StudioChatResult <!-- internal -->
+    - fn [parseHistory](../../src/operations/studio.ts#L217) (value: JsonValue | undefined) → ChatTurn[] | string
+      - calls base.json.isJsonObject, base.json.isJsonString
+    - fn [runStudioChat](../../src/operations/studio.ts#L238) (request: StudioChatRequest, context: StudioContext) → Promise<StudioChatResult>
+      - calls operations.studio.chatResult, base.config.loadConfig, base.diag.errorText, operations.shared.rootRelative, lang.files.existingText, operations.studio.lineOf, operations.studio.studioContext, operations.assistant.runAssistantReply, operations.studio.proposalGate, operations.shared.generatedIn, features.proposals.writeProposal, base.line-diff.diffLines, features.proposals.lineDiff
+    - fn [proposalGate](../../src/operations/studio.ts#L292) (root: string, specDir: string, path: string, generated: (path: string) => boolean) → string | null <!-- internal -->
+      - calls features.proposals.proposalProblem
+    - fn [lineOf](../../src/operations/studio.ts#L304) (text: string, id: string | null) → number <!-- internal -->
+    - fn [studioContext](../../src/operations/studio.ts#L313) (request: StudioChatRequest, context: StudioContext) → Promise<string> <!-- internal -->
+      - calls operations.studio.studioProjection
+    - type [ProposalDecision](../../src/operations/studio.ts#L334)
+    - fn [decideProposal](../../src/operations/studio.ts#L337) (root: string, target: string, action: "accept" | "reject") → ProposalDecision
+      - calls operations.shared.rootRelative, base.config.loadConfig, features.proposals.rejectProposal, features.proposals.acceptProposal
   - module [system](../../src/operations/system.ts#L1)
     - node external.node
     - analyze map.analyze

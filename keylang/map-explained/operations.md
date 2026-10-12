@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [diagram-propose](#operations.diagram-propose) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [greenfield](#operations.greenfield) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [system](#operations.system) · [tour](#operations.tour) · [types](#operations.types)
+[README](README.md) · modules: [operations](#operations.operations) · [assistant](#operations.assistant) · [code](#operations.code) · [coverage](#operations.coverage) · [diagram-export](#operations.diagram-export) · [diagram-propose](#operations.diagram-propose) · [discover-names](#operations.discover-names) · [discover](#operations.discover) · [doctor](#operations.doctor) · [draft](#operations.draft) · [entries](#operations.entries) · [explain](#operations.explain) · [export](#operations.export) · [feature](#operations.feature) · [flow-bundle](#operations.flow-bundle) · [generate](#operations.generate) · [greenfield](#operations.greenfield) · [integrations](#operations.integrations) · [migration](#operations.migration) · [shared](#operations.shared) · [spec](#operations.spec) · [studio](#operations.studio) · [system](#operations.system) · [tour](#operations.tour) · [types](#operations.types)
 
 # map
 
@@ -762,6 +762,76 @@
     - fn [runTracePlan](../../src/operations/spec.ts#L518) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
       <a id="operations.spec.runTracePlan"></a><br>`keylang trace-plan <flow>`: the flow's `trigger` and `step` IDs from the saved specs, then a fresh snapshot of the saved code — never the session's or a cached index. With `entry` (`trace-plan --entry <id>`): the fns reachable from that fn (`reachableFrom`), named `flow` or…
       - calls [operations.shared.empty](operations.md#operations.shared.empty), [map.trace-plan.tracePlan](map.md#map.trace-plan.tracePlan), [base.config.loadConfig](base.md#base.config.loadConfig), [map.trace-plan.entryTracePlan](map.md#map.trace-plan.entryTracePlan), [base.diag.errorText](base.md#base.diag.errorText), [map.trace-plan.tracePlanText](map.md#map.trace-plan.tracePlanText)
+  - module [studio](../../src/operations/studio.ts#L1)
+    <a id="operations.studio"></a><br>«Студія» of `keylang web` (.scratch/studio): the diagram, what it becomes and the agent on one screen. Three requests of the page live here, apart from the HTTP plumbing of `src/tui/web.ts`:
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - diagram-proposal [features.diagram-proposal](features.md#features.diagram-proposal)
+    - files [lang.files](lang.md#lang.files)
+    - json [base.json](base.md#base.json)
+    - line-diff [base.line-diff](base.md#base.line-diff)
+    - parser [lang.parser](lang.md#lang.parser)
+    - proposals [features.proposals](features.md#features.proposals)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - ts-projection [features.ts-projection](features.md#features.ts-projection)
+    - assistant [operations.assistant](operations.md#operations.assistant)
+    - diagram-propose [operations.diagram-propose](operations.md#operations.diagram-propose)
+    - shared [operations.shared](operations.md#operations.shared)
+    - types [operations.types](operations.md#operations.types)
+    - llm [features.llm](features.md#features.llm)
+    - type [StudioContext](../../src/operations/studio.ts#L40)
+      <a id="operations.studio.StudioContext"></a><br>What the studio's operations use besides their request: the shared analysis, and cancellation for the chat.
+    - type [ProjectionFormat](../../src/operations/studio.ts#L46) = "keylang" | "ts"
+      <a id="operations.studio.ProjectionFormat"></a><br>The two projections of the canvas.
+    - type [ProjectionFile](../../src/operations/studio.ts#L49)
+      <a id="operations.studio.ProjectionFile"></a><br>One spec file of the keylang projection: its full text, and which of its lines the drawing adds.
+    - type [ProjectionItem](../../src/operations/studio.ts#L61) extends ProjectedItem
+      <a id="operations.studio.ProjectionItem"></a><br>One declaration of the TypeScript projection with its lines in the text (1-based, inclusive).
+    - type [StudioProjection](../../src/operations/studio.ts#L67)
+      <a id="operations.studio.StudioProjection"></a><br>The answer of `POST /api/projection`: the status of the drawing's proposal, and the text of the chosen format.
+    - type [ProjectionRequest](../../src/operations/studio.ts#L72)
+      <a id="operations.studio.ProjectionRequest"></a><br>A projection request: the canvas, the spec hash it was opened with, the format.
+    - fn [studioProjection](../../src/operations/studio.ts#L84) (request: ProjectionRequest, context: StudioContext) → Promise<StudioProjection>
+      <a id="operations.studio.studioProjection"></a><br>The projection of the canvas in one format; writes nothing. A drawing the operation refuses (an invalid model, specs changed since it was opened) comes back with that status and no text.
+      - calls [features.diagram-proposal.parseEditorModel](features.md#features.diagram-proposal.parseEditorModel), [operations.studio.isProblem](operations.md#operations.studio.isProblem), [operations.diagram-propose.runDiagramPropose](operations.md#operations.diagram-propose.runDiagramPropose), [operations.studio.keylangFiles](operations.md#operations.studio.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [features.ts-projection.plannedIdsOf](features.md#features.ts-projection.plannedIdsOf), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [features.ts-projection.projectTypes](features.md#features.ts-projection.projectTypes), [operations.studio.placeItems](operations.md#operations.studio.placeItems)
+    - fn [isProblem](../../src/operations/studio.ts#L115) (value: EditorModel | string) → value is string <!-- internal -->
+      <a id="operations.studio.isProblem"></a><br>Whether the model parse gave its reason instead of the model.
+    - fn [keylangFiles](../../src/operations/studio.ts#L120) (root: string, analysis: Analysis, view: string, proposed: DiagramProposeResult) → ProjectionFile[] <!-- internal -->
+      <a id="operations.studio.keylangFiles"></a><br>The files of the keylang projection: each proposed target with its added lines, then the view's own flow file when the drawing leaves it as it is.
+      - calls [operations.studio.addedLines](operations.md#operations.studio.addedLines), [lang.files.existingText](lang.md#lang.files.existingText)
+    - fn [addedLines](../../src/operations/studio.ts#L140) (hunks: readonly ProposedHunk[]) → number[]
+      <a id="operations.studio.addedLines"></a><br>The 1-based lines of the new text that the hunks put in. A hunk's `line` is its first base line; every earlier hunk shifts the new text by what it added minus what it removed.
+    - fn [placeItems](../../src/operations/studio.ts#L155) (text: string, items: readonly ProjectedItem[]) → ProjectionItem[] <!-- internal -->
+      <a id="operations.studio.placeItems"></a><br>Each item with the lines its text takes in the projection text, found in output order.
+    - type [StudioChatRequest](../../src/operations/studio.ts#L174)
+      <a id="operations.studio.StudioChatRequest"></a><br>A chat request of the studio: the conversation, the open view, the selected IDs and the canvas.
+    - type [StudioChatProposal](../../src/operations/studio.ts#L185)
+      <a id="operations.studio.StudioChatProposal"></a><br>A proposal the chat wrote: where it waits, and what it changes.
+    - type [StudioChatResult](../../src/operations/studio.ts#L194)
+      <a id="operations.studio.StudioChatResult"></a><br>What the chat answers: the reply, the proposal written (or why not), and the blocks left out.
+    - fn [chatResult](../../src/operations/studio.ts#L209) (status: StudioChatResult["status"], error: string | null) → StudioChatResult <!-- internal -->
+      <a id="operations.studio.chatResult"></a><br>A chat answer without a reply: a status and its reason.
+    - fn [parseHistory](../../src/operations/studio.ts#L217) (value: JsonValue | undefined) → ChatTurn[] | string
+      <a id="operations.studio.parseHistory"></a><br>The conversation of a chat request (`[{role: "you"|"clip", text}]`, the person's message last), or what is wrong with it.
+      - calls [base.json.isJsonObject](base.md#base.json.isJsonObject), [base.json.isJsonString](base.md#base.json.isJsonString)
+    - fn [runStudioChat](../../src/operations/studio.ts#L238) (request: StudioChatRequest, context: StudioContext) → Promise<StudioChatResult>
+      <a id="operations.studio.runStudioChat"></a><br>One answer of the configured model in the studio. No model: `no-model` with what to set up, before any request.
+      - calls [operations.studio.chatResult](operations.md#operations.studio.chatResult), [base.config.loadConfig](base.md#base.config.loadConfig), [base.diag.errorText](base.md#base.diag.errorText), [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [lang.files.existingText](lang.md#lang.files.existingText), [operations.studio.lineOf](operations.md#operations.studio.lineOf), [operations.studio.studioContext](operations.md#operations.studio.studioContext), [operations.assistant.runAssistantReply](operations.md#operations.assistant.runAssistantReply), [operations.studio.proposalGate](operations.md#operations.studio.proposalGate), [operations.shared.generatedIn](operations.md#operations.shared.generatedIn), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [base.line-diff.diffLines](base.md#base.line-diff.diffLines), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
+    - fn [proposalGate](../../src/operations/studio.ts#L292) (root: string, specDir: string, path: string, generated: (path: string) => boolean) → string | null <!-- internal -->
+      <a id="operations.studio.proposalGate"></a><br>Why the model's block may not become a proposal, or null: not a spec, a target no proposal may change, one already waiting.
+      - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem)
+    - fn [lineOf](../../src/operations/studio.ts#L304) (text: string, id: string | null) → number <!-- internal -->
+      <a id="operations.studio.lineOf"></a><br>The 0-based line of the first mention of `id` in `text`, or 0.
+    - fn [studioContext](../../src/operations/studio.ts#L313) (request: StudioChatRequest, context: StudioContext) → Promise<string> <!-- internal -->
+      <a id="operations.studio.studioContext"></a><br>What the studio shows the person, for the model: the view, the selection, and the draft the canvas holds beyond the specs.
+      - calls [operations.studio.studioProjection](operations.md#operations.studio.studioProjection)
+    - type [ProposalDecision](../../src/operations/studio.ts#L334)
+      <a id="operations.studio.ProposalDecision"></a><br>What a decision on a proposal did, for the page.
+    - fn [decideProposal](../../src/operations/studio.ts#L337) (root: string, target: string, action: "accept" | "reject") → ProposalDecision
+      <a id="operations.studio.decideProposal"></a><br>«Прийняти» / «Відхилити» of the studio: the proposal for `target` merged whole, or removed.
+      - calls [operations.shared.rootRelative](operations.md#operations.shared.rootRelative), [base.config.loadConfig](base.md#base.config.loadConfig), [features.proposals.rejectProposal](features.md#features.proposals.rejectProposal), [features.proposals.acceptProposal](features.md#features.proposals.acceptProposal)
   - module [system](../../src/operations/system.ts#L1)
     <a id="operations.system"></a><br>`keylang system list|show|discover|new` (system-design/09): the `# system` sections of a repository, one of them as a tree with the `system` verdicts of its relations, the system of the code as a section to adopt, and a new system's skeleton. Read-only except `new`, which…
     - node [external.node](external.md#external.node)
