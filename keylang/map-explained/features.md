@@ -2547,25 +2547,25 @@
     - fn [moduleItem](../../src/ts-projection.ts#L187) (id: string, module: Planned | null, fns: readonly Planned[]) → ProjectedItem <!-- internal -->
       <a id="features.ts-projection.moduleItem"></a><br>The interface of a module: its planned fns as methods, by ID; placed at the planned module, else at its first fn.
       - calls [base.span.compareText](base.md#base.span.compareText), [features.ts-projection.pascalCase](features.md#features.ts-projection.pascalCase), [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment), [features.ts-projection.method](features.md#features.ts-projection.method), [features.ts-projection.docComment](features.md#features.ts-projection.docComment)
-    - fn [method](../../src/ts-projection.ts#L202) (fn: Planned) → string <!-- internal -->
-      <a id="features.ts-projection.method"></a><br>A planned fn as a method: `(x: T) → R` is `f(x: T): R;`, a parameter list alone returns `unknown`, no signature takes any arguments. A signature of another shape is kept as a comment beside the open form.
+    - fn [method](../../src/ts-projection.ts#L203) (fn: Planned) → string <!-- internal -->
+      <a id="features.ts-projection.method"></a><br>A planned fn as a method: `(x: T) → R` is `f(x: T): R;` (`->`, `=>` and a TypeScript-style `: R` mark the result too), a parameter list alone returns `unknown`, no signature takes any arguments. A signature of another shape is kept as a comment beside the open form.
       - calls [features.ts-projection.memberName](features.md#features.ts-projection.memberName), [features.ts-projection.lastSegment](features.md#features.ts-projection.lastSegment), [features.ts-projection.closingParen](features.md#features.ts-projection.closingParen), [features.ts-projection.withoutSemicolon](features.md#features.ts-projection.withoutSemicolon)
-    - fn [closingParen](../../src/ts-projection.ts#L224) (text: string) → number | null <!-- internal -->
+    - fn [closingParen](../../src/ts-projection.ts#L226) (text: string) → number | null <!-- internal -->
       <a id="features.ts-projection.closingParen"></a><br>The index of the `)` that closes the `(` at index 0, or null when it does not close.
-    - fn [projectionText](../../src/ts-projection.ts#L236) (imports: readonly { item: ProjectedItem; path: string }[], declarations: readonly ProjectedItem[]) → string <!-- internal -->
+    - fn [projectionText](../../src/ts-projection.ts#L238) (imports: readonly { item: ProjectedItem; path: string }[], declarations: readonly ProjectedItem[]) → string <!-- internal -->
       <a id="features.ts-projection.projectionText"></a><br>The file: the header, the imports, then the declarations, blank lines between, one final newline.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [docComment](../../src/ts-projection.ts#L251) (id: string, file: string, line: number) → string <!-- internal -->
+    - fn [docComment](../../src/ts-projection.ts#L253) (id: string, file: string, line: number) → string <!-- internal -->
       <a id="features.ts-projection.docComment"></a><br>`/** <id> — <spec file>:<line> *\/` above a declaration.
-    - fn [memberName](../../src/ts-projection.ts#L256) (name: string) → string <!-- internal -->
+    - fn [memberName](../../src/ts-projection.ts#L258) (name: string) → string <!-- internal -->
       <a id="features.ts-projection.memberName"></a><br>A member name as TypeScript accepts it: bare when an identifier, else quoted.
-    - fn [pascalCase](../../src/ts-projection.ts#L261) (segment: string) → string <!-- internal -->
+    - fn [pascalCase](../../src/ts-projection.ts#L263) (segment: string) → string <!-- internal -->
       <a id="features.ts-projection.pascalCase"></a><br>`order-line` → `OrderLine`, `orders` → `Orders`; a leading digit gets `_`.
-    - fn [withoutSemicolon](../../src/ts-projection.ts#L272) (type: string) → string <!-- internal -->
+    - fn [withoutSemicolon](../../src/ts-projection.ts#L274) (type: string) → string <!-- internal -->
       <a id="features.ts-projection.withoutSemicolon"></a><br>A type without the `;` a plan may end it with.
-    - fn [lastSegment](../../src/ts-projection.ts#L277) (id: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/ts-projection.ts#L279) (id: string) → string <!-- internal -->
       <a id="features.ts-projection.lastSegment"></a><br>The last dotted segment of an ID.
-    - fn [parentOf](../../src/ts-projection.ts#L282) (id: string) → string <!-- internal -->
+    - fn [parentOf](../../src/ts-projection.ts#L284) (id: string) → string <!-- internal -->
       <a id="features.ts-projection.parentOf"></a><br>The ID without its last segment.
   - module [voice-local](../../src/voice-local.ts#L1)
     <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are optional peer dependencies: npm installs them only when the user adds them next to keylang, and…

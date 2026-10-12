@@ -1627,17 +1627,17 @@
       - calls features.ts-projection.pascalCase, features.ts-projection.lastSegment, features.ts-projection.docComment, features.ts-projection.withoutSemicolon, features.ts-projection.memberName
     - fn [moduleItem](../../src/ts-projection.ts#L187) (id: string, module: Planned | null, fns: readonly Planned[]) → ProjectedItem <!-- internal -->
       - calls base.span.compareText, features.ts-projection.pascalCase, features.ts-projection.lastSegment, features.ts-projection.method, features.ts-projection.docComment
-    - fn [method](../../src/ts-projection.ts#L202) (fn: Planned) → string <!-- internal -->
+    - fn [method](../../src/ts-projection.ts#L203) (fn: Planned) → string <!-- internal -->
       - calls features.ts-projection.memberName, features.ts-projection.lastSegment, features.ts-projection.closingParen, features.ts-projection.withoutSemicolon
-    - fn [closingParen](../../src/ts-projection.ts#L224) (text: string) → number | null <!-- internal -->
-    - fn [projectionText](../../src/ts-projection.ts#L236) (imports: readonly { item: ProjectedItem; path: string }[], declarations: readonly ProjectedItem[]) → string <!-- internal -->
+    - fn [closingParen](../../src/ts-projection.ts#L226) (text: string) → number | null <!-- internal -->
+    - fn [projectionText](../../src/ts-projection.ts#L238) (imports: readonly { item: ProjectedItem; path: string }[], declarations: readonly ProjectedItem[]) → string <!-- internal -->
       - calls base.span.compareText
-    - fn [docComment](../../src/ts-projection.ts#L251) (id: string, file: string, line: number) → string <!-- internal -->
-    - fn [memberName](../../src/ts-projection.ts#L256) (name: string) → string <!-- internal -->
-    - fn [pascalCase](../../src/ts-projection.ts#L261) (segment: string) → string <!-- internal -->
-    - fn [withoutSemicolon](../../src/ts-projection.ts#L272) (type: string) → string <!-- internal -->
-    - fn [lastSegment](../../src/ts-projection.ts#L277) (id: string) → string <!-- internal -->
-    - fn [parentOf](../../src/ts-projection.ts#L282) (id: string) → string <!-- internal -->
+    - fn [docComment](../../src/ts-projection.ts#L253) (id: string, file: string, line: number) → string <!-- internal -->
+    - fn [memberName](../../src/ts-projection.ts#L258) (name: string) → string <!-- internal -->
+    - fn [pascalCase](../../src/ts-projection.ts#L263) (segment: string) → string <!-- internal -->
+    - fn [withoutSemicolon](../../src/ts-projection.ts#L274) (type: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/ts-projection.ts#L279) (id: string) → string <!-- internal -->
+    - fn [parentOf](../../src/ts-projection.ts#L284) (id: string) → string <!-- internal -->
   - module [voice-local](../../src/voice-local.ts#L1)
     - node external.node
     - voice features.voice

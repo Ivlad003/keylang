@@ -154,6 +154,8 @@ const PLAN = [
   "",
   "- planned module main.ledger",
   "- planned fn main.ledger.post (entry: Entry) -> void",
+  "- planned fn main.ledger.settle (entry: Entry) => boolean",
+  "- planned fn main.ledger.balance (): number",
   "",
 ].join("\n");
 
@@ -188,7 +190,9 @@ const PROJECTED = [
   "",
   "/** main.ledger — keylang/flows/checkout.md:19 */",
   "export interface Ledger {",
+  "  balance(): number;",
   "  post(entry: Entry): void;",
+  "  settle(entry: Entry): boolean;",
   "}",
   "",
 ].join("\n");
@@ -206,7 +210,7 @@ test("keylang types: prints the planned declarations as TypeScript; names narrow
 
   const ledger = keylang(dir, ["types", "ledger"]);
   assert.equal(ledger.status, 0, ledger.stderr);
-  assert.equal(ledger.stdout, `${PROJECTED.split("\n\n")[0]}\n\n/** main.ledger — keylang/flows/checkout.md:19 */\nexport interface Ledger {\n  post(entry: Entry): void;\n}\n`);
+  assert.equal(ledger.stdout, `${PROJECTED.split("\n\n")[0]}\n\n/** main.ledger — keylang/flows/checkout.md:19 */\nexport interface Ledger {\n  balance(): number;\n  post(entry: Entry): void;\n  settle(entry: Entry): boolean;\n}\n`);
 
   const unknown = keylang(dir, ["types", "nope"]);
   assert.equal(unknown.status, 2);

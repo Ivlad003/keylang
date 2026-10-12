@@ -194,7 +194,7 @@ test("studio: the page and its link, the keylang and TypeScript projections of a
     ],
   );
   assert.match(p.text, /export interface Receipt \{\n {2}id: string;\n {2}total\?: number;\n\}/);
-  assert.match(p.text, /export interface Application \{\n  pay\(.*\(order: Order\) => Receipt\n\}/);
+  assert.match(p.text, /export interface Application \{\n {2}pay\(order: Order\): Receipt;\n\}/);
   // Each item's lines hold its text.
   const textLines: string[] = p.text.split("\n");
 

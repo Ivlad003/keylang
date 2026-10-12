@@ -195,7 +195,8 @@ function moduleItem(id: string, module: Planned | null, fns: readonly Planned[])
 }
 
 /**
- * A planned fn as a method: `(x: T) → R` is `f(x: T): R;`, a parameter list
+ * A planned fn as a method: `(x: T) → R` is `f(x: T): R;` (`->`, `=>` and a
+ * TypeScript-style `: R` mark the result too), a parameter list
  * alone returns `unknown`, no signature takes any arguments. A signature of
  * another shape is kept as a comment beside the open form.
  */
@@ -210,7 +211,8 @@ function method(fn: Planned): string {
   if (!signature.startsWith("(") || close === null) return `${open} // ${signature}`;
   const params = signature.slice(0, close + 1);
   const rest = signature.slice(close + 1).trim();
-  const arrow = /^(→|->)\s*/.exec(rest);
+  // The result marker: keylang's `→`/`->`, an arrow type's `=>`, or a method's `:`.
+  const arrow = /^(→|->|=>|:)\s*/.exec(rest);
 
   if (rest === "") return `${name}${params}: unknown;`;
 
