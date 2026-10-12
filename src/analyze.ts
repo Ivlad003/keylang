@@ -24,6 +24,14 @@ import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
 import { loadTraces } from "./trace-evidence.ts";
 
+/** What an analysis asks of the snapshot generator: whether to prepare the fact cache, unsaved buffers, and where the cache lives. */
+export interface GenerateOptions {
+  persist: boolean | "changed";
+  overlay: ReadonlyMap<string, string>;
+  /** The root whose fact cache is read, when it is not the analysed one (`AnalysisRequest.factCacheRoot`). */
+  cacheRoot?: string;
+}
+
 /** What to analyse and how: the root, which specs, unsaved buffers and which optional parts to skip. */
 export interface AnalysisRequest {
   /** Repository root (directory of `keylang.json`). Absolute. */
@@ -46,8 +54,14 @@ export interface AnalysisRequest {
    * fails is no error. Only without an overlay, in a repository with `keylang.json`.
    */
   saveFacts?: boolean;
+  /**
+   * Where the fact cache is read when it is not `root`: a revision analysed in
+   * a temporary directory reads the repository's (`keylang diff`). Such an
+   * analysis never writes it: `persistFacts` and `saveFacts` are ignored.
+   */
+  factCacheRoot?: string;
   /** Builds the snapshot; the TUI passes one that runs in a worker thread. Default: `generateMap`. */
-  generate?: (config: Config, options: { persist: boolean | "changed"; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
+  generate?: (config: Config, options: GenerateOptions) => Promise<MapResult>;
   /** Overrides `config.check.static`. Omitted leaves the config, then `behavior`. */
   static?: StaticMode;
   /**
@@ -82,8 +96,12 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const display = request.display ?? ((abs: string) => toPosix(relative(root, abs)));
   const overlay = request.overlay ?? new Map<string, string>();
   // Facts of unsaved text are no cache of the files on disk.
-  const save = request.persistFacts !== true && request.saveFacts === true && overlay.size === 0 && keepsFactCache(root);
-  const options = { persist: request.persistFacts === true || (save ? ("changed" as const) : false), overlay };
+  // A borrowed cache (another root's) is only read.
+  const borrowed = request.factCacheRoot !== undefined;
+  const save = !borrowed && request.persistFacts !== true && request.saveFacts === true && overlay.size === 0 && keepsFactCache(root);
+  const options: GenerateOptions = { persist: (!borrowed && request.persistFacts === true) || (save ? "changed" : false), overlay };
+
+  if (request.factCacheRoot !== undefined) options.cacheRoot = request.factCacheRoot;
   const generate = request.generate ?? generateMap;
   // No snapshot without configured languages or when the specs are checked on their own.
   const map = config.languages.length > 0 && request.withoutCode !== true ? await generate(config, options) : null;

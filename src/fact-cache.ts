@@ -223,8 +223,11 @@ function optionalTrue(value: Field): boolean {
 }
 
 /**
- * Process-wide caches by root, version and path, so a long-lived process (the
- * language server) reuses facts across analyses without reading the file.
+ * Process-wide caches by cache root, version and path, so a long-lived process
+ * (the language server) reuses facts across analyses without reading the
+ * file. The cache root is the repository's, also for a revision of it
+ * analysed in a temporary directory (`keylang diff`): facts depend on the
+ * path and content only, so both share entries.
  */
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
 
@@ -249,7 +252,10 @@ export class FactCache {
     this.diskConfigs = configs;
   }
 
-  /** `version` names the extractor and grammars; any other stored version is ignored. */
+  /**
+   * `root` holds `FACT_CACHE_FILE` and keys the in-process entries; `version`
+   * names the extractor and grammars; any other stored version is ignored.
+   */
   static open(root: string, version: string): FactCache {
     const file = join(root, FACT_CACHE_FILE);
     let disk: Stored["files"] = {};

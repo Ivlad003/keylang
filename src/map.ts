@@ -56,8 +56,11 @@ export interface MapResult {
  * facts of this run differ from the cache on disk (an analysis that saves it
  * best-effort); generation writes nothing.
  * `overlay` gives unsaved text of source files by absolute path (the language server).
+ * `cacheRoot` is where the fact cache lives when it is not `config.root`: a
+ * revision checked out in a temporary directory reads the repository's cache
+ * (`keylang diff`) and is never asked to persist it.
  */
-export async function generateMap(config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}): Promise<MapResult> {
+export async function generateMap(config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[]; cacheRoot?: string } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
   // One walk sorts every source file into what is read, excluded and outside.
@@ -105,7 +108,7 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   // likely docs or scripts) and counted.
   const skipped = config.guessed ? all.filter((p) => placeFile(config, p) === null) : [];
   const skippedSet = new Set(skipped);
-  const cache = FactCache.open(config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, code: extractorCode(), grammars: grammarVersions() }));
+  const cache = FactCache.open(options.cacheRoot ?? config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, code: extractorCode(), grammars: grammarVersions() }));
   const facts: FileFacts[] = [];
 
   // Extract facts per file, reusing cached facts when the content hash and
