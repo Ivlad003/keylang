@@ -76,6 +76,35 @@ test("«Зміни» over web --read-only: the base of the feature, the changed 
   assert.deepEqual(problems, []);
 });
 
+test("«Зміни» → «Діаграма»: the architecture diff on the canvas with its legend — added, removed, changed and context shapes, the new edge; a shape opens in the side panel; «Список» puts the canvas away", { skip }, async (t) => {
+  const repo = branchRepo(t);
+  const url = await readOnly(t, repo);
+  const browser = await chromium.launch(options ?? {});
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1300, height: 800 } });
+  const problems = watch(page);
+  await page.goto(url);
+  await openChanges(page);
+  await page.click("#changes-diagram");
+  await page.locator("#changes .changes-diff .changes-summary").waitFor({ timeout: 60000 });
+  assert.match(await page.locator("#changes .changes-diff .changes-summary").innerText(), /^модулі \+1 −1 ~1 · ребра \+1 −0/);
+  assert.match(await page.locator("#changes .diff-legend").innerText(), /додано[\s\S]*видалено[\s\S]*змінено[\s\S]*контекст/);
+  assert.equal(await page.locator("#changes-diagram").getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator("#stage").isVisible(), true, "the canvas is shown");
+  const labels = await page.locator("#graph").innerText();
+
+  for (const label of ["+ app.refund", "− domain.old", "~ domain.order", "app.pay"]) assert.ok(labels.includes(label), `${label} in ${labels}`);
+  await page.locator("#graph").getByText("~ domain.order").click();
+  await page.locator("#details h2", { hasText: "domain.order" }).waitFor();
+  // Functions too: the level select asks again.
+  await page.selectOption("#changes-level", "fn");
+  await page.locator("#changes .changes-diff .changes-summary", { hasText: /^вузли/ }).waitFor({ timeout: 60000 });
+  await page.click("#changes-list");
+  await page.locator("#changes .changes-files").waitFor();
+  assert.equal(await page.locator("#stage").isVisible(), false, "the list puts the canvas away");
+  assert.deepEqual(problems, []);
+});
+
 test("«Зміни» in a static export from file:// for the base of the feature; without git the tab says why", { skip }, async (t) => {
   const repo = branchRepo(t);
   const site = join(mkdtempSync(join(tmpdir(), "keylang-changes-site-")), "site");

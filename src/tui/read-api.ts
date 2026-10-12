@@ -33,6 +33,9 @@ import { pendingTargets } from "../proposals.ts";
 import { compareText } from "../span.ts";
 import { compileSpec, type SpecIR } from "../spec-ir.ts";
 import { buildTour, tourMarkdown } from "../tour.ts";
+import type { DiffLevel } from "../graph-diff.ts";
+import { diffDiagram } from "../graph-diff-format.ts";
+import type { DiffRange, DiffRun } from "../graph-diff-run.ts";
 
 /** The schemas of the code as a diagram's input, once they are read (a keyed diagram does not wait for them). */
 const withSchemas = (schemas: SchemaRead | undefined): { schemas?: SchemaRead } => (schemas ? { schemas } : {});
@@ -54,10 +57,16 @@ export interface ReadApiOptions {
   analyze: (request: AnalysisRequest) => Promise<Analysis>;
   /** Report the absolute root to the page (`vscode://` links); a static export leaves it out. */
   showRoot?: boolean;
+  /**
+   * Runs the architecture diff of `GET /api/graph-diff` (graph-diff-run.ts):
+   * git and a temporary directory, so only where keylang runs on the
+   * machine; absent (the analysis in the browser), the answer is unavailable.
+   */
+  graphDiff?: (range: DiffRange, level: DiffLevel) => Promise<DiffRun>;
 }
 
 /** The GET paths this module answers; `/api/layout` also takes a PUT, which `web.ts` handles. */
-export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc", "/api/git", "/api/changes", "/api/search"]);
+export const READ_PATHS: ReadonlySet<string> = new Set(["/api/views", "/api/diagram", "/api/usages", "/api/calls", "/api/ids", "/api/coverage", "/api/tour", "/api/export", "/api/layout", "/api/docs", "/api/doc", "/api/git", "/api/changes", "/api/graph-diff", "/api/search"]);
 
 /** At most this many hits of `GET /api/search`. */
 const MAX_HITS = 100;
@@ -280,6 +289,8 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
     }
 
     if (path === "/api/changes") return changes(query.get("since"));
+
+    if (path === "/api/graph-diff") return graphDiff(query.get("since"), query.get("level"));
 
     if (path === "/api/search") {
       // The code by name: any part of an ID, case aside — `order` finds `components.account.order-details`.
@@ -538,6 +549,36 @@ export function createReadApi(options: ReadApiOptions): ReadApi {
 
     // JSON.stringify leaves an undefined `checkReason` out: there is one only when the check gave no payload.
     return json(200, { base, unborn: changed.unborn, files, deleted: gone, check: payload, checkReason: check.payload === null ? (check.messages.find((m) => m.level === "error")?.text ?? check.messages[0]?.text ?? "check failed") : undefined });
+  };
+
+  /**
+   * `GET /api/graph-diff[?since=<ref>][&level=module|fn]`: the architecture diff from the base (of a
+   * feature when none is named) to the working tree, and its picture laid out for the canvas. A bad
+   * level or a ref git does not know is the request's error (400); no git or no repository is a state
+   * (409); where git cannot run (the browser) the answer says it is unavailable.
+   */
+  const graphDiff = async (since: string | null, levelText: string | null): Promise<ReadAnswer> => {
+    const json = <Body>(status: number, body: Body): ReadAnswer => ({ status, type: "application/json", body: `${JSON.stringify(body)}\n` });
+
+    if (options.graphDiff === undefined) return json(200, { available: false, reason: "the analysis in the browser does not read the history of git: run `keylang web` or `keylang diff`" });
+    const level = levelText === null || levelText === "" ? "module" : levelText;
+
+    if (level !== "module" && level !== "fn") return json(400, { error: `graph-diff: level= is module or fn, got \`${level}\`` });
+    let run: DiffRun;
+
+    try {
+      run = await options.graphDiff(since === null || since === "" ? { base: null, head: null } : { base: since, head: null }, level);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      // A ref git cannot read is the request's; anything else (no git, no repository) is the repository's state.
+      return json(/not a git ref|unknown revision|bad revision|ambiguous argument|not a commit/.test(message) ? 400 : 409, { error: message });
+    }
+
+    // Lanes in the head's layer order, then the base's own.
+    const layers = [...new Set([...Object.keys(run.head.config.layers), ...Object.keys(run.base.config.layers)])];
+
+    return json(200, { available: true, base: run.diff.base, head: run.diff.head, diff: run.diff, diagram: diffDiagram(run.subgraph, layers) });
   };
 
   return { answer, keyedDiagram, discoveredSpec, docs };

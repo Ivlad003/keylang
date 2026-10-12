@@ -61,6 +61,37 @@ export const VERDICT_COLOUR: ByVerdict<VerdictColour> = {
   planned: { stroke: "#757575", fill: "#f5f5f5" },
 };
 
+/**
+ * Colours of the picture of a diff (`/api/graph-diff`, the «Зміни» tab), as
+ * `keylang diff --format mermaid` paints it: added green, removed red (and
+ * dashed), changed yellow, context (`unchanged`) grey.
+ */
+export const DIFF_COLOUR: ByVerdict<VerdictColour> = {
+  added: { stroke: "#2e7d32", fill: "#d4f8d4" },
+  removed: { stroke: "#c62828", fill: "#f8d4d4" },
+  changed: { stroke: "#b26a00", fill: "#fff4c2" },
+  unchanged: { stroke: "#9e9e9e", fill: "#eeeeee" },
+};
+
+/** The mark before the label of a shape of a diff. */
+export const DIFF_GLYPH: ByVerdict<string> = { added: "+", removed: "−", changed: "~" };
+
+/** A shape's style in the picture of a diff: its status's colours over the kind's look; any other diagram keeps its style. */
+function diffLook(style: CellStyle, diff: DiagramNode["diff"]): CellStyle {
+  if (diff === undefined) return style;
+  const colour = DIFF_COLOUR[diff ?? "unchanged"]!;
+
+  return { ...style, strokeColor: colour.stroke, fillColor: colour.fill, dashed: diff === "removed", fontColor: diff === null ? "#616161" : "#212121" };
+}
+
+/** An edge's style in the picture of a diff: a new one green and solid, a removed one red and dashed, the rest grey. */
+function diffEdgeLook(style: CellStyle, diff: DiagramEdge["diff"]): CellStyle {
+  if (diff === undefined) return style;
+  const colour = DIFF_COLOUR[diff ?? "unchanged"]!;
+
+  return { ...style, strokeColor: colour.stroke, dashed: diff === "removed", strokeWidth: diff === "added" ? 2 : 1 };
+}
+
 /** The look of a shape or edge with no verdict, or one the page does not know. */
 const NEUTRAL = { stroke: "#455a64", fill: "#eceff1" };
 
@@ -209,7 +240,8 @@ function labelOf(node: DiagramNode): string {
       // `? 3`: one shape for the places a fn calls through that keylang cannot follow.
       return node.label.startsWith("?") ? node.label : "?";
     default: {
-      const glyph = glyphOf(node);
+      // A shape of a diff says its status in text too, not only in colour.
+      const glyph = node.diff ? (DIFF_GLYPH[node.diff] ?? "") : glyphOf(node);
 
       return `${glyph ? `${glyph} ` : ""}${wrapLabel(node.label)}`;
     }
@@ -578,7 +610,7 @@ export class Canvas {
 
   /** A node's style with the selection or the usages mark over it; the selection wins. */
   private styleOf(node: DiagramNode): CellStyle {
-    const style = nodeStyle(node);
+    const style = diffLook(nodeStyle(node), node.diff);
 
     if (node.id === this.selected) return { ...style, strokeColor: SELECTED, strokeWidth: 3.5 };
 
@@ -592,7 +624,7 @@ export class Canvas {
    * diagram (a deep call tree) draws its edges faint until a shape is picked.
    */
   private edgeStyleOf(edge: DiagramEdge): CellStyle {
-    const style = edgeStyle(edge);
+    const style = diffEdgeLook(edgeStyle(edge), edge.diff);
 
     if (this.selected !== null) {
       if (edge.from === this.selected || edge.to === this.selected) return { ...style, strokeColor: SELECTED, strokeWidth: 2.5, dashed: false, opacity: 100 };

@@ -127,6 +127,7 @@ test("web: without git /api/git is unavailable with the reason and /api/changes 
   assert.equal(summary.available, false);
   assert.match(summary.reason, /not a git repository|git/i);
   assert.equal((await server.get("/api/changes")).status, 409);
+  assert.equal((await server.get("/api/graph-diff")).status, 409);
 });
 
 test("web --export: the site answers /api/git and /api/changes for the base of a feature and for HEAD, byte for byte as the server", async (t) => {
@@ -147,11 +148,74 @@ test("web --export: the site answers /api/git and /api/changes for the base of a
 
   const server = await readOnlyServer(t, repo);
 
-  for (const key of ["/api/git", "/api/changes", "/api/changes?since=HEAD"]) {
+  for (const key of ["/api/git", "/api/changes", "/api/changes?since=HEAD", "/api/graph-diff"]) {
     const exported = answers.get(key);
     assert.ok(exported, key);
     const live = await server.get(key);
     assert.equal(exported.status, live.status, key);
     assert.equal(exported.body, live.body, key);
   }
+});
+
+/** The parts of `GET /api/graph-diff` the test reads (src/tui/read-api.ts). */
+interface GraphDiffAnswer {
+  available: boolean;
+  base: { label: string };
+  head: { ref: string };
+  diff: { level: string; nodes: { id: string; status: string }[] };
+  diagram: { nodes: { id: string; kind: string; group?: string; diff?: string | null; w: number }[]; edges: { from: string; to: string; label?: string; diff?: string | null }[]; groups: { id: string }[] };
+}
+
+test("web: /api/graph-diff answers the architecture diff since the base of a feature with its picture laid out (shapes and edges marked added, removed, changed or context); level=fn, a bad level and a bad ref; --read-only writes nothing", async (t) => {
+  const repo = branchRepo(t);
+  const before = treeBytes(repo);
+  const server = await readOnlyServer(t, repo);
+  const answer = await server.get("/api/graph-diff");
+  assert.equal(answer.status, 200, answer.body);
+  // SAFETY: a 200 answer of /api/graph-diff has the GraphDiffAnswer shape declared above; each field read is asserted.
+  const body = JSON.parse(answer.body) as GraphDiffAnswer;
+  assert.equal(body.available, true);
+  assert.match(body.base.label, /^merge-base \w+ with main$/);
+  assert.equal(body.head.ref, "working tree");
+  assert.deepEqual(
+    body.diff.nodes.map((node) => `${node.status} ${node.id}`),
+    ["added app.refund", "removed domain.old", "changed domain.order"],
+  );
+  assert.deepEqual(
+    body.diagram.nodes.map((node) => [node.id, node.kind, node.group, node.diff]),
+    [
+      ["mod:app.refund", "module", "app", "added"],
+      ["mod:domain.old", "module", "domain", "removed"],
+      ["mod:domain.order", "module", "domain", "changed"],
+      ["mod:app.pay", "module", "app", null],
+    ],
+  );
+  assert.ok(body.diagram.nodes.every((node) => node.w > 0), "laid out");
+  assert.deepEqual(body.diagram.edges, [{ from: "mod:domain.order", to: "mod:app.pay", kind: "dependency", diff: "added", label: "+" }]);
+  assert.deepEqual(
+    body.diagram.groups.map((group) => group.id),
+    ["app", "domain"],
+  );
+
+  // SAFETY: as above, a 200 answer of /api/graph-diff.
+  const fn = JSON.parse((await server.get("/api/graph-diff?level=fn")).body) as GraphDiffAnswer;
+  assert.equal(fn.diff.level, "fn");
+  assert.ok(fn.diagram.nodes.some((node) => node.id === "fn:domain.order.price" && node.diff === "changed"));
+  assert.equal((await server.get("/api/graph-diff?level=class")).status, 400);
+  assert.equal((await server.get("/api/graph-diff?since=no-such-branch")).status, 400);
+  // SAFETY: as above, a 200 answer of /api/graph-diff.
+  const sinceHead = JSON.parse((await server.get("/api/graph-diff?since=HEAD")).body) as GraphDiffAnswer;
+  assert.deepEqual(sinceHead.diff.nodes, [], "HEAD to the working tree: the rules changed, the graph did not");
+  assert.deepEqual(treeBytes(repo), before, "nothing written, .git included");
+});
+
+test("web: the analysis in the browser (no git runner) answers /api/graph-diff as unavailable with the reason", async () => {
+  const { createReadApi } = await import("../src/tui/read-api.ts");
+  const read = createReadApi({ root: "/nowhere", analysis: () => Promise.reject(new Error("not asked")), analyze: () => Promise.reject(new Error("not asked")) });
+  const answer = await read.answer("/api/graph-diff", new URLSearchParams());
+  assert.equal(answer.status, 200);
+  // SAFETY: the read API answers JSON on every path; the keys and `available` are asserted.
+  const body = JSON.parse(answer.body) as { available: boolean; reason: string };
+  assert.deepEqual(Object.keys(body), ["available", "reason"]);
+  assert.equal(body.available, false);
 });

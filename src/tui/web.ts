@@ -35,6 +35,7 @@ import { analyze, type Analysis } from "../analyze.ts";
 import { viewOfKey } from "../diagram.ts";
 import { layoutText, layoutToFile, readLayout, writeLayout, type ClientEntry, type ClientLayout, type LayoutFile } from "../diagram-layout.ts";
 import { explorerFlow, parseExplorerFlow } from "../explorer.ts";
+import { runGraphDiff } from "../graph-diff-run.ts";
 import { sourceInputs } from "../map.ts";
 import { runDiagramPropose } from "../operations/diagram-propose.ts";
 import { greenfieldAvailability, runGreenfield } from "../operations/greenfield.ts";
@@ -427,7 +428,8 @@ export function createWebApp(options: WebOptions): WebApp {
   };
 
   // Coverage and `check --changed` take the same analysis: their own fresh one cost seconds a request.
-  const read = createReadApi({ root: options.root, analysis, analyze: () => analysis() });
+  // The architecture diff (`/api/graph-diff`) analyses its own two revisions: git runs here, on the machine.
+  const read = createReadApi({ root: options.root, analysis, analyze: () => analysis(), graphDiff: (range, level) => runGraphDiff({ root: options.root, range, level, label: "web" }) });
 
   /**
    * `POST /api/flow-proposal` (business-flows/22): the branches a person ticked in the explorer as one proposal

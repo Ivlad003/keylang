@@ -15,6 +15,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Analysis } from "../analyze.ts";
 import { keylangVersion } from "../harness.ts";
 import { isJsonString, parseJson } from "../json.ts";
+import { runGraphDiff } from "../graph-diff-run.ts";
 import { compareText } from "../span.ts";
 import { createReadApi, keyShard, requestKey, type ReadAnswer } from "./read-api.ts";
 import { BUILT_DIR, diagramsPage, ensureClient } from "./web.ts";
@@ -57,7 +58,7 @@ export function exportTargetProblem(root: string, out: string): string | null {
 
 /**
  * Every request the read-only page makes, in a stable order: the views,
- * coverage, tour, git and the changes since the base of a feature and HEAD, docs; each doc; each diagram with its two export files;
+ * coverage, tour, git, the changes since the base of a feature and HEAD and the architecture diff since that base, docs; each doc; each diagram with its two export files;
  * the calls and usages of every ID of the snapshot and of the diagrams.
  */
 async function requests(done: Analysis, answer: (path: string, query: URLSearchParams) => Promise<ReadAnswer>): Promise<{ key: string; answer: ReadAnswer }[]> {
@@ -92,6 +93,8 @@ async function requests(done: Analysis, answer: (path: string, query: URLSearchP
   if (git.available) {
     await ask("/api/changes");
     await ask("/api/changes", { since: "HEAD" });
+    // The architecture diff from the base of a feature only, at the module level: the page's default.
+    await ask("/api/graph-diff");
   }
 
   // SAFETY: read-api answers `/api/docs` with the `files` its `docs()` lists, on every path.
@@ -182,7 +185,7 @@ export async function exportSite(options: { root: string; out: string; analysis:
   const assets = siteAssets();
   const done = options.analysis;
   // Answer every request through the same read API the server uses, against the one analysis.
-  const read = createReadApi({ root, analysis: async () => done, analyze: async () => done, showRoot: false });
+  const read = createReadApi({ root, analysis: async () => done, analyze: async () => done, showRoot: false, graphDiff: (range, level) => runGraphDiff({ root, range, level, label: "web" }) });
   const answers = await requests(done, read.answer);
   const shards = shardTexts(answers);
 

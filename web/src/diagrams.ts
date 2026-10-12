@@ -360,7 +360,7 @@ class Page {
 
     this.blind = new BlindSpots(element("blind"), this.api, { ...host, status: statusOf("blind"), discovered: (name: string) => void this.open({ view: "discovered", name }) });
     this.docs = new Docs(element("docs"), this.api, { status: statusOf("docs"), open: (path: string, at: string | null) => void this.open(at === null ? { view: "docs", path } : { view: "docs", path, at }) });
-    this.changes = new Changes(element("changes"), this.api, { ...host, status: statusOf("changes"), openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }) });
+    this.changes = new Changes(element("changes"), this.api, { ...host, status: statusOf("changes"), openDoc: (path: string) => void this.open({ view: "docs", path }), pick: (since: string) => void this.open({ view: "changes", since }), showDiff: (diagram: Diagram | null) => this.showDiff(diagram) });
 
     // The mode tabs: each reopens what that mode showed last; «Діаграми» goes back to the last diagram.
     for (const tab of document.querySelectorAll<HTMLButtonElement>("#modes button[data-mode]")) {
@@ -703,6 +703,27 @@ class Page {
     } else delete document.body.dataset["matrix"];
 
     return matrix;
+  }
+
+  /**
+   * «Зміни» → «Діаграма»: the picture of the architecture diff on the canvas, the side panel
+   * for its shapes; null puts the canvas away again (the list). The diagrams mode draws its
+   * own view anew afterwards: the canvas no longer holds what it drew last.
+   */
+  private showDiff(diagram: Diagram | null): void {
+    if (diagram === null) {
+      document.body.dataset["changesView"] = "list";
+
+      return;
+    }
+
+    document.body.dataset["changesView"] = "diagram";
+    delete document.body.dataset["matrix"];
+    this.diagramText = "";
+    this.shownDiagram = diagram;
+    this.node = null;
+    this.canvas.show(diagram, false);
+    this.renderDetails(null);
   }
 
   /** Draws a diagram (or its matrix) and sets the status counts; `keepView` is a poll's refresh that keeps zoom, pan and the panel's node. */

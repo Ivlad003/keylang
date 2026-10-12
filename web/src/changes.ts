@@ -5,10 +5,13 @@
 // answers for a base. The base is the feature's by default (the merge-base
 // with the main branch); the person may pick a branch or, where the page
 // asks live (`keylang web`, app.html), type any ref. A spec opens in «Карта»,
-// a module in the explorer.
+// a module in the explorer. «Список / Діаграма» switches between the files
+// and the architecture diff since the same base (`GET /api/graph-diff`),
+// drawn on the page's canvas with a legend; app.html, which cannot read the
+// history of git, says the diagram is unavailable.
 
-import { ApiError, transport, type Api, type ChangesAnswer, type GitAnswer } from "./api.ts";
-import { VERDICT_GLYPH } from "./canvas.ts";
+import { ApiError, transport, type Api, type ChangesAnswer, type Diagram, type GitAnswer, type GraphDiffAnswer } from "./api.ts";
+import { DIFF_COLOUR, DIFF_GLYPH, VERDICT_GLYPH } from "./canvas.ts";
 import { button, codeLink, make } from "./dom.ts";
 import type { ListItem } from "./list.ts";
 
@@ -21,6 +24,8 @@ export interface ChangesHost {
   explore(id: string): void;
   /** The tab's own fragment: `since` "" is the base of a feature. */
   pick(since: string): void;
+  /** Draws the picture of a diff on the canvas beside the panel, or (null) puts the canvas away. */
+  showDiff(diagram: Diagram | null): void;
 }
 
 // The list group of each changed-file kind; `satisfies` makes a new kind a compile error here.
@@ -56,6 +61,10 @@ export class Changes {
   private shown: { since: string; answer: ChangesAnswer } | null = null;
   /** The last request: the answer for an earlier base (picked, then another) is dropped. */
   private request = 0;
+  /** «Список» (the files and findings) or «Діаграма» (the architecture diff on the canvas). */
+  private view: "list" | "diagram" = "list";
+  /** The level of the diagram: modules, or also functions. */
+  private level: "module" | "fn" = "module";
 
   constructor(container: HTMLElement, api: Api, host: ChangesHost) {
     this.container = container;
@@ -80,6 +89,7 @@ export class Changes {
       this.git ??= await this.api.git();
 
       if (!this.git.available) {
+        this.host.showDiff(null);
         this.container.replaceChildren(make("h2", { text: "Зміни" }), make("p", { className: "empty", text: `Git недоступний: ${this.git.reason}` }));
         this.host.status("changes: no git");
 
@@ -91,13 +101,14 @@ export class Changes {
       // A newer `show` started meanwhile: its answer wins, this one is dropped.
       if (request !== this.request) return null;
       this.shown = { since, answer };
-      this.render(this.git, answer, since);
+      this.render(this.git, answer, since, request);
       const counts = answer.check?.counts;
       this.host.status(`changes since ${answer.base.label} · ${answer.files.length} changed · ${answer.deleted.length} deleted${counts ? ` · ✗ ${counts.fail} · ◌ ${counts.unverified}` : ""}`);
 
       return answer;
     } catch (error) {
       if (request !== this.request) return null;
+      this.host.showDiff(null);
       // A static export holds only the precomputed bases, so a 404 there gets an explanation instead of the raw error.
       const text = error instanceof ApiError && error.status === 404 && transport().kind === "static" ? `this export holds the changes since the base of a feature and since HEAD only (${error.message})` : error instanceof Error ? error.message : String(error);
       this.container.replaceChildren(make("h2", { text: "Зміни" }), this.picker(this.git, since), make("p", { className: "error", text }));
@@ -145,10 +156,42 @@ export class Changes {
     return box;
   }
 
-  /** Draws the header (HEAD, origin, base), the base picker, the changed and deleted files, and the findings that touch them. */
-  private render(git: GitAnswer & { available: true }, answer: ChangesAnswer, since: string): void {
+  /** «Список / Діаграма»: the pressed one is the view shown; a click redraws the same base in the other. */
+  private toggle(git: GitAnswer & { available: true }, answer: ChangesAnswer, since: string): HTMLElement {
+    const box = make("div", { className: "changes-toggle" });
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "Вигляд змін");
+
+    for (const [view, text] of [["list", "Список"], ["diagram", "Діаграма"]] as const) {
+      const node = button(text, () => {
+        if (this.view === view) return;
+        this.view = view;
+        this.render(git, answer, since, ++this.request);
+      });
+
+      node.id = `changes-${view}`;
+      node.setAttribute("aria-pressed", String(this.view === view));
+      box.append(node);
+    }
+
+    return box;
+  }
+
+  /** Draws the header (HEAD, origin, base), the base picker, the view toggle, then the files and findings, or the architecture diff. */
+  private render(git: GitAnswer & { available: true }, answer: ChangesAnswer, since: string, request: number): void {
     const head = git.head.commit === null ? "HEAD без коміту" : `${git.head.branch ?? "detached"} @ ${git.head.short}`;
-    const body: Node[] = [make("h2", { text: "Зміни" }), make("p", { className: "note", text: `${head}${git.origin ? ` · ${git.origin}` : ""} · від ${answer.base.label}${answer.unborn ? " (до першого коміту: усі файли нові)" : ""}` }), this.picker(git, since)];
+    const body: Node[] = [make("h2", { text: "Зміни" }), make("p", { className: "note", text: `${head}${git.origin ? ` · ${git.origin}` : ""} · від ${answer.base.label}${answer.unborn ? " (до першого коміту: усі файли нові)" : ""}` }), this.picker(git, since), this.toggle(git, answer, since)];
+
+    // The diagram asks for its own answer; the list below is drawn from this one.
+    if (this.view === "diagram") {
+      const pane = make("div", { className: "changes-diff" }, make("p", { className: "empty", text: "будую діаграму змін: аналіз бази й робочого дерева…" }));
+      this.container.replaceChildren(...body, pane);
+      void this.loadDiff(since, request, pane);
+
+      return;
+    }
+
+    this.host.showDiff(null);
     const counts = answer.check?.counts;
     body.push(make("p", { className: "changes-summary", text: `${answer.files.length} змінено · ${answer.deleted.length} видалено${counts ? ` · ✗ ${counts.fail} fail · ◌ ${counts.unverified} unverified` : ""}` }));
 
@@ -189,5 +232,74 @@ export class Changes {
     }
 
     this.container.replaceChildren(...body);
+  }
+
+  /** Asks for the architecture diff since `since` and draws it: the summary and legend here, the picture on the canvas. */
+  private async loadDiff(since: string, request: number, pane: HTMLElement): Promise<void> {
+    this.host.status(`changes: the architecture diff${since ? ` since ${since}` : ""}…`);
+    let answer: GraphDiffAnswer;
+
+    try {
+      answer = await this.api.graphDiff(since, this.level);
+    } catch (error) {
+      if (request !== this.request) return;
+      this.host.showDiff(null);
+      // A static export holds the diff since the base of a feature at the module level only.
+      const text = error instanceof ApiError && error.status === 404 && transport().kind === "static" ? `this export holds the diagram since the base of a feature, modules only (${error.message})` : error instanceof Error ? error.message : String(error);
+      pane.replaceChildren(make("p", { className: "error", text }));
+      this.host.status(text);
+
+      return;
+    }
+
+    // A newer request (another base, the list) took over meanwhile.
+    if (request !== this.request) return;
+
+    if (!answer.available) {
+      this.host.showDiff(null);
+      pane.replaceChildren(make("p", { className: "empty", text: `Діаграма змін недоступна: ${answer.reason}` }));
+      this.host.status("changes: no diagram here");
+
+      return;
+    }
+
+    const { diff } = answer;
+    const count = (items: readonly { status: string }[], status: string): number => items.filter((item) => item.status === status).length;
+    const fails = diff.findings.filter((finding) => finding.status === "new" && finding.verdict === "fail").length;
+    const summary = `${diff.level === "fn" ? "вузли" : "модулі"} +${count(diff.nodes, "added")} −${count(diff.nodes, "removed")} ~${count(diff.nodes, "changed")} · ребра +${count(diff.edges, "added")} −${count(diff.edges, "removed")} · потоки ~${diff.flows.length} · нові знахідки ${count(diff.findings, "new")} (✗ ${fails}) · виправлено ${count(diff.findings, "fixed")} · K108 ${diff.weakenings.length}`;
+    const legend = make("div", { className: "diff-legend" });
+
+    // The colours of the canvas, with the mark each shape's label carries.
+    for (const [status, text] of [["added", "додано"], ["removed", "видалено"], ["changed", "змінено"], ["unchanged", "контекст"]] as const) {
+      const colour = DIFF_COLOUR[status] ?? { stroke: "#9e9e9e", fill: "#eeeeee" };
+      const swatch = make("span", { className: `swatch diff-${status}`, text: DIFF_GLYPH[status] ?? "" });
+      swatch.style.borderColor = colour.stroke;
+      swatch.style.background = colour.fill;
+      legend.append(make("span", {}, swatch, text));
+    }
+
+    legend.append(make("span", { text: "ребро: суцільне «+» — нове, пунктир «−» — прибране" }));
+    const level = make("select");
+    level.id = "changes-level";
+    level.setAttribute("aria-label", "Рівень");
+
+    for (const [value, text] of [["module", "модулі"], ["fn", "модулі й функції"]] as const) {
+      const option = make("option", { text });
+      option.value = value;
+      option.selected = value === this.level;
+      level.append(option);
+    }
+
+    level.addEventListener("change", () => {
+      this.level = level.value === "fn" ? "fn" : "module";
+      void this.loadDiff(since, ++this.request, pane);
+    });
+    const rows: Node[] = [make("p", { className: "note", text: `${answer.base.label} → ${answer.head.label}` }), make("p", { className: "changes-summary", text: summary }), make("div", { className: "changes-base" }, make("label", { text: "рівень " }, level)), legend];
+
+    // The new failures name what breaks; the picture shows where.
+    for (const finding of diff.findings.filter((item) => item.status === "new" && item.verdict === "fail")) rows.push(make("p", { className: "error", text: `✗ ${finding.code ?? finding.criterion} ${finding.message}` }));
+    pane.replaceChildren(...rows);
+    this.host.showDiff(answer.diagram);
+    this.host.status(`changes since ${answer.base.label} · ${summary}${answer.diagram.reason ? ` · ${answer.diagram.reason}` : ""}`);
   }
 }

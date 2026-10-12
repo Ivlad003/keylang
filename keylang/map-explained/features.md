@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [system-proposal](#features.system-proposal) · [tour](#features.tour) · [ts-projection](#features.ts-projection) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [call-sites](#features.call-sites) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [coverage-report](#features.coverage-report) · [diagram-clip](#features.diagram-clip) · [diagram-proposal](#features.diagram-proposal) · [discover-names](#features.discover-names) · [discover](#features.discover) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [explorer](#features.explorer) · [feature-status](#features.feature-status) · [flow-bundle](#features.flow-bundle) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [graph-diff-format](#features.graph-diff-format) · [graph-diff-run](#features.graph-diff-run) · [graph-diff](#features.graph-diff) · [greenfield](#features.greenfield) · [harness](#features.harness) · [integrations](#features.integrations) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [migration-stack](#features.migration-stack) · [node-search](#features.node-search) · [proposals](#features.proposals) · [revision-tree](#features.revision-tree) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [system-proposal](#features.system-proposal) · [tour](#features.tour) · [ts-projection](#features.ts-projection) · [voice-local](#features.voice-local) · [voice](#features.voice) · [weakening](#features.weakening)
 
 # map
 
@@ -1356,52 +1356,52 @@
     - graph [map.graph](map.md#map.graph)
     - parser [lang.parser](lang.md#lang.parser)
     - span [base.span](base.md#base.span)
-    - type [ChangedFiles](../../src/git-changes.ts#L29)
+    - type [ChangedFiles](../../src/git-changes.ts#L30)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - type [GitRunner](../../src/git-changes.ts#L39) <!-- internal -->
+    - type [GitRunner](../../src/git-changes.ts#L40)
       <a id="features.git-changes.GitRunner"></a><br>Git in one root: `run` returns what git did, `git` its stdout or throws.
-    - fn [gitIn](../../src/git-changes.ts#L45) (root: string, label: string) → GitRunner <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L46) (root: string, label: string) → GitRunner
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [gitUnavailable](../../src/git-changes.ts#L66) (label: string, error: Error & { code?: string }) → string
+    - fn [gitUnavailable](../../src/git-changes.ts#L67) (label: string, error: Error & { code?: string }) → string
       <a id="features.git-changes.gitUnavailable"></a><br>Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works.
-    - fn [assertRef](../../src/git-changes.ts#L74) (ref: string, label: string) → void <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L75) (ref: string, label: string) → void
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L80) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L81) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a><br>Builds the fixed argument list for a `git diff` against a base ref: relative paths, no renames, zero context lines, no color or external diff, and `a/`/`b/` prefixes. Shared by [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) so both parse… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [untracked](../../src/git-changes.ts#L83) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L84) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a><br>Files git does not track and does not ignore, as NUL-separated paths so any file name survives.
-    - fn [ownState](../../src/git-changes.ts#L93) (path: string) → boolean <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L94) (path: string) → boolean <!-- internal -->
       <a id="features.git-changes.ownState"></a><br>keylang's own local state under `.keylang/` — the index, the fact cache an analysis saves, proposals, reports — is never a source or a spec, so it is never a change, tracked or not, gitignored or not.
-    - fn [gitChangedFiles](../../src/git-changes.ts#L96) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitChangedFiles](../../src/git-changes.ts#L97) (root: string, ref: string, label = "check --changed") → ChangedFiles
       <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked), [features.git-changes.ownState](features.md#features.git-changes.ownState), [features.git-changes.diskCaseResolver](features.md#features.git-changes.diskCaseResolver)
-    - fn [diskCaseResolver](../../src/git-changes.ts#L128) (root: string) → (path: string) => string | null
+    - fn [diskCaseResolver](../../src/git-changes.ts#L129) (root: string) → (path: string) => string | null
       <a id="features.git-changes.diskCaseResolver"></a><br>Paths (POSIX, relative to `root`) as the disk spells them: each segment is matched against its directory's entries, exactly first, then without regard to case (and Unicode normalization, as macOS compares names); null when no file is there. Directories are read once per call.
-    - fn [gitChangedLines](../../src/git-changes.ts#L167) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitChangedLines](../../src/git-changes.ts#L168) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L179) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L180) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitFileAt](../../src/git-changes.ts#L195) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L196) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [gitSpecFilesAt](../../src/git-changes.ts#L220) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
+    - fn [gitSpecFilesAt](../../src/git-changes.ts#L221) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
       <a id="features.git-changes.gitSpecFilesAt"></a><br>The `.md` files under `dir` (POSIX, relative to `root`) at `ref` and their text; empty when `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller. `skip` leaves a path out before it is read (the generated map, reading aids).
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [base.span.compareText](base.md#base.span.compareText)
-    - fn [readFeatureBase](../../src/git-changes.ts#L252) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [readFeatureBase](../../src/git-changes.ts#L253) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
       - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [base.span.compareText](base.md#base.span.compareText), [lang.parser.parse](lang.md#lang.parser.parse)
-    - type [GitSummary](../../src/git-changes.ts#L281)
+    - type [GitSummary](../../src/git-changes.ts#L282)
       <a id="features.git-changes.GitSummary"></a><br>Where the working tree stands, for a page that shows the changes (`GET /api/git`).
-    - fn [gitSummary](../../src/git-changes.ts#L293) (root: string, label: string) → GitSummary
+    - fn [gitSummary](../../src/git-changes.ts#L294) (root: string, label: string) → GitSummary
       <a id="features.git-changes.gitSummary"></a><br>HEAD, its branch, the origin and the branches of the repository around `root`. No git, or no repository, is an error naming the caller.
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [base.span.compareText](base.md#base.span.compareText)
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L334) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L335) (root: string, label: string) → BaseOrigin
       <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
       - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L365) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L366) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)
@@ -1425,6 +1425,137 @@
       - calls [features.git-hook.git](features.md#features.git-hook.git)
     - fn [git](../../src/git-hook.ts#L66) (cwd: string, args: string[]) → string <!-- internal -->
       <a id="features.git-hook.git"></a><br>Run git in `cwd` and return its trimmed stdout; any failure becomes an error naming the command.
+  - module [graph-diff-format](../../src/graph-diff-format.ts#L1)
+    <a id="features.graph-diff-format"></a><br>How a `GraphDiff` is shown: a short text report (the terminal), Markdown for a PR comment (summary, tables, a mermaid block), a mermaid flowchart alone, and the diagram the web page draws on its canvas. Pure: the same diff gives the same bytes.
+    - diagram [map.diagram](map.md#map.diagram)
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - graph-diff [features.graph-diff](features.md#features.graph-diff)
+    - span [base.span](base.md#base.span)
+    - type [DiffFormat](../../src/graph-diff-format.ts#L23) = (typeof DIFF_FORMATS)[number]
+      <a id="features.graph-diff-format.DiffFormat"></a>
+    - fn [isDiffFormat](../../src/graph-diff-format.ts#L26) (text: string) → text is DiffFormat
+      <a id="features.graph-diff-format.isDiffFormat"></a><br>Whether `text` names an output format of `keylang diff`.
+    - fn [diffSummary](../../src/graph-diff-format.ts#L34) (diff: GraphDiff) → string
+      <a id="features.graph-diff-format.diffSummary"></a><br>One line: what changed, counted by kind.
+    - fn [heading](../../src/graph-diff-format.ts#L49) (diff: GraphDiff) → string <!-- internal -->
+      <a id="features.graph-diff-format.heading"></a><br>The heading both reports start with: from where to where, at which level.
+    - fn [diffText](../../src/graph-diff-format.ts#L56) (diff: GraphDiff) → string
+      <a id="features.graph-diff-format.diffText"></a><br>The `keylang diff` report for a terminal: a heading, the summary, then each kind of change.
+      - calls [features.graph-diff-format.heading](features.md#features.graph-diff-format.heading), [features.graph-diff-format.diffSummary](features.md#features.graph-diff-format.diffSummary)
+    - fn [cell](../../src/graph-diff-format.ts#L91) (text: string) → string <!-- internal -->
+      <a id="features.graph-diff-format.cell"></a><br>A Markdown table cell: pipes escaped, line breaks flattened.
+    - fn [code](../../src/graph-diff-format.ts#L96) (text: string) → string <!-- internal -->
+      <a id="features.graph-diff-format.code"></a><br>Inline code in a table cell, safe for backticks in the text.
+      - calls [features.graph-diff-format.cell](features.md#features.graph-diff-format.cell)
+    - fn [diffMarkdown](../../src/graph-diff-format.ts#L101) (diff: GraphDiff, subgraph: DiffSubgraph) → string
+      <a id="features.graph-diff-format.diffMarkdown"></a><br>The report for a PR comment: the heading, the summary, a table per kind of change and the mermaid picture.
+      - calls [features.graph-diff-format.cell](features.md#features.graph-diff-format.cell), [features.graph-diff-format.heading](features.md#features.graph-diff-format.heading), [features.graph-diff-format.diffSummary](features.md#features.graph-diff-format.diffSummary), [features.graph-diff-format.code](features.md#features.graph-diff-format.code), [features.graph-diff-format.diffMermaid](features.md#features.graph-diff-format.diffMermaid)
+    - fn [mermaidLabel](../../src/graph-diff-format.ts#L148) (text: string) → string <!-- internal -->
+      <a id="features.graph-diff-format.mermaidLabel"></a><br>A label inside `["…"]`: quotes and the characters mermaid reads as markup as entities.
+    - fn [diffMermaid](../../src/graph-diff-format.ts#L157) (subgraph: DiffSubgraph) → string
+      <a id="features.graph-diff-format.diffMermaid"></a><br>The picture as a mermaid `flowchart LR`. A node's mermaid ID is its index (`n0`, `n1`…): an ID of the code may hold any character, so it only ever appears as an escaped label.
+      - calls [features.graph-diff-format.mermaidLabel](features.md#features.graph-diff-format.mermaidLabel)
+    - fn [diffDiagram](../../src/graph-diff-format.ts#L187) (subgraph: DiffSubgraph, layerOrder: readonly string[]) → Diagram
+      <a id="features.graph-diff-format.diffDiagram"></a><br>The picture as a diagram of the web page, laid out by `layout`: a lane per layer in `layerOrder` (then any other, by name), module and fn shapes with `diff`, edges as dependencies or calls labelled `+`/`−`.
+      - calls [base.span.compareText](base.md#base.span.compareText), [map.diagram.layout](map.md#map.diagram.layout)
+  - module [graph-diff-run](../../src/graph-diff-run.ts#L1)
+    <a id="features.graph-diff-run"></a><br>`keylang diff` and `GET /api/graph-diff` up to the model: which two revisions a range names, both analysed (a commit in a temporary directory, the working tree in place), and their `GraphDiff` with the picture of it. Reads git and files; writes nothing in the repository (the…
+    - analyze [map.analyze](map.md#map.analyze)
+    - git-changes [features.git-changes](features.md#features.git-changes)
+    - graph-diff [features.graph-diff](features.md#features.graph-diff)
+    - revision-tree [features.revision-tree](features.md#features.revision-tree)
+    - type [DiffRange](../../src/graph-diff-run.ts#L17)
+      <a id="features.graph-diff-run.DiffRange"></a><br>The two sides a range names: a ref, or null for the default (the base of a feature; the working tree).
+    - fn [parseRange](../../src/graph-diff-run.ts#L26) (text: string | undefined, label: string) → DiffRange
+      <a id="features.graph-diff-run.parseRange"></a><br>`<base>`, `<base>..<head>` or nothing. An empty side of `..` is `HEAD`, as git reads it; `...` (a symmetric range) is refused, never guessed at.
+    - type [DiffRequest](../../src/graph-diff-run.ts#L38)
+      <a id="features.graph-diff-run.DiffRequest"></a><br>What one diff asks for.
+    - type [DiffRun](../../src/graph-diff-run.ts#L47)
+      <a id="features.graph-diff-run.DiffRun"></a><br>The diff, the picture of it, and the two analyses it came from.
+    - fn [analysisOf](../../src/graph-diff-run.ts#L66) (root: string, revision: Revision, label: string) → Promise<Analysis> <!-- internal -->
+      <a id="features.graph-diff-run.analysisOf"></a><br>The analysis of `revision`: the working tree in place, a commit in a temporary directory (cached by its id). Both sides leave test reports, traces and the migration's old stack out, so evidence only one side has makes no finding new; the working tree's fact cache is read, not…
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [features.revision-tree.analyzeRevision](features.md#features.revision-tree.analyzeRevision)
+    - fn [runGraphDiff](../../src/graph-diff-run.ts#L84) (request: DiffRequest) → Promise<DiffRun>
+      <a id="features.graph-diff-run.runGraphDiff"></a><br>Resolves the range, analyses both sides and diffs them. A bad ref, no git or no repository is an error naming `label`.
+      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.revision-tree.resolveRevision](features.md#features.revision-tree.resolveRevision), [features.revision-tree.workingTree](features.md#features.revision-tree.workingTree), [features.graph-diff-run.analysisOf](features.md#features.graph-diff-run.analysisOf), [features.graph-diff.graphDiff](features.md#features.graph-diff.graphDiff), [features.graph-diff.diffSubgraph](features.md#features.graph-diff.diffSubgraph)
+  - module [graph-diff](../../src/graph-diff.ts#L1)
+    <a id="features.graph-diff"></a><br>The difference between two analyses of one repository (`keylang diff`, `GET /api/graph-diff`): which modules (and with `fn`, functions) were added, removed or changed, which dependency edges (and calls) appeared or went, which flow steps changed, which findings are new or…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - check-results [features.check-results](features.md#features.check-results)
+    - feature-status [features.feature-status](features.md#features.feature-status)
+    - ir [lang.ir](lang.md#lang.ir)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - revision-tree [features.revision-tree](features.md#features.revision-tree)
+    - weakening [features.weakening](features.md#features.weakening)
+    - type [DiffLevel](../../src/graph-diff.ts#L28) = "module" | "fn"
+      <a id="features.graph-diff.DiffLevel"></a><br>How deep the diff goes: modules and their dependencies, or also functions and their calls.
+    - fn [isDiffLevel](../../src/graph-diff.ts#L33) (text: string) → text is DiffLevel
+      <a id="features.graph-diff.isDiffLevel"></a><br>Whether `text` names a diff level.
+    - type [NodeChange](../../src/graph-diff.ts#L38) = "signature" | "body" | "deps" | "layer" | "file"
+      <a id="features.graph-diff.NodeChange"></a><br>What changed in a node that is in both analyses.
+    - type [DiffNode](../../src/graph-diff.ts#L41)
+      <a id="features.graph-diff.DiffNode"></a><br>A node added, removed or changed.
+    - type [DiffEdge](../../src/graph-diff.ts#L54)
+      <a id="features.graph-diff.DiffEdge"></a><br>A dependency between modules (`dep`) or a call between functions (`call`) that appeared or went.
+    - type [DiffFlow](../../src/graph-diff.ts#L62)
+      <a id="features.graph-diff.DiffFlow"></a><br>A flow added, removed, or with steps that appeared or went (keys of `planItems`, parents joined by ` › `).
+    - type [DiffFinding](../../src/graph-diff.ts#L69)
+      <a id="features.graph-diff.DiffFinding"></a><br>A finding (a check result that is not ok) the head has and the base has not (`new`), or the other way (`fixed`).
+    - type [DiffSide](../../src/graph-diff.ts#L82)
+      <a id="features.graph-diff.DiffSide"></a><br>One side of the diff as the reports name it.
+    - type [GraphDiff](../../src/graph-diff.ts#L91)
+      <a id="features.graph-diff.GraphDiff"></a><br>The whole difference, every list sorted by ID or key.
+    - fn [graphDiff](../../src/graph-diff.ts#L104) (input: { base: Analysis; head: Analysis; baseRevision: Revision; headRevision: Revision; level: DiffLevel }) → GraphDiff
+      <a id="features.graph-diff.graphDiff"></a><br>The difference between the `base` and `head` analyses at `level`. Pure.
+      - calls [features.graph-diff.graphOf](features.md#features.graph-diff.graphOf), [features.graph-diff.sideOf](features.md#features.graph-diff.sideOf), [features.graph-diff.nodeDiff](features.md#features.graph-diff.nodeDiff), [features.graph-diff.edgeDiff](features.md#features.graph-diff.edgeDiff), [features.graph-diff.flowDiff](features.md#features.graph-diff.flowDiff), [features.graph-diff.findingDiff](features.md#features.graph-diff.findingDiff), [features.weakening.specWeakenings](features.md#features.weakening.specWeakenings), [features.graph-diff.ownSpecs](features.md#features.graph-diff.ownSpecs)
+    - fn [newFails](../../src/graph-diff.ts#L122) (diff: GraphDiff) → number
+      <a id="features.graph-diff.newFails"></a><br>Whether the diff brings a new failure: a new `fail` finding or a weakened spec (K108).
+    - fn [sideOf](../../src/graph-diff.ts#L126) (revision: Revision) → DiffSide <!-- internal -->
+      <a id="features.graph-diff.sideOf"></a>
+    - type [NodeFacts](../../src/graph-diff.ts#L131) <!-- internal -->
+      <a id="features.graph-diff.NodeFacts"></a><br>What a node is, for comparing: everything a change is read from, lines left out.
+    - type [LevelGraph](../../src/graph-diff.ts#L143) <!-- internal -->
+      <a id="features.graph-diff.LevelGraph"></a><br>The nodes and edges of one snapshot at a level.
+    - fn [graphOf](../../src/graph-diff.ts#L155) (snapshot: AnalysisSnapshot | null, level: DiffLevel) → LevelGraph <!-- internal -->
+      <a id="features.graph-diff.graphOf"></a><br>The module (and fn) nodes of a snapshot and their edges: a module's dependencies (`deps`), and at `fn` a fn's calls. A module's body digest covers its values and every fn and type it holds, so a changed function shows on its module at the module level too.
+      - calls [features.graph-diff.moduleOf](features.md#features.graph-diff.moduleOf), [base.span.compareText](base.md#base.span.compareText), [features.graph-diff.digest](features.md#features.graph-diff.digest), [features.graph-diff.factsOf](features.md#features.graph-diff.factsOf)
+    - fn [factsOf](../../src/graph-diff.ts#L193) (kind: NodeFacts["kind"], node: SnapshotNode, body: string, deps: string[]) → NodeFacts <!-- internal -->
+      <a id="features.graph-diff.factsOf"></a>
+    - fn [moduleOf](../../src/graph-diff.ts#L198) (nodes: AnalysisSnapshot["nodes"], id: string) → string | null <!-- internal -->
+      <a id="features.graph-diff.moduleOf"></a><br>The module `id` lies in: itself or its longest prefix that is a module node; null when none is.
+    - fn [digest](../../src/graph-diff.ts#L212) (parts: readonly string[]) → string <!-- internal -->
+      <a id="features.graph-diff.digest"></a>
+    - fn [nodeDiff](../../src/graph-diff.ts#L217) (base: LevelGraph, head: LevelGraph) → DiffNode[] <!-- internal -->
+      <a id="features.graph-diff.nodeDiff"></a><br>Added, removed and changed nodes, sorted by ID.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [edgeDiff](../../src/graph-diff.ts#L249) (base: ReadonlySet<string>, head: ReadonlySet<string>) → DiffEdge[] <!-- internal -->
+      <a id="features.graph-diff.edgeDiff"></a><br>Edges only one side has, sorted by `source→target:kind`.
+      - calls [base.span.compareText](base.md#base.span.compareText), [features.graph-diff.edgeKey](features.md#features.graph-diff.edgeKey)
+    - fn [edgeKey](../../src/graph-diff.ts#L263) (edge: Pick<DiffEdge, "source" | "target" | "kind">) → string
+      <a id="features.graph-diff.edgeKey"></a><br>The key an edge is known by: `source→target:kind`.
+    - fn [flowDiff](../../src/graph-diff.ts#L268) (base: Analysis, head: Analysis) → DiffFlow[] <!-- internal -->
+      <a id="features.graph-diff.flowDiff"></a><br>Flows of hand-written specs whose plan items differ, by name.
+      - calls [features.feature-status.planItems](features.md#features.feature-status.planItems), [base.span.compareText](base.md#base.span.compareText), [features.graph-diff.multisetMinus](features.md#features.graph-diff.multisetMinus)
+    - fn [multisetMinus](../../src/graph-diff.ts#L297) (from: readonly string[], take: readonly string[]) → string[] <!-- internal -->
+      <a id="features.graph-diff.multisetMinus"></a><br>The items of `from` left after taking out one occurrence per item of `take`.
+    - fn [findingDiff](../../src/graph-diff.ts#L318) (base: Analysis, head: Analysis) → DiffFinding[] <!-- internal -->
+      <a id="features.graph-diff.findingDiff"></a><br>Findings (every check result but `ok`) only one side has. Two findings are the same when code, criterion, area and verdict match and their messages match with positions (`:12`, `line 12`) taken out, as a multiset: a rule broken again from the same module is a new finding, one…
+      - calls [features.check-results.checkReport](features.md#features.check-results.checkReport), [features.graph-diff.withoutPositions](features.md#features.graph-diff.withoutPositions), [base.span.compareText](base.md#base.span.compareText)
+    - fn [withoutPositions](../../src/graph-diff.ts#L349) (message: string) → string <!-- internal -->
+      <a id="features.graph-diff.withoutPositions"></a><br>A message with its positions taken out: `file.md:12:3` → `file.md:#`, `line 12` → `line #`.
+    - type [SubgraphNode](../../src/graph-diff.ts#L354)
+      <a id="features.graph-diff.SubgraphNode"></a><br>A node of the picture of a diff: a changed one or a neighbour of one, with what the snapshots know of it.
+    - type [SubgraphEdge](../../src/graph-diff.ts#L365)
+      <a id="features.graph-diff.SubgraphEdge"></a><br>An edge between two nodes of the picture; `diff` null when both sides have it.
+    - type [DiffSubgraph](../../src/graph-diff.ts#L373)
+      <a id="features.graph-diff.DiffSubgraph"></a><br>The picture of a diff: what is drawn, and how many nodes did not fit.
+    - fn [diffSubgraph](../../src/graph-diff.ts#L388) (diff: GraphDiff, base: Analysis, head: Analysis, limit: number = SUBGRAPH_LIMIT) → DiffSubgraph
+      <a id="features.graph-diff.diffSubgraph"></a><br>The changed nodes and their neighbours one edge away (over the edges of either side), changed ones first, each group by ID, at most `limit`; the edges of either side between the nodes kept. Pure.
+      - calls [features.graph-diff.graphOf](features.md#features.graph-diff.graphOf), [base.span.compareText](base.md#base.span.compareText), [features.graph-diff.edgeKey](features.md#features.graph-diff.edgeKey)
+    - fn [ownSpecs](../../src/graph-diff.ts#L434) (analysis: Analysis) → Document[] <!-- internal -->
+      <a id="features.graph-diff.ownSpecs"></a><br>The documents a person wrote: the rendered map and other generated files left out.
   - module [greenfield](../../src/greenfield.ts#L1)
     <a id="features.greenfield"></a><br>A project from a diagram (business-flows/29): what «Створити специфікацію» of `keylang web --new` writes into an empty project, as texts. Pure: the drawing comes in, the files come out, and the operation (`operations/greenfield.ts`) writes them — only into a project with no…
     - config [base.config](base.md#base.config)
@@ -2052,6 +2183,33 @@
     - fn [countDecision](../../src/proposals.ts#L545) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
+  - module [revision-tree](../../src/revision-tree.ts#L1)
+    <a id="features.revision-tree"></a><br>A revision of the repository as an analysis (`keylang diff`, `GET /api/graph-diff`): the tree of a commit is written into a temporary directory from `git ls-tree -r -z -l` and `git cat-file --batch` — no `worktree add`, so `.git` is never written, and no `tar` — analysed there…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - git-changes [features.git-changes](features.md#features.git-changes)
+    - type [Revision](../../src/revision-tree.ts#L23)
+      <a id="features.revision-tree.Revision"></a><br>One side of a diff: a commit, or the working tree (`commit` null, `ref` `WORKING_TREE`).
+    - fn [resolveRevision](../../src/revision-tree.ts#L47) (root: string, ref: string, label: string, sentence: string = ref) → Revision
+      <a id="features.revision-tree.resolveRevision"></a><br>The commit `ref` names, its abbreviation and subject. `HEAD` before the first commit is the empty tree (commit null); any other ref that is not a commit, no git, or no repository is an error naming `label`.
+      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
+    - fn [workingTree](../../src/revision-tree.ts#L67) (root: string, label: string) → Revision
+      <a id="features.revision-tree.workingTree"></a><br>The working tree as a side of a diff, with HEAD's abbreviation when there is a commit.
+      - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
+    - type [TreeEntry](../../src/revision-tree.ts#L76) <!-- internal -->
+      <a id="features.revision-tree.TreeEntry"></a><br>What `ls-tree -r -l` lists: the mode, type, object id and size of a path.
+    - fn [treeEntries](../../src/revision-tree.ts#L85) (root: string, commit: string, label: string) → TreeEntry[] <!-- internal -->
+      <a id="features.revision-tree.treeEntries"></a><br>The entries of the tree of `commit` under `root` (paths relative to it, as git prints them from there).
+      - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
+    - fn [readBlobs](../../src/revision-tree.ts#L105) (root: string, entries: readonly TreeEntry[], scratch: string, label: string, write: (entry: TreeEntry, bytes: Buffer) => void) → void <!-- internal -->
+      <a id="features.revision-tree.readBlobs"></a><br>The blobs of `entries` by object id, read with `cat-file --batch` in chunks of about `BATCH_BYTES`. Stdin is a file, never a pipe: a sandbox that forbids closing a piped stdin (git-changes.ts, `gitIn`) still runs it.
+      - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
+    - fn [writeTree](../../src/revision-tree.ts#L148) (root: string, commit: string, dir: string, scratch: string, label: string) → void <!-- internal -->
+      <a id="features.revision-tree.writeTree"></a><br>Writes the tree of `commit` (paths relative to `root`) into `dir`; a submodule is an empty directory, a link a link.
+      - calls [features.revision-tree.treeEntries](features.md#features.revision-tree.treeEntries), [features.revision-tree.readBlobs](features.md#features.revision-tree.readBlobs)
+    - fn [analyzeRevision](../../src/revision-tree.ts#L194) (root: string, revision: Revision, label: string) → Promise<Analysis>
+      <a id="features.revision-tree.analyzeRevision"></a><br>The analysis of `revision` (a commit, or the empty tree of an unborn HEAD): its tree in a temporary directory, analysed without evidence or migration, with the repository's fact cache read and none written. The directory is removed when the analysis ends or fails.
+      - calls [features.revision-tree.writeTree](features.md#features.revision-tree.writeTree), [map.analyze.analyze](map.md#map.analyze.analyze)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a test that fails until…
     - node [external.node](external.md#external.node)

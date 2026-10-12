@@ -145,6 +145,20 @@ body[data-mode="changes"] #stage, body[data-mode="changes"] #details, body[data-
 #changes .results .glyph { display: inline-block; width: 16px; }
 #changes .results .v-fail { color: #c62828; }
 #changes .results .v-unverified { color: #b26a00; }
+/* «Список / Діаграма»: with the diagram the canvas and its side panel come back under a shorter panel. */
+#changes .changes-toggle { display: inline-flex; margin: 4px 0 6px; }
+#changes .changes-toggle button { border: 1px solid #b0bec5; background: #ffffff; padding: 3px 12px; cursor: pointer; color: #37474f; }
+#changes .changes-toggle button:first-child { border-radius: 4px 0 0 4px; }
+#changes .changes-toggle button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+#changes .changes-toggle button[aria-pressed="true"] { background: #1565c0; border-color: #1565c0; color: #ffffff; }
+#changes .diff-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: #455a64; margin: 4px 0; }
+#changes .diff-legend .swatch { display: inline-block; width: 16px; height: 14px; line-height: 14px; text-align: center; border: 1.5px solid; border-radius: 3px; margin-right: 4px; font-size: 10px; vertical-align: middle; }
+#changes .diff-legend .swatch.diff-removed { border-style: dashed; }
+body[data-mode="changes"][data-changes-view="diagram"] #changes { flex: none; max-height: 38%; }
+body[data-mode="changes"][data-changes-view="diagram"] #stage { display: block; }
+body[data-mode="changes"][data-changes-view="diagram"] #details { display: block; }
+body[data-mode="changes"][data-changes-view="diagram"] #toolbar #zoom-in, body[data-mode="changes"][data-changes-view="diagram"] #toolbar #zoom-out, body[data-mode="changes"][data-changes-view="diagram"] #toolbar #zoom-fit { display: inline-block; }
+body[data-mode="changes"] #legend, body[data-mode="changes"] #system-bar { display: none; }
 
 /* A viewer (--read-only, a static export, app.html) writes nothing: no buttons that would. */
 body[data-readonly="1"] #save-flow-box, body[data-readonly="1"] #copy-bundle { display: none; }

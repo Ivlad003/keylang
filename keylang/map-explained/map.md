@@ -23,31 +23,33 @@
     - snapshot [map.snapshot](map.md#map.snapshot)
     - test-report [check.test-report](check.md#check.test-report)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
-    - type [AnalysisRequest](../../src/analyze.ts#L28)
+    - type [GenerateOptions](../../src/analyze.ts#L28)
+      <a id="map.analyze.GenerateOptions"></a><br>What an analysis asks of the snapshot generator: whether to prepare the fact cache, unsaved buffers, and where the cache lives.
+    - type [AnalysisRequest](../../src/analyze.ts#L36)
       <a id="map.analyze.AnalysisRequest"></a><br>What to analyse and how: the root, which specs, unsaved buffers and which optional parts to skip.
-    - type [Analysis](../../src/analyze.ts#L64) extends Assessment
+    - type [Analysis](../../src/analyze.ts#L78) extends Assessment
       <a id="map.analyze.Analysis"></a><br>One analysis: the assessment plus the config, map, snapshot and parsed documents it came from.
-    - fn [analyze](../../src/analyze.ts#L79) (request: AnalysisRequest) → Promise<Analysis>
+    - fn [analyze](../../src/analyze.ts#L93) (request: AnalysisRequest) → Promise<Analysis>
       <a id="map.analyze.analyze"></a><br>Run config → snapshot → parse specs → assess for one repository; reads files, writes only the fact cache when asked.
       - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [map.analyze.readingAid](map.md#map.analyze.readingAid), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [map.analyze.parseRenderedMap](map.md#map.analyze.parseRenderedMap), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [map.analyze.oldSnapshotFor](map.md#map.analyze.oldSnapshotFor), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.analyze.repositoryFile](map.md#map.analyze.repositoryFile), [check.assess.assess](check.md#check.assess.assess)
-    - fn [oldSnapshotFor](../../src/analyze.ts#L173) (root: string, from: string) → Promise<OldSnapshot>
+    - fn [oldSnapshotFor](../../src/analyze.ts#L191) (root: string, from: string) → Promise<OldSnapshot>
       <a id="map.analyze.oldSnapshotFor"></a><br>The nodes of the old stack of a migration (`migration.from` of keylang.json, relative to the root; business-flows/27): an index file, or the old checkout analysed read-only — no fact cache, its own `migration.from` unread. An unreadable one is a state, never a thrown error: the…
       - calls [map.analyze.analyze](map.md#map.analyze.analyze), [check.migration.readOldIndex](check.md#check.migration.readOldIndex)
-    - fn [parseRenderedMap](../../src/analyze.ts#L217) (path: string, text: string) → Document <!-- internal -->
+    - fn [parseRenderedMap](../../src/analyze.ts#L235) (path: string, text: string) → Document <!-- internal -->
       <a id="map.analyze.parseRenderedMap"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [findRoot](../../src/analyze.ts#L230) (start: string) → string
+    - fn [findRoot](../../src/analyze.ts#L248) (start: string) → string
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
-    - fn [repositoryFile](../../src/analyze.ts#L244) (root: string, path: string) → boolean <!-- internal -->
+    - fn [repositoryFile](../../src/analyze.ts#L262) (root: string, path: string) → boolean <!-- internal -->
       <a id="map.analyze.repositoryFile"></a><br>`path` (relative to the root, as a flow's `test` writes it) is a file inside the repository.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [readingAid](../../src/analyze.ts#L258) (specDir: string, abs: string) → boolean
+    - fn [readingAid](../../src/analyze.ts#L276) (specDir: string, abs: string) → boolean
       <a id="map.analyze.readingAid"></a><br>A generated reading aid beside the specs (the explained map, explanations, discovered flows, the project tour, diagram layouts): never a spec.
       - calls [map.analyze.within](map.md#map.analyze.within)
-    - fn [specPathProblem](../../src/analyze.ts#L267) (config: Config, abs: string) → string | null
+    - fn [specPathProblem](../../src/analyze.ts#L285) (config: Config, abs: string) → string | null
       <a id="map.analyze.specPathProblem"></a><br>Why `check` does not read `abs` as a spec, or null when it does: a `.md` file the walk of the spec directory reaches (no hidden directory, `node_modules` or `target` on the way) outside the reading aids.
       - calls [map.analyze.within](map.md#map.analyze.within), [lang.files.walkReaches](lang.md#lang.files.walkReaches), [map.analyze.readingAid](map.md#map.analyze.readingAid)
-    - fn [within](../../src/analyze.ts#L282) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L300) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a><br>Whether `abs` is `dir` or lies inside it (path-based, links are not followed).
   - module [bpmn-export](../../src/bpmn-export.ts#L1)
     <a id="map.bpmn-export"></a><br>BPMN 2.0 of a diagram (business-flows/28): the picture `/diagrams` draws (`diagramOf` + `layout`), as XML with its BPMNDI so Camunda Modeler or bpmn.io opens it as drawn. The mapping is the table «Відображення в BPMN» of ADR 0023: a layer is a lane of the one pool, a trigger a…
@@ -296,135 +298,135 @@
       <a id="map.diagram.DiagramVerdict"></a><br>A shape's colour: what `check` says about it, `planned` for declared-only code, null for nothing.
     - type [DiagramNode](../../src/diagram.ts#L47)
       <a id="map.diagram.DiagramNode"></a><br>One shape: what it stands for, its verdict and lane, and its box once laid out.
-    - type [DiagramEdge](../../src/diagram.ts#L71)
+    - type [DiagramEdge](../../src/diagram.ts#L73)
       <a id="map.diagram.DiagramEdge"></a><br>One line between two shapes, with its kind and an optional label and verdict.
-    - type [DiagramGroup](../../src/diagram.ts#L82)
+    - type [DiagramGroup](../../src/diagram.ts#L86)
       <a id="map.diagram.DiagramGroup"></a><br>A lane: one layer, a band across the diagram.
-    - type [Diagram](../../src/diagram.ts#L93)
+    - type [Diagram](../../src/diagram.ts#L97)
       <a id="map.diagram.Diagram"></a><br>A drawn view: shapes, lines, lanes, and why it is empty or cut short.
-    - type [SystemSummary](../../src/diagram.ts#L111)
+    - type [SystemSummary](../../src/diagram.ts#L115)
       <a id="map.diagram.SystemSummary"></a><br>What the page shows beside a system's diagram: the interview notes and the other views of the system.
-    - type [DiagramResult](../../src/diagram.ts#L120)
+    - type [DiagramResult](../../src/diagram.ts#L124)
       <a id="map.diagram.DiagramResult"></a><br>What a diagram reads of a check result: `CheckResult` and `Verdict` both fit.
-    - type [DiagramInput](../../src/diagram.ts#L132)
+    - type [DiagramInput](../../src/diagram.ts#L136)
       <a id="map.diagram.DiagramInput"></a><br>Everything a view is computed from.
-    - type [DiagramProcess](../../src/diagram.ts#L151)
+    - type [DiagramProcess](../../src/diagram.ts#L155)
       <a id="map.diagram.DiagramProcess"></a><br>A business process as a model grouped it (business-flows/12): its domain and its discovered flows, each with its trigger and the steps right under it.
-    - type [Positions](../../src/diagram.ts#L158)
+    - type [Positions](../../src/diagram.ts#L162)
       <a id="map.diagram.Positions"></a><br>Positions that win over the automatic layout, by node id.
-    - fn [parseView](../../src/diagram.ts#L172) (query: URLSearchParams) → DiagramView | string
+    - fn [parseView](../../src/diagram.ts#L176) (query: URLSearchParams) → DiagramView | string
       <a id="map.diagram.parseView"></a><br>A view from the query of `GET /api/diagram`, or why it names none.
-    - fn [viewOfKey](../../src/diagram.ts#L241) (key: string) → { view: DiagramView; discovered: boolean } | null
+    - fn [viewOfKey](../../src/diagram.ts#L245) (key: string) → { view: DiagramView; discovered: boolean } | null
       <a id="map.diagram.viewOfKey"></a><br>The view a key of the page names (`flow:checkout`, `discovered:<name>`, `entry:<id>`, `process:<domain>`, `layers`), as `diagramOf` takes it; a discovered flow is drawn as a flow of the discovered view. Null for none.
-    - type [DiagramViews](../../src/diagram.ts#L271)
+    - type [DiagramViews](../../src/diagram.ts#L275)
       <a id="map.diagram.DiagramViews"></a><br>The views there are to draw, as the page lists them.
-    - fn [viewsOf](../../src/diagram.ts#L285) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], systems: readonly SystemSpec[] = [], schemas?: SchemaRead, ) → DiagramViews
+    - fn [viewsOf](../../src/diagram.ts#L289) ( snapshot: AnalysisSnapshot | null, spec: SpecIR, processes: readonly DiagramProcess[] = [], systems: readonly SystemSpec[] = [], schemas?: SchemaRead, ) → DiagramViews
       <a id="map.diagram.viewsOf"></a><br>What there is to draw: flow names in spec order, entry points as the snapshot lists them, layers in their order, the domains of the business processes (first seen first) and the processes with their flows.
       - calls [map.diagram.systemListing](map.md#map.diagram.systemListing), [map.diagram.layerOrder](map.md#map.diagram.layerOrder)
-    - type [FlowListing](../../src/diagram.ts#L303)
+    - type [FlowListing](../../src/diagram.ts#L307)
       <a id="map.diagram.FlowListing"></a><br>A flow as the diagram page lists it: where it is, its trigger and lane, and every ID it names (for the search).
-    - fn [flowIds](../../src/diagram.ts#L313) (flow: Flow) → string[]
+    - fn [flowIds](../../src/diagram.ts#L317) (flow: Flow) → string[]
       <a id="map.diagram.flowIds"></a><br>The IDs a flow names — triggers, steps, `then <id>`, `calls` — in source order, each once.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [flowListing](../../src/diagram.ts#L324) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
+    - fn [flowListing](../../src/diagram.ts#L328) (snapshot: AnalysisSnapshot | null, spec: SpecIR) → FlowListing[]
       <a id="map.diagram.flowListing"></a><br>The flows of a spec for the list of the diagram page: the first flow of each name, in spec order.
       - calls [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.flowIds](map.md#map.diagram.flowIds)
-    - type [Usages](../../src/diagram.ts#L339)
+    - type [Usages](../../src/diagram.ts#L343)
       <a id="map.diagram.Usages"></a><br>Where an ID is used: flows and discovered flows that name it (or an ID under it), and entry points whose route does.
-    - fn [covers](../../src/diagram.ts#L347) (id: string, target: string) → boolean <!-- internal -->
+    - fn [covers](../../src/diagram.ts#L351) (id: string, target: string) → boolean <!-- internal -->
       <a id="map.diagram.covers"></a><br>An ID or one under it: `a.b` matches `a.b` and `a.b.c`, not `a.bc`.
-    - fn [useIn](../../src/diagram.ts#L352) (flow: Flow, id: string) → number | null <!-- internal -->
+    - fn [useIn](../../src/diagram.ts#L356) (flow: Flow, id: string) → number | null <!-- internal -->
       <a id="map.diagram.useIn"></a><br>The first line of a flow that names the ID, or null.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [map.diagram.covers](map.md#map.diagram.covers)
-    - fn [usagesOf](../../src/diagram.ts#L370) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
+    - fn [usagesOf](../../src/diagram.ts#L374) (snapshot: AnalysisSnapshot | null, spec: SpecIR, discovered: SpecIR | null, id: string) → Usages
       <a id="map.diagram.usagesOf"></a><br>Where `id` is used (business-flows/21): the flows of the specs and of the discovered view that name it in a trigger, step, `then` or `calls`, and the entry points that are it or whose flow (written or discovered, by trigger) names it. Pure; each list in its source's order.
       - calls [map.diagram.useIn](map.md#map.diagram.useIn), [map.diagram.covers](map.md#map.diagram.covers)
-    - fn [diagramOf](../../src/diagram.ts#L397) (input: DiagramInput) → Diagram
+    - fn [diagramOf](../../src/diagram.ts#L401) (input: DiagramInput) → Diagram
       <a id="map.diagram.diagramOf"></a><br>The laid-out diagram of a view; places from the saved layout file win over computed ones.
       - calls [map.diagram.unplaced](map.md#map.diagram.unplaced), [map.diagram.layout](map.md#map.diagram.layout), [map.diagram-layout.savedPositions](map.md#map.diagram-layout.savedPositions)
-    - fn [unplaced](../../src/diagram.ts#L420) (input: DiagramInput) → Diagram <!-- internal -->
+    - fn [unplaced](../../src/diagram.ts#L424) (input: DiagramInput) → Diagram <!-- internal -->
       <a id="map.diagram.unplaced"></a><br>The diagram of a view before `layout` places it.
       - calls [map.diagram.flowDiagram](map.md#map.diagram.flowDiagram), [map.diagram.systemNamed](map.md#map.diagram.systemNamed), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.systemDiagram](map.md#map.diagram.systemDiagram), [map.diagram.erDiagram](map.md#map.diagram.erDiagram), [map.diagram.sequenceDiagram](map.md#map.diagram.sequenceDiagram), [map.diagram.eventDiagram](map.md#map.diagram.eventDiagram), [map.diagram.processDiagram](map.md#map.diagram.processDiagram), [map.diagram.entryDiagram](map.md#map.diagram.entryDiagram), [map.diagram.moduleDiagram](map.md#map.diagram.moduleDiagram), [map.diagram.layersDiagram](map.md#map.diagram.layersDiagram)
-    - fn [empty](../../src/diagram.ts#L457) (reason: string) → Diagram <!-- internal -->
+    - fn [empty](../../src/diagram.ts#L461) (reason: string) → Diagram <!-- internal -->
       <a id="map.diagram.empty"></a><br>An empty diagram that says why.
-    - fn [withReason](../../src/diagram.ts#L462) (diagram: Diagram, reason: string | null) → Diagram <!-- internal -->
+    - fn [withReason](../../src/diagram.ts#L466) (diagram: Diagram, reason: string | null) → Diagram <!-- internal -->
       <a id="map.diagram.withReason"></a><br>The diagram with why it is empty or cut short, when there is a reason.
-    - type [Box](../../src/diagram.ts#L468) = Pick<DiagramNode, "x" | "y" | "w" | "h"> <!-- internal -->
+    - type [Box](../../src/diagram.ts#L472) = Pick<DiagramNode, "x" | "y" | "w" | "h"> <!-- internal -->
       <a id="map.diagram.Box"></a>
-    - fn [shapeOf](../../src/diagram.ts#L471) (shape: Omit<DiagramNode, keyof Box>, group: string | null | undefined, box: Box = { x: 0, y: 0, w: 0, h: 0 }) → DiagramNode <!-- internal -->
+    - fn [shapeOf](../../src/diagram.ts#L475) (shape: Omit<DiagramNode, keyof Box>, group: string | null | undefined, box: Box = { x: 0, y: 0, w: 0, h: 0 }) → DiagramNode <!-- internal -->
       <a id="map.diagram.shapeOf"></a><br>A shape in its lane when it has one, `group` written before the box as every view writes it; at the origin unless placed.
-    - fn [codeRef](../../src/diagram.ts#L480) (id: string, code: { file: string | null; line: number | null } | undefined) → NonNullable<DiagramNode["ref"]> <!-- internal -->
+    - fn [codeRef](../../src/diagram.ts#L484) (id: string, code: { file: string | null; line: number | null } | undefined) → NonNullable<DiagramNode["ref"]> <!-- internal -->
       <a id="map.diagram.codeRef"></a><br>The code a shape stands for: its ID, and the file and line when the snapshot knows them.
-    - type [RankedVerdict](../../src/diagram.ts#L493) = "fail" | "unverified" | "ok" <!-- internal -->
+    - type [RankedVerdict](../../src/diagram.ts#L497) = "fail" | "unverified" | "ok" <!-- internal -->
       <a id="map.diagram.RankedVerdict"></a>
-    - fn [isRanked](../../src/diagram.ts#L498) (value: string) → value is RankedVerdict <!-- internal -->
+    - fn [isRanked](../../src/diagram.ts#L502) (value: string) → value is RankedVerdict <!-- internal -->
       <a id="map.diagram.isRanked"></a><br>A verdict `check` ranks; any other text (`""`, an unknown word) counts for nothing.
-    - fn [worst](../../src/diagram.ts#L503) (values: readonly string[]) → DiagramVerdict <!-- internal -->
+    - fn [worst](../../src/diagram.ts#L507) (values: readonly string[]) → DiagramVerdict <!-- internal -->
       <a id="map.diagram.worst"></a><br>The most severe ranked verdict in `values`, or null when none ranks.
       - calls [map.diagram.isRanked](map.md#map.diagram.isRanked)
-    - fn [messageOf](../../src/diagram.ts#L512) (result: DiagramResult) → string <!-- internal -->
+    - fn [messageOf](../../src/diagram.ts#L516) (result: DiagramResult) → string <!-- internal -->
       <a id="map.diagram.messageOf"></a><br>A result's text, whichever shape of result it is.
-    - fn [byLine](../../src/diagram.ts#L517) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
+    - fn [byLine](../../src/diagram.ts#L521) (results: readonly DiagramResult[]) → Map<string, DiagramResult[]> <!-- internal -->
       <a id="map.diagram.byLine"></a><br>Results by `file:line`.
-    - fn [byArea](../../src/diagram.ts#L531) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
+    - fn [byArea](../../src/diagram.ts#L535) (results: readonly DiagramResult[]) → Map<string, DiagramVerdict> <!-- internal -->
       <a id="map.diagram.byArea"></a><br>The worst verdict about each ID and every ID above it (`a.b.c` counts for `a.b` and `a`).
       - calls [map.diagram.isRanked](map.md#map.diagram.isRanked), [map.diagram.worst](map.md#map.diagram.worst)
-    - fn [layerOrder](../../src/diagram.ts#L551) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [layerOrder](../../src/diagram.ts#L555) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       <a id="map.diagram.layerOrder"></a><br>The repository's layers in `keylang.json` order, then the others (packages last).
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [layerOf](../../src/diagram.ts#L564) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
+    - fn [layerOf](../../src/diagram.ts#L568) (snapshot: AnalysisSnapshot | null, id: string) → string | undefined <!-- internal -->
       <a id="map.diagram.layerOf"></a><br>The layer of an ID: the snapshot's, else its first segment when that is a layer (or when there is no snapshot).
-    - fn [lanes](../../src/diagram.ts#L574) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
+    - fn [lanes](../../src/diagram.ts#L578) (snapshot: AnalysisSnapshot | null, nodes: readonly DiagramNode[]) → DiagramGroup[] <!-- internal -->
       <a id="map.diagram.lanes"></a><br>One lane per layer some node sits in, in the layers' order; sized by `layout`.
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [base.span.compareText](base.md#base.span.compareText)
-    - fn [flowDiagram](../../src/diagram.ts#L589) (input: DiagramInput, name: string) → Diagram <!-- internal -->
+    - fn [flowDiagram](../../src/diagram.ts#L593) (input: DiagramInput, name: string) → Diagram <!-- internal -->
       <a id="map.diagram.flowDiagram"></a><br>A flow as BPMN-like shapes: the trigger as the start event, each item drawn in spec order, nested items after their parent. Node ids carry the spec line (`step:12`), which `diagramKeys` later turns into stable keys.
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byLine](map.md#map.diagram.byLine), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.codeRef](map.md#map.diagram.codeRef), [map.diagram.worst](map.md#map.diagram.worst), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.stripLead](map.md#map.diagram.stripLead), [map.diagram.messageOf](map.md#map.diagram.messageOf), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [stripLead](../../src/diagram.ts#L776) (message: string, id: string) → string <!-- internal -->
+    - fn [stripLead](../../src/diagram.ts#L780) (message: string, id: string) → string <!-- internal -->
       <a id="map.diagram.stripLead"></a><br>`check`'s message without its `unverified <id>: ` lead.
-    - fn [eventNamed](../../src/diagram.ts#L785) (snapshot: AnalysisSnapshot, name: string) → string | null
+    - fn [eventNamed](../../src/diagram.ts#L789) (snapshot: AnalysisSnapshot, name: string) → string | null
       <a id="map.diagram.eventNamed"></a><br>The event node a view names: its ID, `events.<literal>`, or the literal it is dispatched with.
-    - fn [eventDiagram](../../src/diagram.ts#L798) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
+    - fn [eventDiagram](../../src/diagram.ts#L802) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], name: string) → Diagram <!-- internal -->
       <a id="map.diagram.eventDiagram"></a><br>An event (ADR 0022 п. 6, business-flows/08): the fns that dispatch it, the event, and the fns its observers run, each in the lane of its layer. A dispatch is an `emits` edge, an observer a `call` named after it.
       - calls [map.diagram.eventNamed](map.md#map.diagram.eventNamed), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.codeRef](map.md#map.diagram.codeRef), [map.diagram.withReason](map.md#map.diagram.withReason), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [entryDiagram](../../src/diagram.ts#L839) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
+    - fn [entryDiagram](../../src/diagram.ts#L843) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string, depth: number) → Diagram <!-- internal -->
       <a id="map.diagram.entryDiagram"></a><br>An entry point's call tree: the entry as the start, the fns it calls breadth first to `depth` levels, each fn once in the lane of its layer, and one `?` hole per fn for the calls keylang could not resolve.
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.codeRef](map.md#map.diagram.codeRef), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.lanes](map.md#map.diagram.lanes), [map.diagram.withReason](map.md#map.diagram.withReason)
-    - fn [processDiagram](../../src/diagram.ts#L976) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
+    - fn [processDiagram](../../src/diagram.ts#L980) (snapshot: AnalysisSnapshot, processes: readonly DiagramProcess[], results: readonly DiagramResult[], domain: string) → Diagram <!-- internal -->
       <a id="map.diagram.processDiagram"></a><br>The processes of a domain (or the one process of that name): lanes per layer, one start per flow of each process (its trigger), and the steps right under it as tasks. A step two flows share is drawn once.
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.codeRef](map.md#map.diagram.codeRef), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [moduleOfId](../../src/diagram.ts#L1017) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [moduleOfId](../../src/diagram.ts#L1021) (snapshot: AnalysisSnapshot, id: string) → string | null
       <a id="map.diagram.moduleOfId"></a><br>The module an ID lies in: itself, or the nearest module above it (`a.b.f` → `a.b`); null when none.
-    - fn [moduleDiagram](../../src/diagram.ts#L1034) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string) → Diagram <!-- internal -->
+    - fn [moduleDiagram](../../src/diagram.ts#L1038) (snapshot: AnalysisSnapshot, results: readonly DiagramResult[], id: string) → Diagram <!-- internal -->
       <a id="map.diagram.moduleDiagram"></a><br>A module's dependencies, one step each way (the map as a graph): the modules that import it on the left, the module, what it imports on the right — repository modules in the lanes of their layers, packages as `external`; an edge counts the imports. Any ID opens the module it…
       - calls [map.diagram.moduleOfId](map.md#map.diagram.moduleOfId), [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.codeRef](map.md#map.diagram.codeRef), [map.diagram.withReason](map.md#map.diagram.withReason), [map.diagram.lanes](map.md#map.diagram.lanes)
-    - fn [layersDiagram](../../src/diagram.ts#L1086) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [layersDiagram](../../src/diagram.ts#L1090) (snapshot: AnalysisSnapshot, spec: SpecIR, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       <a id="map.diagram.layersDiagram"></a><br>The layers as a stack (top to bottom in their order), with a counted dependency line per pair of layers the code connects and one line per pair and effect of the `allow`/`deny` rules, coloured by their verdict.
       - calls [map.diagram.layerOrder](map.md#map.diagram.layerOrder), [map.diagram.byArea](map.md#map.diagram.byArea), [map.diagram.layerOf](map.md#map.diagram.layerOf), [map.diagram.worst](map.md#map.diagram.worst)
-    - fn [layout](../../src/diagram.ts#L1186) (diagram: Diagram, positions: Positions = {}) → Diagram
+    - fn [layout](../../src/diagram.ts#L1190) (diagram: Diagram, positions: Positions = {}) → Diagram
       <a id="map.diagram.layout"></a><br>Places the shapes: the rank of a node is its longest path from a node without predecessors (back edges of a cycle ignored), its column block; within a lane and a rank, nodes go by spec line, then next to their predecessors (their mean place), then by their order in the diagram…
-    - type [SystemListing](../../src/diagram.ts#L1356)
+    - type [SystemListing](../../src/diagram.ts#L1360)
       <a id="map.diagram.SystemListing"></a><br>A system as the page lists it: its name, file, sequences and whether it has tables.
-    - fn [tableCount](../../src/diagram.ts#L1366) (system: SystemSpec) → number <!-- internal -->
+    - fn [tableCount](../../src/diagram.ts#L1370) (system: SystemSpec) → number <!-- internal -->
       <a id="map.diagram.tableCount"></a><br>How many tables the system's data stores hold.
-    - fn [systemListing](../../src/diagram.ts#L1371) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], schemas?: SchemaRead) → SystemListing[]
+    - fn [systemListing](../../src/diagram.ts#L1375) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], schemas?: SchemaRead) → SystemListing[]
       <a id="map.diagram.systemListing"></a><br>The systems of the specs in spec order, then the one of the code when there is a snapshot.
       - calls [map.system-discover.discoverSystem](map.md#map.system-discover.discoverSystem), [map.diagram.tableCount](map.md#map.diagram.tableCount)
-    - fn [systemNamed](../../src/diagram.ts#L1383) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], name: string, schemas?: SchemaRead) → SystemSpec | null <!-- internal -->
+    - fn [systemNamed](../../src/diagram.ts#L1387) (snapshot: AnalysisSnapshot | null, systems: readonly SystemSpec[], name: string, schemas?: SchemaRead) → SystemSpec | null <!-- internal -->
       <a id="map.diagram.systemNamed"></a><br>The system a view names: a `# system` of the specs, or the one discovered from the code.
       - calls [map.system-discover.discoverSystem](map.md#map.system-discover.discoverSystem)
-    - fn [summaryOf](../../src/diagram.ts#L1390) (system: SystemSpec) → SystemSummary <!-- internal -->
+    - fn [summaryOf](../../src/diagram.ts#L1394) (system: SystemSpec) → SystemSummary <!-- internal -->
       <a id="map.diagram.summaryOf"></a><br>What the page shows beside a system's views: notes, sequences, table count; no file for the code system.
       - calls [map.diagram.tableCount](map.md#map.diagram.tableCount)
-    - fn [systemDiagram](../../src/diagram.ts#L1403) (system: SystemSpec, results: readonly DiagramResult[]) → Diagram <!-- internal -->
+    - fn [systemDiagram](../../src/diagram.ts#L1407) (system: SystemSpec, results: readonly DiagramResult[]) → Diagram <!-- internal -->
       <a id="map.diagram.systemDiagram"></a><br>A system: one shape per component in the lane of its zone (the zone's path, `outer / inner`, as the lane's name), an edge per relation with its verb and caption, coloured by the `system` verdict of that relation; a component takes the worst verdict of its relations.
       - calls [map.diagram.worst](map.md#map.diagram.worst), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.withReason](map.md#map.diagram.withReason), [map.diagram.summaryOf](map.md#map.diagram.summaryOf)
-    - fn [columnLine](../../src/diagram.ts#L1473) (column: SystemSpec["components"][number]["tables"][number]["columns"][number]) → string <!-- internal -->
+    - fn [columnLine](../../src/diagram.ts#L1477) (column: SystemSpec["components"][number]["tables"][number]["columns"][number]) → string <!-- internal -->
       <a id="map.diagram.columnLine"></a><br>A column as one line of its table: `🔑` for the key, `→ users.id` for a foreign key.
-    - fn [erDiagram](../../src/diagram.ts#L1486) (system: SystemSpec) → Diagram <!-- internal -->
+    - fn [erDiagram](../../src/diagram.ts#L1490) (system: SystemSpec) → Diagram <!-- internal -->
       <a id="map.diagram.erDiagram"></a><br>The ER view: a table is a shape with a line per column, in a lane per data store, at most four tables in a row; a foreign key is an edge to the referenced table, `N:1` (`1:1` when the column is `unique` or the key). Placed here, not by `layout`: a table is as tall as its columns.
       - calls [map.diagram.columnLine](map.md#map.diagram.columnLine), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.withReason](map.md#map.diagram.withReason), [map.diagram.summaryOf](map.md#map.diagram.summaryOf)
-    - fn [sequenceDiagram](../../src/diagram.ts#L1556) (system: SystemSpec, name: string) → Diagram <!-- internal -->
+    - fn [sequenceDiagram](../../src/diagram.ts#L1560) (system: SystemSpec, name: string) → Diagram <!-- internal -->
       <a id="map.diagram.sequenceDiagram"></a><br>A sequence: the participants in a row in the order they first appear, a lifeline down from each, and each message an arrow between two lifelines at its own height, numbered in order; an asynchronous one is dashed. A message to itself steps down its own lifeline.
       - calls [map.diagram.empty](map.md#map.diagram.empty), [map.diagram.summaryOf](map.md#map.diagram.summaryOf), [map.diagram.shapeOf](map.md#map.diagram.shapeOf), [map.diagram.withReason](map.md#map.diagram.withReason)
   - module [drawio](../../src/drawio.ts#L1)
@@ -805,25 +807,25 @@
       <a id="map.fact-cache.optional"></a><br>Absent, or present and passing `check`.
     - fn [optionalTrue](../../src/fact-cache.ts#L221) (value: Field) → boolean <!-- internal -->
       <a id="map.fact-cache.optionalTrue"></a><br>Absent, or `true`: the encoding of an optional flag.
-    - module [FactCache](../../src/fact-cache.ts#L234)
+    - module [FactCache](../../src/fact-cache.ts#L237)
       <a id="map.fact-cache.FactCache"></a><br>The fact cache of one analysis: lookups by content hash, and the entries this run used, for saving.
-      - fn [constructor](../../src/fact-cache.ts#L245) (root: string, version: string, disk: Stored["files"], configs: NonNullable<Stored["configs"]>) <!-- internal -->
+      - fn [constructor](../../src/fact-cache.ts#L248) (root: string, version: string, disk: Stored["files"], configs: NonNullable<Stored["configs"]>) <!-- internal -->
         <a id="map.fact-cache.FactCache.constructor"></a><br>Stores the given repository root, cache version string, and previously loaded per-file entries on the instance; private, so instances are only created through the class's own factory methods. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [open](../../src/fact-cache.ts#L253) (root: string, version: string) → FactCache
-        <a id="map.fact-cache.FactCache.open"></a><br>`version` names the extractor and grammars; any other stored version is ignored.
+      - fn [open](../../src/fact-cache.ts#L259) (root: string, version: string) → FactCache
+        <a id="map.fact-cache.FactCache.open"></a><br>`root` holds `FACT_CACHE_FILE` and keys the in-process entries; `version` names the extractor and grammars; any other stored version is ignored.
         - calls [base.json.parseJson](base.md#base.json.parseJson), [map.fact-cache.storedFiles](map.md#map.fact-cache.storedFiles), [map.fact-cache.storedConfigs](map.md#map.fact-cache.storedConfigs), [map.fact-cache.FactCache](map.md#map.fact-cache.FactCache)
-      - fn [facts](../../src/fact-cache.ts#L274) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [facts](../../src/fact-cache.ts#L280) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
         <a id="map.fact-cache.FactCache.facts"></a><br>The facts of `path` with content hash `sha256`: from memory, else disk, else `extract`.
-      - fn [config](../../src/fact-cache.ts#L305) (path: string, sha256: string, adapter: string, parse: () => ConfigFacts) → ConfigFacts
+      - fn [config](../../src/fact-cache.ts#L311) (path: string, sha256: string, adapter: string, parse: () => ConfigFacts) → ConfigFacts
         <a id="map.fact-cache.FactCache.config"></a><br>The facts of a framework config file (ADR 0022), by its content: a config whose text changed is parsed again, as a source file is. `adapter` names the adapter and its version, part of the key.
-      - fn [changed](../../src/fact-cache.ts#L335) () → boolean
+      - fn [changed](../../src/fact-cache.ts#L341) () → boolean
         <a id="map.fact-cache.FactCache.changed"></a><br>Whether the facts of this run differ from the cache on disk: a file the disk has no entry for or holds for other content, or an entry of a file this run did not read. Unchanged, a write would put back the same facts.
-      - fn [serialize](../../src/fact-cache.ts#L349) () → string
+      - fn [serialize](../../src/fact-cache.ts#L355) () → string
         <a id="map.fact-cache.FactCache.serialize"></a><br>The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process.
         - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [keepsFactCache](../../src/fact-cache.ts#L372) (root: string) → boolean
+    - fn [keepsFactCache](../../src/fact-cache.ts#L378) (root: string) → boolean
       <a id="map.fact-cache.keepsFactCache"></a><br>A repository keylang was set up in (`keylang.json`) keeps the fact cache from every analysis of the saved files; one only browsed gets nothing written.
-    - fn [saveFactCache](../../src/fact-cache.ts#L383) (root: string, text: string) → boolean
+    - fn [saveFactCache](../../src/fact-cache.ts#L389) (root: string, text: string) → boolean
       <a id="map.fact-cache.saveFactCache"></a><br>Writes the fact cache for the next process, best-effort: the cache only saves time, so a write the protocol refuses (a link out of `.keylang/`) or the file system refuses (read-only, a sandbox, EACCES) leaves the old cache, or none, and is no error. The generator's bytes, as…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
   - module [index](../../src/framework-code/index.ts#L1)
@@ -1477,109 +1479,109 @@
     - snapshot [map.snapshot](map.md#map.snapshot)
     - type [MapResult](../../src/map.ts#L38)
       <a id="map.map.MapResult"></a><br>Everything one map generation produces: the graph, both rendered maps, the snapshot, and fact-cache bookkeeping.
-    - fn [generateMap](../../src/map.ts#L60) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[] } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L63) (config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string>; adapters?: readonly FrameworkAdapter[]; cacheRoot?: string } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process: `true` always (`keylang map`, whose commit step writes it), `"changed"` only when the facts of this run differ from the cache on disk (an analysis that saves it best-effort); generation writes nothing. `overlay` gives…
       - calls [base.config.classifySources](base.md#base.config.classifySources), [base.config.toPosix](base.md#base.config.toPosix), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.span.compareText](base.md#base.span.compareText), [map.map.readAnalysedSource](map.md#map.map.readAnalysedSource), [map.map.isSourceText](map.md#map.map.isSourceText), [map.graph.placeFile](map.md#map.graph.placeFile), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [base.languages.languageOf](base.md#base.languages.languageOf), [extract.php.declarationsOnly](extract.md#extract.php.declarationsOnly), [map.map.readFrameworks](map.md#map.map.readFrameworks), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [base.config.layerGlobWarnings](base.md#base.config.layerGlobWarnings), [map.map.readSource](map.md#map.map.readSource), [map.framework-entries.frameworkEntries](map.md#map.framework-entries.frameworkEntries), [map.entries.collectEntries](map.md#map.entries.collectEntries), [map.entries.compareEntries](map.md#map.entries.compareEntries), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.ownerSource](map.md#map.map.ownerSource), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.map.explainedMapOf](map.md#map.map.explainedMapOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [explainedMapOf](../../src/map.ts#L232) (config: Config, index: AnalysisSnapshot) → Map<string, string>
+    - fn [explainedMapOf](../../src/map.ts#L235) (config: Config, index: AnalysisSnapshot) → Map<string, string>
       <a id="map.map.explainedMapOf"></a><br>The explained map of a snapshot (file name under `<dir>/map-explained/` → content): the saved briefs where there are some, else the offline explanation. A viewer (`web --read-only`, the static export) shows it even when `explain.map` is off; it writes nothing.
       - calls [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - type [FrameworkReading](../../src/map.ts#L239) <!-- internal -->
+    - type [FrameworkReading](../../src/map.ts#L242) <!-- internal -->
       <a id="map.map.FrameworkReading"></a><br>The framework adapters' inputs to the graph, their manifest in the snapshot, and the config files they could not read.
-    - fn [readFrameworks](../../src/map.ts#L249) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, facts: readonly FileFacts[], outside: readonly string[], ) → FrameworkReading <!-- internal -->
+    - fn [readFrameworks](../../src/map.ts#L252) ( config: Config, sources: readonly string[], read: ReadonlyMap<string, { text: string; sha256: string }>, overlay: ReadonlyMap<string, string> | undefined, cache: FactCache, available: readonly FrameworkAdapter[] | undefined, facts: readonly FileFacts[], outside: readonly string[], ) → FrameworkReading <!-- internal -->
       <a id="map.map.readFrameworks"></a><br>The config files of the framework adapters the repository uses, parsed (or reused from the fact cache by content), and what the manifest lists of them.
       - calls [map.map.readSource](map.md#map.map.readSource), [base.span.compareText](base.md#base.span.compareText), [base.config.isAnalysed](base.md#base.config.isAnalysed), [base.config.isOutside](base.md#base.config.isOutside), [base.adapter.activeAdapters](base.md#base.adapter.activeAdapters), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.fact-cache.FactCache.config](map.md#map.fact-cache.FactCache.config), [map.map.preferencesOnly](map.md#map.map.preferencesOnly)
-    - fn [preferencesOnly](../../src/map.ts#L335) (facts: ConfigFacts) → ConfigFacts <!-- internal -->
+    - fn [preferencesOnly](../../src/map.ts#L338) (facts: ConfigFacts) → ConfigFacts <!-- internal -->
       <a id="map.map.preferencesOnly"></a><br>What the graph takes of a config of code `outside` the architecture (business-flows 40): its preferences, which say what class a value of an interface is. Its plugins, observers, arguments and entry points belong to code keylang does not analyse; a file that does not parse…
-    - type [OwnerSource](../../src/map.ts#L340) <!-- internal -->
+    - type [OwnerSource](../../src/map.ts#L343) <!-- internal -->
       <a id="map.map.OwnerSource"></a><br>The `source` field of a framework config's hole; absent when no module owns the file.
-    - fn [ownerSource](../../src/map.ts#L349) (config: Config, graph: Graph, owner: string | null) → OwnerSource <!-- internal -->
+    - fn [ownerSource](../../src/map.ts#L352) (config: Config, graph: Graph, owner: string | null) → OwnerSource <!-- internal -->
       <a id="map.map.ownerSource"></a><br>The module a config file of `owner`'s directory belongs to, for a hole of its own: the directory's module, or the module of a file in it when the directory is a whole layer (a rule's area holds that module, not the layer node).
       - calls [map.graph.directoryModule](map.md#map.graph.directoryModule), [base.span.compareText](base.md#base.span.compareText)
-    - fn [readRepositoryDocs](../../src/map.ts#L369) (config: Config) → RepositoryDocs <!-- internal -->
+    - fn [readRepositoryDocs](../../src/map.ts#L372) (config: Config) → RepositoryDocs <!-- internal -->
       <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
       - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
-    - fn [readSystemDoc](../../src/map.ts#L384) (root: string) → SystemDoc <!-- internal -->
+    - fn [readSystemDoc](../../src/map.ts#L387) (root: string) → SystemDoc <!-- internal -->
       <a id="map.map.readSystemDoc"></a><br>The repository's own name and brief: the root README first, else the first root manifest with a description.
       - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [readReadme](../../src/map.ts#L402) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+    - fn [readReadme](../../src/map.ts#L405) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [base.span.compareText](base.md#base.span.compareText), [map.map.readSource](map.md#map.map.readSource)
-    - type [ManifestAbout](../../src/map.ts#L424) <!-- internal -->
+    - type [ManifestAbout](../../src/map.ts#L427) <!-- internal -->
       <a id="map.map.ManifestAbout"></a><br>What a root manifest says the repository is called and what it does.
-    - type [ManifestValue](../../src/map.ts#L430) = JsonValue | TomlValue <!-- internal -->
+    - type [ManifestValue](../../src/map.ts#L433) = JsonValue | TomlValue <!-- internal -->
       <a id="map.map.ManifestValue"></a><br>A value of a parsed root manifest: JSON (`package.json`, `composer.json`) or TOML (`Cargo.toml`, `pyproject.toml`).
-    - fn [isManifestTable](../../src/map.ts#L433) (value: ManifestValue | undefined) → value is JsonObject | TomlTable <!-- internal -->
+    - fn [isManifestTable](../../src/map.ts#L436) (value: ManifestValue | undefined) → value is JsonObject | TomlTable <!-- internal -->
       <a id="map.map.isManifestTable"></a><br>Whether a parsed manifest value is a table (an object, not an array or a TOML date).
-    - fn [isManifestText](../../src/map.ts#L439) (value: ManifestValue | undefined) → value is string <!-- internal -->
+    - fn [isManifestText](../../src/map.ts#L442) (value: ManifestValue | undefined) → value is string <!-- internal -->
       <a id="map.map.isManifestText"></a><br>Whether a parsed manifest value is text.
-    - fn [manifestAbout](../../src/map.ts#L449) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → ManifestAbout <!-- internal -->
+    - fn [manifestAbout](../../src/map.ts#L452) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → ManifestAbout <!-- internal -->
       <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
       - calls [base.json.parseJson](base.md#base.json.parseJson), [map.map.isManifestTable](map.md#map.map.isManifestTable), [map.map.isManifestText](map.md#map.map.isManifestText)
-    - fn [opaqueFacts](../../src/map.ts#L490) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L493) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>The facts of a file keylang does not read: no members, completeness `opaque`.
-    - fn [readSource](../../src/map.ts#L495) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L498) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - type [AnalysedSource](../../src/map.ts#L505) = string | null | { unreadable: string } <!-- internal -->
+    - type [AnalysedSource](../../src/map.ts#L508) = string | null | { unreadable: string } <!-- internal -->
       <a id="map.map.AnalysedSource"></a><br>A source file's text, null when it is gone, or why keylang may not read it.
-    - fn [isSourceText](../../src/map.ts#L508) (src: AnalysedSource) → src is string <!-- internal -->
+    - fn [isSourceText](../../src/map.ts#L511) (src: AnalysedSource) → src is string <!-- internal -->
       <a id="map.map.isSourceText"></a><br>Whether the read gave text (not a missing file, not an unreadable one).
-    - fn [readAnalysedSource](../../src/map.ts#L513) (abs: string) → AnalysedSource <!-- internal -->
+    - fn [readAnalysedSource](../../src/map.ts#L516) (abs: string) → AnalysedSource <!-- internal -->
       <a id="map.map.readAnalysedSource"></a><br>A source file's text as readSource, or the reason when keylang may not read it (EACCES/EPERM): a hole, not an I/O error.
       - calls [map.map.readSource](map.md#map.map.readSource)
-    - fn [extractGuarded](../../src/map.ts#L529) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L532) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L542)
+    - type [MapDiff](../../src/map.ts#L545)
       <a id="map.map.MapDiff"></a><br>What `map --check` finds: hand-written files in the way, and generated files that differ.
-    - fn [targets](../../src/map.ts#L553) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L556) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - type [ExtraGenerated](../../src/map.ts#L561) <!-- internal -->
+    - type [ExtraGenerated](../../src/map.ts#L564) <!-- internal -->
       <a id="map.map.ExtraGenerated"></a><br>A generated file in a map directory that is not listed under its name.
-    - fn [extraGenerated](../../src/map.ts#L574) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L577) (dir: string, files: ReadonlyMap<string, string>) → ExtraGenerated[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there under their names.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L612) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L615) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L627) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L630) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L630)
+    - type [MapStep](../../src/map.ts#L633)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L637) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L640) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>A planned step with the bytes to write and the bytes the target must still hold.
-    - type [MapPlan](../../src/map.ts#L653)
+    - type [MapPlan](../../src/map.ts#L656)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L665)
+    - type [SourceInputs](../../src/map.ts#L668)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L673) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L676) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L683) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputs](../../src/map.ts#L686) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot: the `keylang.json` text the analysis parsed (not the disk now — a save made during the analysis must be caught at the commit, not become the base) and the snapshot's manifest.
-    - fn [sourceInputProblems](../../src/map.ts#L692) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L695) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L721) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L724) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L727)
+    - type [MapCommit](../../src/map.ts#L730)
       <a id="map.map.MapCommit"></a><br>The result of a commit: each step's state, and how the commit ended.
-    - fn [planMap](../../src/map.ts#L738) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L741) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L792) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L795) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L821) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L824) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L859) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L862) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L864) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L867) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L873) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L876) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L903) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L906) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [php-imports](../../src/php-imports.ts#L1)

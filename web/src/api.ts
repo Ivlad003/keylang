@@ -301,6 +301,8 @@ export interface DiagramNode {
   label: string;
   ref?: { id?: string; file?: string; line?: number; specFile?: string; specLine?: number };
   verdict?: Verdict;
+  /** The picture of a diff (`/api/graph-diff`): added, removed or changed since the base; null for context. */
+  diff?: "added" | "removed" | "changed" | null;
   reason?: string;
   group?: string;
   results?: NodeResult[];
@@ -323,6 +325,8 @@ export interface DiagramEdge {
   label?: string;
   verdict?: Verdict;
   async?: boolean;
+  /** The picture of a diff: only the head has it (added) or only the base (removed). */
+  diff?: "added" | "removed" | null;
 }
 
 /** A labelled frame around shapes (a layer, a module), placed like a node. */
@@ -498,6 +502,28 @@ export interface ChangesAnswer {
   checkReason?: string;
 }
 
+/** One side of an architecture diff (src/graph-diff.ts, `DiffSide`). */
+export interface DiffSideView {
+  ref: string;
+  commit: string | null;
+  short: string | null;
+  subject: string | null;
+  label: string;
+}
+
+/** The parts of `GraphDiff` (src/graph-diff.ts) the «Зміни» tab shows. */
+export interface GraphDiffView {
+  level: "module" | "fn";
+  nodes: { id: string; kind: string; status: "added" | "removed" | "changed"; file: string | null; layer: string; changes: string[] }[];
+  edges: { source: string; target: string; kind: string; status: "added" | "removed" }[];
+  flows: { name: string; status: "added" | "removed" | "changed"; steps: { key: string; status: "added" | "removed" }[] }[];
+  findings: { code: string | null; criterion: string; area: string; verdict: string; message: string; file: string; line: number; status: "new" | "fixed" }[];
+  weakenings: { file: string; line: number; message: string }[];
+}
+
+/** The answer of `GET /api/graph-diff`: the diff and its picture, laid out; unavailable where git cannot run (app.html). */
+export type GraphDiffAnswer = { available: true; base: DiffSideView; head: DiffSideView; diff: GraphDiffView; diagram: Diagram } | { available: false; reason: string };
+
 /** A view as the query of `GET /api/diagram` names it. */
 export type ViewQuery = { view: "flow"; name: string } | { view: "discovered"; name: string } | { view: "entry"; id: string; depth?: string } | { view: "layers" } | { view: "process"; domain: string } | { view: "module"; id: string } | { view: "system"; name: string } | { view: "er"; name: string } | { view: "sequence"; name: string; seq: string };
 
@@ -562,6 +588,16 @@ export class Api {
   /** The changes since `since` ("" — the base of a feature) and the findings over them. */
   changes(since: string): Promise<ChangesAnswer> {
     return this.get<ChangesAnswer>("/api/changes", since === "" ? {} : { since });
+  }
+
+  /** The architecture diff since `since` ("" — the base of a feature) at a level, with its picture. */
+  graphDiff(since: string, level: "module" | "fn"): Promise<GraphDiffAnswer> {
+    const query: Record<string, string> = since === "" ? {} : { since };
+
+    // The default level stays out of the query, so its key matches the one a static export holds.
+    if (level !== "module") query["level"] = level;
+
+    return this.get<GraphDiffAnswer>("/api/graph-diff", query);
   }
 
   /** One proposal of the ticked branches; a refusal (a generated target, a proposal waiting) is an `ApiError` with the server's reason. */

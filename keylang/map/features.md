@@ -864,34 +864,34 @@
     - graph map.graph
     - parser lang.parser
     - span base.span
-    - type [ChangedFiles](../../src/git-changes.ts#L29)
-    - type [GitRunner](../../src/git-changes.ts#L39) <!-- internal -->
-    - fn [gitIn](../../src/git-changes.ts#L45) (root: string, label: string) → GitRunner <!-- internal -->
+    - type [ChangedFiles](../../src/git-changes.ts#L30)
+    - type [GitRunner](../../src/git-changes.ts#L40)
+    - fn [gitIn](../../src/git-changes.ts#L46) (root: string, label: string) → GitRunner
       - calls features.git-changes.gitUnavailable
-    - fn [gitUnavailable](../../src/git-changes.ts#L66) (label: string, error: Error & { code?: string }) → string
-    - fn [assertRef](../../src/git-changes.ts#L74) (ref: string, label: string) → void <!-- internal -->
-    - fn [diffArgs](../../src/git-changes.ts#L80) (base: string) → string[] <!-- internal -->
-    - fn [untracked](../../src/git-changes.ts#L83) (git: (args: string[]) => string) → string[] <!-- internal -->
-    - fn [ownState](../../src/git-changes.ts#L93) (path: string) → boolean <!-- internal -->
-    - fn [gitChangedFiles](../../src/git-changes.ts#L96) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitUnavailable](../../src/git-changes.ts#L67) (label: string, error: Error & { code?: string }) → string
+    - fn [assertRef](../../src/git-changes.ts#L75) (ref: string, label: string) → void
+    - fn [diffArgs](../../src/git-changes.ts#L81) (base: string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L84) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L94) (path: string) → boolean <!-- internal -->
+    - fn [gitChangedFiles](../../src/git-changes.ts#L97) (root: string, ref: string, label = "check --changed") → ChangedFiles
       - calls features.git-changes.assertRef, features.git-changes.gitIn, features.git-changes.diffArgs, features.draft.deletedDiffPaths, features.draft.diffHunks, features.git-changes.untracked, features.git-changes.ownState, features.git-changes.diskCaseResolver
-    - fn [diskCaseResolver](../../src/git-changes.ts#L128) (root: string) → (path: string) => string | null
-    - fn [gitChangedLines](../../src/git-changes.ts#L167) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [diskCaseResolver](../../src/git-changes.ts#L129) (root: string) → (path: string) => string | null
+    - fn [gitChangedLines](../../src/git-changes.ts#L168) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       - calls features.git-changes.assertRef, features.git-changes.gitIn, features.draft.diffHunks, features.git-changes.diffArgs, features.git-changes.untracked
-    - fn [changedPathSet](../../src/git-changes.ts#L179) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L180) (root: string, files: Iterable<string>, base: string) → Set<string>
       - calls base.config.toPosix
-    - fn [gitFileAt](../../src/git-changes.ts#L195) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L196) (root: string, ref: string, path: string, label: string) → string | null
       - calls features.git-changes.assertRef, features.git-changes.gitIn
-    - fn [gitSpecFilesAt](../../src/git-changes.ts#L220) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
+    - fn [gitSpecFilesAt](../../src/git-changes.ts#L221) (root: string, ref: string, dir: string, label: string, skip: (path: string) => boolean = () => false) → Map<string, string>
       - calls features.git-changes.assertRef, features.git-changes.gitIn, base.span.compareText
-    - fn [readFeatureBase](../../src/git-changes.ts#L252) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [readFeatureBase](../../src/git-changes.ts#L253) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       - calls features.git-changes.featureBaseOrigin, features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, base.span.compareText, lang.parser.parse
-    - type [GitSummary](../../src/git-changes.ts#L281)
-    - fn [gitSummary](../../src/git-changes.ts#L293) (root: string, label: string) → GitSummary
+    - type [GitSummary](../../src/git-changes.ts#L282)
+    - fn [gitSummary](../../src/git-changes.ts#L294) (root: string, label: string) → GitSummary
       - calls features.git-changes.gitIn, base.span.compareText
-    - fn [featureBaseOrigin](../../src/git-changes.ts#L334) (root: string, label: string) → BaseOrigin
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L335) (root: string, label: string) → BaseOrigin
       - calls features.git-changes.gitIn
-    - fn [deletedModuleIds](../../src/git-changes.ts#L365) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L366) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node
@@ -906,6 +906,87 @@
     - fn [gitTopLevel](../../src/git-hook.ts#L61) (cwd: string) → string
       - calls features.git-hook.git
     - fn [git](../../src/git-hook.ts#L66) (cwd: string, args: string[]) → string <!-- internal -->
+  - module [graph-diff-format](../../src/graph-diff-format.ts#L1)
+    - diagram map.diagram
+    - external-ids base.external-ids
+    - graph-diff features.graph-diff
+    - span base.span
+    - type [DiffFormat](../../src/graph-diff-format.ts#L23) = (typeof DIFF_FORMATS)[number]
+    - fn [isDiffFormat](../../src/graph-diff-format.ts#L26) (text: string) → text is DiffFormat
+    - fn [diffSummary](../../src/graph-diff-format.ts#L34) (diff: GraphDiff) → string
+    - fn [heading](../../src/graph-diff-format.ts#L49) (diff: GraphDiff) → string <!-- internal -->
+    - fn [diffText](../../src/graph-diff-format.ts#L56) (diff: GraphDiff) → string
+      - calls features.graph-diff-format.heading, features.graph-diff-format.diffSummary
+    - fn [cell](../../src/graph-diff-format.ts#L91) (text: string) → string <!-- internal -->
+    - fn [code](../../src/graph-diff-format.ts#L96) (text: string) → string <!-- internal -->
+      - calls features.graph-diff-format.cell
+    - fn [diffMarkdown](../../src/graph-diff-format.ts#L101) (diff: GraphDiff, subgraph: DiffSubgraph) → string
+      - calls features.graph-diff-format.cell, features.graph-diff-format.heading, features.graph-diff-format.diffSummary, features.graph-diff-format.code, features.graph-diff-format.diffMermaid
+    - fn [mermaidLabel](../../src/graph-diff-format.ts#L148) (text: string) → string <!-- internal -->
+    - fn [diffMermaid](../../src/graph-diff-format.ts#L157) (subgraph: DiffSubgraph) → string
+      - calls features.graph-diff-format.mermaidLabel
+    - fn [diffDiagram](../../src/graph-diff-format.ts#L187) (subgraph: DiffSubgraph, layerOrder: readonly string[]) → Diagram
+      - calls base.span.compareText, map.diagram.layout
+  - module [graph-diff-run](../../src/graph-diff-run.ts#L1)
+    - analyze map.analyze
+    - git-changes features.git-changes
+    - graph-diff features.graph-diff
+    - revision-tree features.revision-tree
+    - type [DiffRange](../../src/graph-diff-run.ts#L17)
+    - fn [parseRange](../../src/graph-diff-run.ts#L26) (text: string | undefined, label: string) → DiffRange
+    - type [DiffRequest](../../src/graph-diff-run.ts#L38)
+    - type [DiffRun](../../src/graph-diff-run.ts#L47)
+    - fn [analysisOf](../../src/graph-diff-run.ts#L66) (root: string, revision: Revision, label: string) → Promise<Analysis> <!-- internal -->
+      - calls map.analyze.analyze, features.revision-tree.analyzeRevision
+    - fn [runGraphDiff](../../src/graph-diff-run.ts#L84) (request: DiffRequest) → Promise<DiffRun>
+      - calls features.git-changes.featureBaseOrigin, features.revision-tree.resolveRevision, features.revision-tree.workingTree, features.graph-diff-run.analysisOf, features.graph-diff.graphDiff, features.graph-diff.diffSubgraph
+  - module [graph-diff](../../src/graph-diff.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - check-results features.check-results
+    - feature-status features.feature-status
+    - ir lang.ir
+    - snapshot map.snapshot
+    - span base.span
+    - revision-tree features.revision-tree
+    - weakening features.weakening
+    - type [DiffLevel](../../src/graph-diff.ts#L28) = "module" | "fn"
+    - fn [isDiffLevel](../../src/graph-diff.ts#L33) (text: string) → text is DiffLevel
+    - type [NodeChange](../../src/graph-diff.ts#L38) = "signature" | "body" | "deps" | "layer" | "file"
+    - type [DiffNode](../../src/graph-diff.ts#L41)
+    - type [DiffEdge](../../src/graph-diff.ts#L54)
+    - type [DiffFlow](../../src/graph-diff.ts#L62)
+    - type [DiffFinding](../../src/graph-diff.ts#L69)
+    - type [DiffSide](../../src/graph-diff.ts#L82)
+    - type [GraphDiff](../../src/graph-diff.ts#L91)
+    - fn [graphDiff](../../src/graph-diff.ts#L104) (input: { base: Analysis; head: Analysis; baseRevision: Revision; headRevision: Revision; level: DiffLevel }) → GraphDiff
+      - calls features.graph-diff.graphOf, features.graph-diff.sideOf, features.graph-diff.nodeDiff, features.graph-diff.edgeDiff, features.graph-diff.flowDiff, features.graph-diff.findingDiff, features.weakening.specWeakenings, features.graph-diff.ownSpecs
+    - fn [newFails](../../src/graph-diff.ts#L122) (diff: GraphDiff) → number
+    - fn [sideOf](../../src/graph-diff.ts#L126) (revision: Revision) → DiffSide <!-- internal -->
+    - type [NodeFacts](../../src/graph-diff.ts#L131) <!-- internal -->
+    - type [LevelGraph](../../src/graph-diff.ts#L143) <!-- internal -->
+    - fn [graphOf](../../src/graph-diff.ts#L155) (snapshot: AnalysisSnapshot | null, level: DiffLevel) → LevelGraph <!-- internal -->
+      - calls features.graph-diff.moduleOf, base.span.compareText, features.graph-diff.digest, features.graph-diff.factsOf
+    - fn [factsOf](../../src/graph-diff.ts#L193) (kind: NodeFacts["kind"], node: SnapshotNode, body: string, deps: string[]) → NodeFacts <!-- internal -->
+    - fn [moduleOf](../../src/graph-diff.ts#L198) (nodes: AnalysisSnapshot["nodes"], id: string) → string | null <!-- internal -->
+    - fn [digest](../../src/graph-diff.ts#L212) (parts: readonly string[]) → string <!-- internal -->
+    - fn [nodeDiff](../../src/graph-diff.ts#L217) (base: LevelGraph, head: LevelGraph) → DiffNode[] <!-- internal -->
+      - calls base.span.compareText
+    - fn [edgeDiff](../../src/graph-diff.ts#L249) (base: ReadonlySet<string>, head: ReadonlySet<string>) → DiffEdge[] <!-- internal -->
+      - calls base.span.compareText, features.graph-diff.edgeKey
+    - fn [edgeKey](../../src/graph-diff.ts#L263) (edge: Pick<DiffEdge, "source" | "target" | "kind">) → string
+    - fn [flowDiff](../../src/graph-diff.ts#L268) (base: Analysis, head: Analysis) → DiffFlow[] <!-- internal -->
+      - calls features.feature-status.planItems, base.span.compareText, features.graph-diff.multisetMinus
+    - fn [multisetMinus](../../src/graph-diff.ts#L297) (from: readonly string[], take: readonly string[]) → string[] <!-- internal -->
+    - fn [findingDiff](../../src/graph-diff.ts#L318) (base: Analysis, head: Analysis) → DiffFinding[] <!-- internal -->
+      - calls features.check-results.checkReport, features.graph-diff.withoutPositions, base.span.compareText
+    - fn [withoutPositions](../../src/graph-diff.ts#L349) (message: string) → string <!-- internal -->
+    - type [SubgraphNode](../../src/graph-diff.ts#L354)
+    - type [SubgraphEdge](../../src/graph-diff.ts#L365)
+    - type [DiffSubgraph](../../src/graph-diff.ts#L373)
+    - fn [diffSubgraph](../../src/graph-diff.ts#L388) (diff: GraphDiff, base: Analysis, head: Analysis, limit: number = SUBGRAPH_LIMIT) → DiffSubgraph
+      - calls features.graph-diff.graphOf, base.span.compareText, features.graph-diff.edgeKey
+    - fn [ownSpecs](../../src/graph-diff.ts#L434) (analysis: Analysis) → Document[] <!-- internal -->
   - module [greenfield](../../src/greenfield.ts#L1)
     - config base.config
     - diagram-layout map.diagram-layout
@@ -1308,6 +1389,24 @@
       - calls features.proposals.storeEntry, base.diag.errorText
     - fn [countDecision](../../src/proposals.ts#L545) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
       - calls features.proposals.lineDiff, features.stats.statusesIn, features.stats.updateStats, features.stats.addDrafts
+  - module [revision-tree](../../src/revision-tree.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - git-changes features.git-changes
+    - type [Revision](../../src/revision-tree.ts#L23)
+    - fn [resolveRevision](../../src/revision-tree.ts#L47) (root: string, ref: string, label: string, sentence: string = ref) → Revision
+      - calls features.git-changes.assertRef, features.git-changes.gitIn
+    - fn [workingTree](../../src/revision-tree.ts#L67) (root: string, label: string) → Revision
+      - calls features.git-changes.gitIn
+    - type [TreeEntry](../../src/revision-tree.ts#L76) <!-- internal -->
+    - fn [treeEntries](../../src/revision-tree.ts#L85) (root: string, commit: string, label: string) → TreeEntry[] <!-- internal -->
+      - calls features.git-changes.gitIn
+    - fn [readBlobs](../../src/revision-tree.ts#L105) (root: string, entries: readonly TreeEntry[], scratch: string, label: string, write: (entry: TreeEntry, bytes: Buffer) => void) → void <!-- internal -->
+      - calls features.git-changes.gitUnavailable
+    - fn [writeTree](../../src/revision-tree.ts#L148) (root: string, commit: string, dir: string, scratch: string, label: string) → void <!-- internal -->
+      - calls features.revision-tree.treeEntries, features.revision-tree.readBlobs
+    - fn [analyzeRevision](../../src/revision-tree.ts#L194) (root: string, revision: Revision, label: string) → Promise<Analysis>
+      - calls features.revision-tree.writeTree, map.analyze.analyze
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     - node external.node
     - analyze map.analyze
