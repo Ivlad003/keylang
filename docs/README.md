@@ -28,7 +28,8 @@ When you need the exact rules, the format spec that the parser follows is in Ukr
 | [archive/research-pl.md](archive/research-pl.md) | keylang through programming-language theory (Ukrainian) |
 | [talk-ai-development-problems.md](talk-ai-development-problems.md) | Slides and proofread transcript of the talk that motivates an executable architecture spec (Russian) |
 | [usability-probe.md](usability-probe.md) | The protocol of a usability session with a person (Ukrainian) |
-| [review-2026-10-05.md](review-2026-10-05.md), [review-2026-10-06.md](review-2026-10-06.md), [review-2026-10-11.md](review-2026-10-11.md) | The latest reviews: bugs found, risks and the tickets they produced; the 2026-10-11 one lists unreproduced candidates (Ukrainian) |
+| [review-2026-11-19.md](review-2026-11-19.md) | The entry barrier, the product's focus and the technical debt, with the plan to make keylang a fence for agents and CI (Ukrainian) |
+| [review-2026-10-05.md](review-2026-10-05.md), [review-2026-10-06.md](review-2026-10-06.md), [review-2026-10-11.md](review-2026-10-11.md) | The earlier reviews: bugs found, risks and the tickets they produced; the 2026-10-11 one lists unreproduced candidates (Ukrainian) |
 | [adr/](adr/) | Accepted decisions |
 | [archive/](archive/) | Earlier reviews, research notes and probe results |
 | [../llm.txt](../llm.txt) | A single file an agent fetches to install keylang, with rules on when to use it |
